@@ -6,6 +6,8 @@ from models.resource import Resource, ResourceBalance
 from operations.world_operations import (
     TransferItemOperation,
     GainResourceOperation,
+    SpendResourceOperation,
+    TransferResourceOperation,
 )
 
 from services.entity_resolution import EntityResolver
@@ -53,6 +55,24 @@ class WorldResolver:
             if fact.fact_type == "RESOURCE_GAINED":
 
                 operation = self._resolve_resource_gained(
+                    fact
+                )
+
+                if operation:
+                    operations.append(operation)
+
+            if fact.fact_type == "RESOURCE_SPENT":
+
+                operation = self._resolve_resource_spent(
+                    fact
+                )
+
+                if operation:
+                    operations.append(operation)
+
+            if fact.fact_type == "RESOURCE_TRANSFERRED":
+
+                operation = self._resolve_resource_transferred(
                     fact
                 )
 
@@ -165,5 +185,153 @@ class WorldResolver:
         return GainResourceOperation(
             resource_id=resource.id,
             owner_id=owner.id,
+            amount=amount,
+        )
+
+    def _resolve_resource_spent(
+        self,
+        fact: ExtractedFact,
+    ) -> SpendResourceOperation | None:
+
+        resource_name = fact.data.get("resource", "")
+        owner_name = fact.data.get("owner", "")
+        amount = fact.data.get("amount")
+
+        if not resource_name:
+            return None
+
+        if not owner_name:
+            return None
+
+        if amount is None:
+            return None
+
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            return None
+
+        if amount <= 0:
+            return None
+
+        resource = next(
+            (
+                resource
+                for resource in self.resources.values()
+                if resource.name.casefold()
+                == resource_name.casefold()
+            ),
+            None,
+        )
+
+        if not resource:
+            return None
+
+        owner = self.entity_resolver.find(
+            owner_name
+        )
+
+        if not owner:
+            return None
+
+        balance = next(
+            (
+                balance
+                for balance in self.resource_balances.values()
+                if balance.resource_id == resource.id
+                and balance.owner_id == owner.id
+            ),
+            None,
+        )
+
+        if not balance:
+            return None
+
+        if balance.amount < amount:
+            return None
+
+        return SpendResourceOperation(
+            resource_id=resource.id,
+            owner_id=owner.id,
+            amount=amount,
+        )
+
+    def _resolve_resource_transferred(
+        self,
+        fact: ExtractedFact,
+    ) -> TransferResourceOperation | None:
+
+        resource_name = fact.data.get("resource", "")
+        source_name = fact.data.get("from", "")
+        target_name = fact.data.get("to", "")
+        amount = fact.data.get("amount")
+
+        if not resource_name:
+            return None
+
+        if not source_name:
+            return None
+
+        if not target_name:
+            return None
+
+        if amount is None:
+            return None
+
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            return None
+
+        if amount <= 0:
+            return None
+
+        resource = next(
+            (
+                resource
+                for resource in self.resources.values()
+                if resource.name.casefold()
+                == resource_name.casefold()
+            ),
+            None,
+        )
+
+        if not resource:
+            return None
+
+        source = self.entity_resolver.find(
+            source_name
+        )
+
+        if not source:
+            return None
+
+        target = self.entity_resolver.find(
+            target_name
+        )
+
+        if not target:
+            return None
+
+        balance = next(
+            (
+                balance
+                for balance in self.resource_balances.values()
+                if balance.resource_id == resource.id
+                and balance.owner_id == source.id
+            ),
+            None,
+        )
+
+        if not balance:
+            return None
+
+        if balance.amount < amount:
+            return None
+
+        return TransferResourceOperation(
+            resource_id=resource.id,
+            source_id=source.id,
+            target_id=target.id,
             amount=amount,
         )
