@@ -1,9 +1,12 @@
+import math
+
 from models.world_state import WorldState
 from models.relation import Relation
 from models.event import Event
 from models.resource import ResourceBalance
 
 from operations.world_operations import (
+    WorldOperation,
     TransferItemOperation,
     GainResourceOperation,
     SpendResourceOperation,
@@ -14,67 +17,53 @@ from operations.world_operations import (
     CreateEventOperation,
 )
 
-import math
 
 class WorldApplier:
+    """
+    Aplica operaciones de dominio sobre un WorldState.
+
+    WorldApplier:
+        - modifica únicamente el estado en memoria
+        - no accede a SQLite
+        - no persiste cambios
+        - no genera operaciones nuevas
+
+    La persistencia corresponde a WorldService/WorldRepository.
+    """
 
     def apply(
         self,
         world: WorldState,
-        operation,
+        operation: WorldOperation,
     ) -> None:
 
         if isinstance(operation, TransferItemOperation):
-            self._apply_transfer_item(
-                world,
-                operation,
-            )
+            self._apply_transfer_item(world, operation)
 
         elif isinstance(operation, GainResourceOperation):
-            self._apply_gain_resource(
-                world,
-                operation,
-            )
+            self._apply_gain_resource(world, operation)
 
         elif isinstance(operation, SpendResourceOperation):
-            self._apply_spend_resource(
-                world,
-                operation,
-            )
+            self._apply_spend_resource(world, operation)
 
         elif isinstance(operation, TransferResourceOperation):
-            self._apply_transfer_resource(
-                world,
-                operation,
-            )
+            self._apply_transfer_resource(world, operation)
 
         elif isinstance(operation, CreateRelationOperation):
-            self._apply_create_relation(
-                world,
-                operation,
-            )
+            self._apply_create_relation(world, operation)
 
         elif isinstance(operation, UpdateRelationOperation):
-            self._apply_update_relation(
-                world,
-                operation,
-            )
+            self._apply_update_relation(world, operation)
 
         elif isinstance(operation, RemoveRelationOperation):
-            self._apply_remove_relation(
-                world,
-                operation,
-            )
+            self._apply_remove_relation(world, operation)
 
         elif isinstance(operation, CreateEventOperation):
-            self._apply_create_event(
-                world,
-                operation,
-            )
+            self._apply_create_event(world, operation)
 
-    # ---------------------------------------------------------
-    # ITEM
-    # ---------------------------------------------------------
+    # ============================================================
+    # ITEMS
+    # ============================================================
 
     def _apply_transfer_item(
         self,
@@ -82,11 +71,9 @@ class WorldApplier:
         operation: TransferItemOperation,
     ) -> None:
 
-        instance = world.item_instances.get(
-            operation.instance_id
-        )
+        instance = world.item_instances.get(operation.instance_id)
 
-        if not instance:
+        if instance is None:
             return
 
         if operation.new_owner_id not in world.entities:
@@ -97,9 +84,9 @@ class WorldApplier:
 
         instance.owner_id = operation.new_owner_id
 
-    # ---------------------------------------------------------
+    # ============================================================
     # RESOURCES
-    # ---------------------------------------------------------
+    # ============================================================
 
     def _apply_gain_resource(
         self,
@@ -113,29 +100,20 @@ class WorldApplier:
         if operation.owner_id not in world.entities:
             return
 
-        if not math.isfinite(operation.amount):
+        if not self._valid_amount(operation.amount):
             return
 
-        if operation.amount <= 0:
-            return
-
-        balance = next(
-            (
-                balance
-                for balance in world.resource_balances.values()
-                if balance.resource_id == operation.resource_id
-                and balance.owner_id == operation.owner_id
-            ),
-            None,
+        balance = self._find_balance(
+            world,
+            operation.resource_id,
+            operation.owner_id,
         )
 
         if balance is not None:
             balance.amount += operation.amount
             return
 
-        balance_id = (
-            max(world.resource_balances.keys(), default=0) + 1
-        )
+        balance_id = self._next_balance_id(world)
 
         world.resource_balances[balance_id] = ResourceBalance(
             id=balance_id,
@@ -156,20 +134,13 @@ class WorldApplier:
         if operation.owner_id not in world.entities:
             return
 
-        if not math.isfinite(operation.amount):
+        if not self._valid_amount(operation.amount):
             return
 
-        if operation.amount <= 0:
-            return
-
-        balance = next(
-            (
-                balance
-                for balance in world.resource_balances.values()
-                if balance.resource_id == operation.resource_id
-                and balance.owner_id == operation.owner_id
-            ),
-            None,
+        balance = self._find_balance(
+            world,
+            operation.resource_id,
+            operation.owner_id,
         )
 
         if balance is None:
@@ -195,20 +166,13 @@ class WorldApplier:
         if operation.target_id not in world.entities:
             return
 
-        if not math.isfinite(operation.amount):
+        if not self._valid_amount(operation.amount):
             return
 
-        if operation.amount <= 0:
-            return
-
-        source_balance = next(
-            (
-                balance
-                for balance in world.resource_balances.values()
-                if balance.resource_id == operation.resource_id
-                and balance.owner_id == operation.source_id
-            ),
-            None,
+        source_balance = self._find_balance(
+            world,
+            operation.resource_id,
+            operation.source_id,
         )
 
         if source_balance is None:
@@ -217,20 +181,15 @@ class WorldApplier:
         if source_balance.amount < operation.amount:
             return
 
-        target_balance = next(
-            (
-                balance
-                for balance in world.resource_balances.values()
-                if balance.resource_id == operation.resource_id
-                and balance.owner_id == operation.target_id
-            ),
-            None,
+        target_balance = self._find_balance(
+            world,
+            operation.resource_id,
+            operation.target_id,
         )
 
         if target_balance is None:
-            balance_id = (
-                max(world.resource_balances.keys(), default=0) + 1
-            )
+
+            balance_id = self._next_balance_id(world)
 
             target_balance = ResourceBalance(
                 id=balance_id,
@@ -244,9 +203,9 @@ class WorldApplier:
         source_balance.amount -= operation.amount
         target_balance.amount += operation.amount
 
-    # ---------------------------------------------------------
+    # ============================================================
     # RELATIONS
-    # ---------------------------------------------------------
+    # ============================================================
 
     def _apply_create_relation(
         self,
@@ -260,10 +219,15 @@ class WorldApplier:
         if not operation.relation_type:
             return
 
-        try:
-            subject_id = int(operation.subject_id)
-            target_id = int(operation.target_id)
-        except (TypeError, ValueError):
+        subject_id = self._coerce_entity_id(
+            operation.subject_id
+        )
+
+        target_id = self._coerce_entity_id(
+            operation.target_id
+        )
+
+        if subject_id is None or target_id is None:
             return
 
         if subject_id not in world.entities:
@@ -281,7 +245,6 @@ class WorldApplier:
             active=True,
         )
 
-
     def _apply_update_relation(
         self,
         world: WorldState,
@@ -294,6 +257,7 @@ class WorldApplier:
             return
 
         if operation.relation_type is not None:
+
             if not operation.relation_type:
                 return
 
@@ -301,9 +265,11 @@ class WorldApplier:
 
         if operation.target_id is not None:
 
-            try:
-                target_id = int(operation.target_id)
-            except (TypeError, ValueError):
+            target_id = self._coerce_entity_id(
+                operation.target_id
+            )
+
+            if target_id is None:
                 return
 
             if target_id not in world.entities:
@@ -316,7 +282,6 @@ class WorldApplier:
 
         if operation.active is not None:
             relation.active = operation.active
-
 
     def _apply_remove_relation(
         self,
@@ -333,29 +298,29 @@ class WorldApplier:
 
         relation.active = False
 
+    # ============================================================
+    # EVENTS
+    # ============================================================
+
     def _apply_create_event(
         self,
         world: WorldState,
         operation: CreateEventOperation,
     ) -> None:
 
-        # ID obligatorio
         if not operation.event_id:
             return
 
-        # Tipo obligatorio
         if not operation.event_type:
             return
 
-        # Título obligatorio
         if not operation.title:
             return
 
-        # No sobrescribir
         if operation.event_id in world.events:
             return
 
-        event = Event(
+        world.events[operation.event_id] = Event(
             id=operation.event_id,
             event_type=operation.event_type,
             title=operation.title,
@@ -366,4 +331,65 @@ class WorldApplier:
             metadata=operation.metadata or {},
         )
 
-        world.events[operation.event_id] = event
+    # ============================================================
+    # HELPERS
+    # ============================================================
+
+    @staticmethod
+    def _valid_amount(amount: float) -> bool:
+
+        if isinstance(amount, bool):
+            return False
+
+        if not isinstance(amount, (int, float)):
+            return False
+
+        if not math.isfinite(amount):
+            return False
+
+        return amount > 0
+
+    @staticmethod
+    def _coerce_entity_id(value) -> int | None:
+
+        if value is None:
+            return None
+
+        if isinstance(value, bool):
+            return None
+
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _find_balance(
+        world: WorldState,
+        resource_id: int,
+        owner_id: int,
+    ) -> ResourceBalance | None:
+
+        for balance in world.resource_balances.values():
+
+            if (
+                balance.resource_id == resource_id
+                and balance.owner_id == owner_id
+            ):
+                return balance
+
+        return None
+
+    @staticmethod
+    def _next_balance_id(
+        world: WorldState,
+    ) -> int:
+
+        numeric_ids = [
+            balance_id
+            for balance_id in world.resource_balances
+            if isinstance(balance_id, int)
+            and not isinstance(balance_id, bool)
+        ]
+
+        return max(numeric_ids, default=0) + 1
