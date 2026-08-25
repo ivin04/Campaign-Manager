@@ -1,118 +1,262 @@
-from repositories import item_repository
+from repositories.item_repository import ItemRepository
 
 from services.identity_service import names_match
 
-
-# ---------------------------------------------------------
-# Reglas de identidad de Items
-# ---------------------------------------------------------
 
 ITEM_SYNONYM_GROUPS = [
     ["anillo", "aro", "sortija"],
 ]
 
 
-def get_all_items():
-    return item_repository.get_all()
+class ItemService:
 
+    def __init__(
+        self,
+        repository: ItemRepository | None = None,
+    ):
+        self.repository = repository or ItemRepository()
 
-def search_items(query: str):
-    return item_repository.search(query)
+    # =========================================================
+    # READ
+    # =========================================================
 
+    def get_all(self):
+        return self.repository.get_all()
 
-def get_item(item_id: int):
-    return item_repository.get_by_id(item_id)
+    def get_by_id(
+        self,
+        item_id: int,
+    ):
+        return self.repository.get_by_id(item_id)
 
+    def get_by_name(
+        self,
+        name: str,
+    ):
+        return self.repository.get_by_name(name)
 
-def get_item_by_name(name: str):
-    return item_repository.get_by_name(name)
+    def search(
+        self,
+        query: str,
+    ):
+        return self.repository.search(query)
 
+    # =========================================================
+    # IDENTITY
+    # =========================================================
 
-def create_item(data: dict):
-    return item_repository.create(data)
+    def find_matching_item(
+        self,
+        name: str,
+    ):
+        if not name:
+            return None
 
+        existing_items = self.repository.get_all()
 
-def update_item(item_id: int, data: dict):
-    return item_repository.update(
-        item_id,
-        data
-    )
+        for existing in existing_items:
 
+            existing_name = existing.get("name")
 
-def find_matching_item(name: str):
-    """
-    Busca un Item existente que probablemente represente
-    la misma entidad.
+            if not existing_name:
+                continue
 
-    La comparación se realiza contra la identidad canónica
-    almacenada en la base de datos.
-    """
+            if names_match(
+                name,
+                existing_name,
+                ITEM_SYNONYM_GROUPS,
+            ):
+                return existing
 
-    if not name:
         return None
 
-    existing_items = item_repository.get_all()
+    # =========================================================
+    # CREATE
+    # =========================================================
 
-    for existing in existing_items:
+    def create(
+        self,
+        data: dict,
+    ):
 
-        existing_name = existing.get("name")
+        name = str(
+            data.get("name") or ""
+        ).strip()
 
-        if not existing_name:
-            continue
+        if not name:
+            raise ValueError(
+                "Item name is required"
+            )
 
-        if names_match(
-            name,
-            existing_name,
-            ITEM_SYNONYM_GROUPS,
-        ):
-            return existing
+        existing = self.find_matching_item(name)
 
-    return None
-
-def save_extracted_item(data: dict):
-    """
-    Guarda o actualiza un Item extraído.
-
-    Nunca crea un nuevo Item si el nombre corresponde
-    a una entidad existente.
-    """
-
-    name = str(data.get("name") or "").strip()
-
-    if not name:
-        raise ValueError("Item name is required")
-
-    existing = find_matching_item(name)
-
-    if existing:
+        if existing:
+            raise ValueError(
+                f"Item already exists: {existing['name']}"
+            )
 
         payload = {
-            "name": existing["name"],
-            "description": data.get("description") or existing["description"] or "",
-            "owner": data.get("owner") or existing["owner"] or "",
-            "location": data.get("location") or existing["location"] or "",
-            "significance": data.get("significance") or existing["significance"] or "",
-            "notes": data.get("notes") or existing["notes"] or "",
+            "name": name,
+            "description": data.get(
+                "description",
+                "",
+            ),
+            "significance": data.get(
+                "significance",
+                "",
+            ),
+            "unique": data.get(
+                "unique",
+                False,
+            ),
+            "notes": data.get(
+                "notes",
+                "",
+            ),
         }
 
-        item_repository.update(
-            existing["id"],
+        item_id = self.repository.create(
             payload
         )
 
-        return item_repository.get_by_id(
-            existing["id"]
+        return self.repository.get_by_id(
+            item_id
         )
 
-    payload = {
-        "name": name,
-        "description": data.get("description") or "",
-        "owner": data.get("owner") or "",
-        "location": data.get("location") or "",
-        "significance": data.get("significance") or "",
-        "notes": data.get("notes") or "",
-    }
+    # =========================================================
+    # UPDATE
+    # =========================================================
 
-    item_id = item_repository.create(payload)
+    def update(
+        self,
+        item_id: int,
+        data: dict,
+    ) -> None:
 
-    return item_repository.get_by_id(item_id)
+        existing = self.repository.get_by_id(
+            item_id
+        )
+
+        if not existing:
+            raise ValueError(
+                f"Item not found: {item_id}"
+            )
+
+        name = str(
+            data.get(
+                "name",
+                existing["name"],
+            )
+            or ""
+        ).strip()
+
+        if not name:
+            raise ValueError(
+                "Item name is required"
+            )
+
+        matching = self.find_matching_item(
+            name
+        )
+
+        if matching and matching["id"] != item_id:
+            raise ValueError(
+                f"Item already exists: {matching['name']}"
+            )
+
+        payload = {
+            "name": name,
+            "description": data.get(
+                "description",
+                existing.get("description", ""),
+            ),
+            "significance": data.get(
+                "significance",
+                existing.get("significance", ""),
+            ),
+            "unique": data.get(
+                "unique",
+                bool(existing.get("unique_item", 0)),
+            ),
+            "notes": data.get(
+                "notes",
+                existing.get("notes", ""),
+            ),
+        }
+
+        self.repository.update(
+            item_id,
+            payload,
+        )
+
+    # =========================================================
+    # INSTANCES
+    # =========================================================
+
+    def get_instances(
+        self,
+        item_id: int,
+    ):
+        return self.repository.get_instances(
+            item_id
+        )
+
+    def get_instance(
+        self,
+        instance_id: int,
+    ):
+        return self.repository.get_instance_by_id(
+            instance_id
+        )
+
+    def get_instances_by_owner(
+        self,
+        item_id: int,
+        owner_id: int,
+    ):
+        return self.repository.get_instances_by_owner(
+            item_id,
+            owner_id,
+        )
+
+    def create_instance(
+        self,
+        data: dict,
+    ):
+
+        item = self.repository.get_by_id(
+            data["item_id"]
+        )
+
+        if not item:
+            raise ValueError(
+                f"Item not found: {data['item_id']}"
+            )
+
+        instance_id = self.repository.create_instance(
+            data
+        )
+
+        return self.repository.get_instance_by_id(
+            instance_id
+        )
+
+    def update_instance(
+        self,
+        instance_id: int,
+        data: dict,
+    ) -> None:
+
+        existing = self.repository.get_instance_by_id(
+            instance_id
+        )
+
+        if not existing:
+            raise ValueError(
+                f"Item instance not found: {instance_id}"
+            )
+
+        self.repository.update_instance(
+            instance_id,
+            data,
+        )

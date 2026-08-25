@@ -260,12 +260,6 @@ class WorldApplier:
         if not operation.relation_type:
             return
 
-        try:
-            subject_id = int(operation.subject_id)
-            target_id = int(operation.target_id)
-        except (TypeError, ValueError):
-            return
-
         if subject_id not in world.entities:
             return
 
