@@ -36,3 +36,36 @@ class TransferItemOperation:
 
     instance_id: int
     new_owner_id: int
+
+@dataclass
+class GainResourceOperation:
+    """
+    Añade una cantidad de un recurso al balance
+    de una entidad.
+    """
+
+    resource_id: int
+    owner_id: int
+    amount: float
+
+@dataclass
+class SpendResourceOperation:
+    """
+    Reduce una cantidad de un recurso que posee una entidad.
+    """
+
+    resource_id: int
+    owner_id: int
+    amount: float
+
+@dataclass
+class TransferResourceOperation:
+    """
+    Transfiere una cantidad de un recurso
+    desde una entidad a otra.
+    """
+
+    resource_id: int
+    source_id: int
+    target_id: int
+    amount: float

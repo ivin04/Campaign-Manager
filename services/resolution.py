@@ -1,8 +1,12 @@
 from models.extraction import ExtractedFact
 from models.entity import Entity
 from models.item import Item, ItemInstance
+from models.resource import Resource, ResourceBalance
 
-from operations.world_operations import TransferItemOperation
+from operations.world_operations import (
+    TransferItemOperation,
+    GainResourceOperation,
+)
 
 from services.entity_resolution import EntityResolver
 from services.item_resolution import ItemResolver
@@ -15,6 +19,8 @@ class WorldResolver:
         entities: dict[int, Entity],
         items: dict[int, Item],
         item_instances: dict[int, ItemInstance],
+        resources: dict[int, Resource],
+        resource_balances: dict[int, ResourceBalance],
     ):
         self.entity_resolver = EntityResolver(entities)
 
@@ -22,6 +28,9 @@ class WorldResolver:
             items,
             item_instances,
         )
+
+        self.resources = resources
+        self.resource_balances = resource_balances
 
     def resolve(
         self,
@@ -35,6 +44,15 @@ class WorldResolver:
             if fact.fact_type == "ITEM_TRANSFERRED":
 
                 operation = self._resolve_item_transfer(
+                    fact
+                )
+
+                if operation:
+                    operations.append(operation)
+
+            if fact.fact_type == "RESOURCE_GAINED":
+
+                operation = self._resolve_resource_gained(
                     fact
                 )
 
@@ -98,4 +116,54 @@ class WorldResolver:
         return TransferItemOperation(
             instance_id=instance.id,
             new_owner_id=target.id,
+        )
+
+    def _resolve_resource_gained(
+        self,
+        fact: ExtractedFact,
+    ) -> GainResourceOperation | None:
+
+        resource_name = fact.data.get("resource", "")
+        owner_name = fact.data.get("owner", "")
+        amount = fact.data.get("amount")
+
+        if not resource_name:
+            return None
+
+        if not owner_name:
+            return None
+
+        if amount is None:
+            return None
+
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            return None
+
+        if amount <= 0:
+            return None
+
+        resource = next(
+            (
+                resource
+                for resource in self.resources.values()
+                if resource.name.casefold()
+                == resource_name.casefold()
+            ),
+            None,
+        )
+
+        if not resource:
+            return None
+
+        owner = self.entity_resolver.find(owner_name)
+
+        if not owner:
+            return None
+
+        return GainResourceOperation(
+            resource_id=resource.id,
+            owner_id=owner.id,
+            amount=amount,
         )
