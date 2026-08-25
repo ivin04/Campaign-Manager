@@ -6,9 +6,9 @@ from typing import Any
 class Relation:
     id: str
 
-    subject_id: str
+    subject_id: int
     relation_type: str
-    target_id: str
+    target_id: int
 
     metadata: dict[str, Any] | None = None
 

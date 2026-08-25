@@ -10,6 +10,12 @@ from operations.world_operations import (
     TransferResourceOperation,
 )
 
+from operations.relation import (
+    CreateRelationOperation,
+    UpdateRelationOperation,
+    RemoveRelationOperation,
+)
+
 from services.entity_resolution import EntityResolver
 from services.item_resolution import ItemResolver
 
@@ -73,6 +79,33 @@ class WorldResolver:
             if fact.fact_type == "RESOURCE_TRANSFERRED":
 
                 operation = self._resolve_resource_transferred(
+                    fact
+                )
+
+                if operation:
+                    operations.append(operation)
+
+            if fact.fact_type == "RELATION_CREATED":
+
+                operation = self._resolve_relation_created(
+                    fact
+                )
+
+                if operation:
+                    operations.append(operation)
+
+            if fact.fact_type == "RELATION_CHANGED":
+
+                operation = self._resolve_relation_changed(
+                    fact
+                )
+
+                if operation:
+                    operations.append(operation)
+
+            if fact.fact_type == "RELATION_REMOVED":
+
+                operation = self._resolve_relation_removed(
                     fact
                 )
 
@@ -334,4 +367,93 @@ class WorldResolver:
             source_id=source.id,
             target_id=target.id,
             amount=amount,
+        )
+
+    def _resolve_relation_created(
+        self,
+        fact: ExtractedFact,
+    ) -> CreateRelationOperation | None:
+
+        relation_id = fact.data.get("relation_id", "")
+        subject_name = fact.data.get("subject", "")
+        relation_type = fact.data.get("relation_type", "")
+        target_name = fact.data.get("target", "")
+        metadata = fact.data.get("metadata")
+
+        if not relation_id:
+            return None
+
+        if not subject_name:
+            return None
+
+        if not relation_type:
+            return None
+
+        if not target_name:
+            return None
+
+        subject = self.entity_resolver.find(
+            subject_name
+        )
+
+        if not subject:
+            return None
+
+        target = self.entity_resolver.find(
+            target_name
+        )
+
+        if not target:
+            return None
+
+        if metadata is not None and not isinstance(metadata, dict):
+            return None
+
+        return CreateRelationOperation(
+            relation_id=relation_id,
+            subject_id=subject.id,
+            relation_type=relation_type,
+            target_id=target.id,
+            metadata=metadata,
+        )
+
+    def _resolve_relation_changed(
+        self,
+        fact: ExtractedFact,
+    ) -> UpdateRelationOperation | None:
+
+        relation_id = fact.data.get("relation_id", "")
+        metadata = fact.data.get("metadata")
+        active = fact.data.get("active")
+
+        if not relation_id:
+            return None
+
+        if metadata is None and active is None:
+            return None
+
+        if metadata is not None and not isinstance(metadata, dict):
+            return None
+
+        if active is not None and not isinstance(active, bool):
+            return None
+
+        return UpdateRelationOperation(
+            relation_id=relation_id,
+            metadata=metadata,
+            active=active,
+        )
+
+    def _resolve_relation_removed(
+        self,
+        fact: ExtractedFact,
+    ) -> RemoveRelationOperation | None:
+
+        relation_id = fact.data.get("relation_id", "")
+
+        if not relation_id:
+            return None
+
+        return RemoveRelationOperation(
+            relation_id=relation_id,
         )

@@ -69,3 +69,53 @@ class TransferResourceOperation:
     source_id: int
     target_id: int
     amount: float
+
+@dataclass
+class CreateRelationOperation:
+    """
+    Crea una relación entre dos entidades.
+    """
+
+    relation_id: str
+    subject_id: str | int
+    relation_type: str
+    target_id: str | int
+
+    metadata: dict[str, Any] | None = None
+
+    active: bool = True
+
+
+@dataclass
+class UpdateRelationOperation:
+    relation_id: str
+
+    relation_type: str | None = None
+    target_id: int | None = None
+    metadata: dict[str, Any] | None = None
+    active: bool | None = None
+
+
+@dataclass
+class RemoveRelationOperation:
+    """
+    Desactiva una relación existente.
+    """
+
+    relation_id: str
+
+
+@dataclass
+class CreateEventOperation:
+    """
+    Crea un evento histórico en el mundo.
+    """
+
+    event_id: str
+    event_type: str
+    title: str
+    description: str = ""
+    consequences: str = ""
+    session_id: int | None = None
+    secret: bool = False
+    metadata: dict[str, Any] | None = None
