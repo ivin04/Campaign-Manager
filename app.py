@@ -1,0 +1,563 @@
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional
+
+from database import init_db, rows, one, execute
+
+from models.schemas import (
+    CampaignUpdate,
+    CampaignSessionUpdate,
+    CharacterIn,
+    LocationIn,
+    FactionIn,
+    QuestIn,
+    ItemIn,
+    EventIn,
+    SessionIn,
+)
+
+from repositories import item_repository
+from services import item_service
+
+import re
+
+app = FastAPI(title="D&D Campaign Manager", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+init_db()
+
+@app.get("/")
+def root():
+    return {"ok": True, "service": "D&D Campaign Manager", "version": "0.1.0"}
+
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+@app.get("/campaign")
+def get_campaign():
+    return one("SELECT * FROM campaign WHERE id=1")
+
+@app.patch("/campaign")
+def update_campaign(data: CampaignUpdate):
+    current = one("SELECT * FROM campaign WHERE id=1")
+    values = {
+        "name": data.name if data.name is not None else current["name"],
+        "system": data.system if data.system is not None else current["system"],
+        "tone": data.tone if data.tone is not None else current["tone"],
+        "summary": data.summary if data.summary is not None else current["summary"],
+    }
+    execute("""UPDATE campaign SET name=?, system=?, tone=?, summary=?,
+               updated_at=CURRENT_TIMESTAMP WHERE id=1""",
+            (values["name"], values["system"], values["tone"], values["summary"]))
+    return one("SELECT * FROM campaign WHERE id=1")
+
+
+@app.patch("/campaign/session")
+def update_campaign_session(data: CampaignSessionUpdate):
+
+    execute(
+        """
+        UPDATE campaign
+        SET current_session_id=?,
+            updated_at=CURRENT_TIMESTAMP
+        WHERE id=1
+        """,
+        (data.session_id,)
+    )
+
+    return one("SELECT * FROM campaign WHERE id=1")
+
+@app.post("/characters")
+def create_character(data: CharacterIn):
+    cid = execute("""INSERT INTO characters
+        (name, kind, description, personality, goals, knowledge, secrets, status, location, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        tuple(data.model_dump().values()))
+    return one("SELECT * FROM characters WHERE id=?", (cid,))
+
+@app.get("/characters")
+def get_characters(q: Optional[str] = None):
+    if q:
+        like = f"%{q}%"
+        return rows("""SELECT * FROM characters WHERE name LIKE ? OR description LIKE ?
+                       OR personality LIKE ? OR goals LIKE ? OR notes LIKE ?""",
+                    (like, like, like, like, like))
+    return rows("SELECT * FROM characters ORDER BY id")
+
+@app.post("/locations")
+def create_location(data: LocationIn):
+    try:
+        lid = execute("""INSERT INTO locations
+            (name, kind, description, inhabitants, secrets, notes)
+            VALUES (?, ?, ?, ?, ?, ?)""", tuple(data.model_dump().values()))
+    except Exception as e:
+        raise HTTPException(409, f"Location already exists or could not be saved: {e}")
+    return one("SELECT * FROM locations WHERE id=?", (lid,))
+
+@app.get("/locations")
+def get_locations(q: Optional[str] = None):
+    if q:
+        like = f"%{q}%"
+        return rows("""SELECT * FROM locations WHERE name LIKE ? OR description LIKE ?
+                       OR inhabitants LIKE ? OR notes LIKE ?""", (like, like, like, like))
+    return rows("SELECT * FROM locations ORDER BY id")
+
+@app.post("/factions")
+def create_faction(data: FactionIn):
+    try:
+        fid = execute("""INSERT INTO factions
+            (name, description, goals, resources, allies, enemies, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)""", tuple(data.model_dump().values()))
+    except Exception as e:
+        raise HTTPException(409, f"Faction already exists or could not be saved: {e}")
+    return one("SELECT * FROM factions WHERE id=?", (fid,))
+
+@app.get("/factions")
+def get_factions(q: Optional[str] = None):
+    if q:
+        like = f"%{q}%"
+        return rows("""SELECT * FROM factions WHERE name LIKE ? OR description LIKE ?
+                       OR goals LIKE ? OR notes LIKE ?""", (like, like, like, like))
+    return rows("SELECT * FROM factions ORDER BY id")
+
+@app.post("/quests")
+def create_quest(data: QuestIn):
+    qid = execute("""INSERT INTO quests
+        (name, status, description, clues, related_npcs, consequences, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)""", tuple(data.model_dump().values()))
+    return one("SELECT * FROM quests WHERE id=?", (qid,))
+
+@app.get("/quests")
+def get_quests(status: Optional[str] = None):
+    if status:
+        return rows("SELECT * FROM quests WHERE status=? ORDER BY id", (status,))
+    return rows("SELECT * FROM quests ORDER BY id")
+
+@app.post("/items/extracted")
+def save_extracted_item(data: ItemIn):
+    try:
+        from services.item_service import save_extracted_item
+
+        item = save_extracted_item(
+            data.model_dump()
+        )
+
+        return item
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+
+    except Exception as e:
+        print(
+            "[campaign-manager] ERROR saving extracted item:",
+            repr(e)
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Could not save extracted item"
+        )
+
+@app.get("/items/search")
+def search_item(name: str = Query(..., min_length=1)):
+    item = item_service.get_item_by_name(name)
+
+    if not item:
+        raise HTTPException(
+            status_code=404,
+            detail="Item not found"
+        )
+
+    return item
+
+@app.put("/items/{item_id}")
+def update_item(item_id: int, data: ItemIn):
+    item = item_service.get_item(item_id)
+
+    if not item:
+        raise HTTPException(
+            status_code=404,
+            detail="Item not found"
+        )
+
+    item_service.update_item(
+        item_id,
+        data.model_dump()
+    )
+
+    return item_service.get_item(item_id)
+
+@app.get("/items")
+def get_items(q: Optional[str] = None):
+    if q:
+        return item_service.search_items(q)
+
+    return item_service.get_all_items()
+
+@app.post("/events")
+def create_event(data: EventIn):
+    try:
+        d = data.model_dump()
+
+        # Evitar duplicados de eventos esencialmente iguales.
+        existing = one("""
+            SELECT *
+            FROM events
+            WHERE LOWER(TRIM(title)) = LOWER(TRIM(?))
+              AND LOWER(TRIM(description)) = LOWER(TRIM(?))
+            LIMIT 1
+        """, (
+            d["title"],
+            d["description"],
+        ))
+
+        if existing:
+            print(
+                "[campaign-manager] Event already exists, skipping:",
+                d["title"]
+            )
+
+            return existing
+
+        eid = execute("""
+            INSERT INTO events
+            (title, session, event_type, description, consequences, secret)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            d["title"],
+            d["session"],
+            d["event_type"],
+            d["description"],
+            d["consequences"],
+            int(bool(d["secret"]))
+        ))
+
+        event = one(
+            "SELECT * FROM events WHERE id=?",
+            (eid,)
+        )
+
+        print(
+            "[campaign-manager] Event saved:",
+            event
+        )
+
+        return event
+
+    except Exception as e:
+        print(
+            "[campaign-manager] ERROR creating event:",
+            repr(e)
+        )
+        raise
+
+@app.get("/events/search")
+def search_event(title: str = Query(..., min_length=1)):
+    event = one("""
+        SELECT *
+        FROM events
+        WHERE LOWER(title) = LOWER(?)
+        LIMIT 1
+    """, (title.strip(),))
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Event not found"
+        )
+
+    return event
+
+
+@app.put("/events/{event_id}")
+def update_event(event_id: int, data: EventIn):
+    event = one(
+        "SELECT * FROM events WHERE id=?",
+        (event_id,)
+    )
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Event not found"
+        )
+
+    d = data.model_dump()
+
+    execute("""
+        UPDATE events
+        SET title=?,
+            session=?,
+            event_type=?,
+            description=?,
+            consequences=?,
+            secret=?
+        WHERE id=?
+    """, (
+        d["title"],
+        d["session"],
+        d["event_type"],
+        d["description"],
+        d["consequences"],
+        int(bool(d["secret"])),
+        event_id
+    ))
+
+    return one(
+        "SELECT * FROM events WHERE id=?",
+        (event_id,)
+    )
+
+@app.get("/events")
+def get_events(session: Optional[int] = None, q: Optional[str] = None):
+    if session is not None:
+        return rows("SELECT * FROM events WHERE session=? ORDER BY id", (session,))
+    if q:
+        like = f"%{q}%"
+        return rows("""SELECT * FROM events WHERE title LIKE ? OR description LIKE ?
+                       OR consequences LIKE ? ORDER BY id""", (like, like, like))
+    return rows("SELECT * FROM events ORDER BY id")
+
+@app.post("/sessions")
+def create_session(data: SessionIn):
+    sid = execute("""INSERT INTO sessions
+        (number, title, summary, start_location, end_location, notes)
+        VALUES (?, ?, ?, ?, ?, ?)""", tuple(data.model_dump().values()))
+    return one("SELECT * FROM sessions WHERE id=?", (sid,))
+
+@app.get("/sessions")
+def get_sessions():
+    return rows("SELECT * FROM sessions ORDER BY number")
+
+@app.get("/memory/search")
+def search_memory(q: str = Query(..., min_length=1)):
+
+    # Convertir la consulta en palabras
+    words = re.findall(
+        r"[A-Za-zÁÉÍÓÚáéíóúÑñÜü0-9]+",
+        q
+    )
+
+    # Palabras que no aportan mucho a la búsqueda
+    stopwords = {
+        "el", "la", "los", "las",
+        "un", "una", "unos", "unas",
+        "de", "del", "en", "por", "para",
+        "con", "sin", "que", "qué",
+        "y", "o", "a",
+        "es", "me", "se",
+        "su", "sus",
+        "como", "cómo",
+        "donde", "dónde",
+        "quien", "quién",
+        "sobre",
+        "hay"
+    }
+
+    words = [
+        word.lower()
+        for word in words
+        if len(word) >= 3
+        and word.lower() not in stopwords
+    ]
+
+    # Quitar duplicados
+    words = list(dict.fromkeys(words))
+
+    empty_result = {
+        "characters": [],
+        "locations": [],
+        "factions": [],
+        "quests": [],
+        "items": [],
+        "events": [],
+    }
+
+    if not words:
+        return empty_result
+
+    def search_table(table, columns):
+
+        conditions = []
+        params = []
+
+        for word in words:
+
+            like = f"%{word}%"
+
+            word_conditions = []
+
+            for column in columns:
+                word_conditions.append(
+                    f"{column} LIKE ?"
+                )
+                params.append(like)
+
+            conditions.append(
+                "(" + " OR ".join(word_conditions) + ")"
+            )
+
+        sql = f"""
+            SELECT *
+            FROM {table}
+            WHERE {" OR ".join(conditions)}
+            LIMIT 20
+        """
+
+        return rows(sql, tuple(params))
+
+    result = {
+        "characters": search_table(
+            "characters",
+            [
+                "name",
+                "description",
+                "personality",
+                "goals",
+                "knowledge",
+                "notes"
+            ]
+        ),
+
+        "locations": search_table(
+            "locations",
+            [
+                "name",
+                "description",
+                "inhabitants",
+                "notes"
+            ]
+        ),
+
+        "factions": search_table(
+            "factions",
+            [
+                "name",
+                "description",
+                "goals",
+                "allies",
+                "enemies",
+                "notes"
+            ]
+        ),
+
+        "quests": search_table(
+            "quests",
+            [
+                "name",
+                "description",
+                "clues",
+                "related_npcs",
+                "consequences"
+            ]
+        ),
+
+        "items": search_table(
+            "items",
+            [
+                "name",
+                "description",
+                "owner",
+                "location",
+                "significance"
+            ]
+        ),
+
+        "events": search_table(
+            "events",
+            [
+                "title",
+                "description",
+                "consequences"
+            ]
+        ),
+    }
+
+    # ============================================================
+    # SEGURIDAD DE MEMORIA
+    # ============================================================
+
+    # Los secretos de personajes NO salen hacia SillyTavern.
+    for character in result["characters"]:
+        character.pop("secrets", None)
+
+    # Los eventos marcados como secretos NO salen hacia SillyTavern.
+    result["events"] = [
+        event
+        for event in result["events"]
+        if not bool(event.get("secret", 0))
+    ]
+
+    return result
+
+@app.get("/memory/context")
+def memory_context(q: str = Query(..., min_length=1)):
+
+    data = search_memory(q)
+
+    lines = [
+        "MEMORIA DE CAMPAÑA RELEVANTE:",
+        "La información siguiente procede de la memoria persistente de la campaña."
+    ]
+
+    for category, entries in data.items():
+
+        if not entries:
+            continue
+
+        lines.append(f"\n[{category.upper()}]")
+
+        seen = set()
+
+        for e in entries:
+
+            clean = {
+                k: v
+                for k, v in e.items()
+                if k not in (
+                    "id",
+                    "created_at",
+                    "updated_at",
+                    "secret"
+                )
+            }
+
+            key = str(clean)
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+            lines.append(key)
+
+    return {
+        "query": q,
+        "context": "\n".join(lines)
+    }
+
+@app.get("/export")
+def export_memory():
+    return {
+        "campaign": get_campaign(),
+        "characters": get_characters(),
+        "locations": get_locations(),
+        "factions": get_factions(),
+        "quests": get_quests(),
+        "items": get_items(),
+        "events": get_events(),
+        "sessions": get_sessions(),
+    }
