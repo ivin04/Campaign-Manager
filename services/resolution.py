@@ -2,6 +2,7 @@ from models.extraction import ExtractedFact
 from models.entity import Entity
 from models.item import Item, ItemInstance
 from models.resource import Resource, ResourceBalance
+from models.relation import Relation
 
 from operations.world_operations import (
     TransferItemOperation,
@@ -39,6 +40,7 @@ class WorldResolver:
         item_instances: dict[int, ItemInstance],
         resources: dict[int, Resource],
         resource_balances: dict[int, ResourceBalance],
+        relations: dict[str, Relation],
     ):
         self.entity_resolver = EntityResolver(entities)
 
@@ -49,6 +51,7 @@ class WorldResolver:
 
         self.resources = resources
         self.resource_balances = resource_balances
+        self.relations = relations
 
     def resolve(
         self,
@@ -349,7 +352,7 @@ class WorldResolver:
 
         if not relation_type.strip():
             return None
-            
+
         if not isinstance(target_name, str):
             return None
 
@@ -398,7 +401,7 @@ class WorldResolver:
         if not relation_id.strip():
             return None
 
-        # Tiene que haber al menos un cambio
+        # Tiene que existir al menos un cambio
         if (
             relation_type is None
             and target_id is None
@@ -407,7 +410,7 @@ class WorldResolver:
         ):
             return None
 
-        # Validar relation_type si viene
+        # relation_type
         if relation_type is not None:
             if not isinstance(relation_type, str):
                 return None
@@ -415,7 +418,7 @@ class WorldResolver:
             if not relation_type.strip():
                 return None
 
-        # Validar target_id si viene
+        # target_id
         if target_id is not None:
 
             if isinstance(target_id, bool):
@@ -426,14 +429,11 @@ class WorldResolver:
             except (TypeError, ValueError):
                 return None
 
-            if target_id not in self.entity_resolver.entities:
-                return None
-
-        # Validar metadata
+        # metadata
         if metadata is not None and not isinstance(metadata, dict):
             return None
 
-        # Validar active
+        # active
         if active is not None and not isinstance(active, bool):
             return None
 

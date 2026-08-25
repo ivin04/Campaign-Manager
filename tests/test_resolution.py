@@ -32,6 +32,7 @@ def build_resolver():
         item_instances={},
         resources=resources,
         resource_balances={},
+        relations={},
     )
 
 

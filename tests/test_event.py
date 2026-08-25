@@ -208,3 +208,46 @@ def test_apply_create_event_with_metadata():
         "Fungoso",
         "Neria",
     ]
+
+def test_apply_create_event_accepts_empty_metadata():
+    world = build_world()
+
+    operation = CreateEventOperation(
+        event_id="event-1",
+        event_type="COMBAT",
+        title="Batalla",
+        metadata={},
+    )
+
+    applier = WorldApplier()
+
+    applier.apply(world, operation)
+
+    assert "event-1" in world.events
+    assert world.events["event-1"].metadata == {}
+
+def test_apply_create_event_does_not_overwrite_existing_event():
+    world = build_world()
+
+    world.events["event-1"] = Event(
+        id="event-1",
+        event_type="COMBAT",
+        title="Evento original",
+        description="Original",
+    )
+
+    operation = CreateEventOperation(
+        event_id="event-1",
+        event_type="COMBAT",
+        title="Evento nuevo",
+        description="Nuevo",
+    )
+
+    applier = WorldApplier()
+
+    applier.apply(world, operation)
+
+    event = world.events["event-1"]
+
+    assert event.title == "Evento original"
+    assert event.description == "Original"

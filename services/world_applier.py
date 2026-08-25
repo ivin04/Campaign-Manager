@@ -14,6 +14,7 @@ from operations.world_operations import (
     CreateEventOperation,
 )
 
+import math
 
 class WorldApplier:
 
@@ -112,6 +113,9 @@ class WorldApplier:
         if operation.owner_id not in world.entities:
             return
 
+        if not math.isfinite(operation.amount):
+            return
+
         if operation.amount <= 0:
             return
 
@@ -152,6 +156,9 @@ class WorldApplier:
         if operation.owner_id not in world.entities:
             return
 
+        if not math.isfinite(operation.amount):
+            return
+
         if operation.amount <= 0:
             return
 
@@ -186,6 +193,9 @@ class WorldApplier:
             return
 
         if operation.target_id not in world.entities:
+            return
+
+        if not math.isfinite(operation.amount):
             return
 
         if operation.amount <= 0:

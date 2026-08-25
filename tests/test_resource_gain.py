@@ -62,6 +62,7 @@ def test_resolve_resource_gained():
         item_instances=world.item_instances,
         resources=world.resources,
         resource_balances=world.resource_balances,
+        relations=world.relations,
     )
 
     operations = resolver.resolve([fact])
@@ -160,3 +161,77 @@ def test_gain_resource_creates_missing_balance():
 
     assert len(balances) == 1
     assert balances[0].amount == 100
+
+def test_apply_gain_resource_rejects_nan():
+    world = build_world()
+
+    world.resource_balances[1] = ResourceBalance(
+        id=1,
+        resource_id=1,
+        owner_id=1,
+        amount=100,
+    )
+
+    operation = GainResourceOperation(
+        resource_id=1,
+        owner_id=1,
+        amount=float("nan"),
+    )
+
+    applier = WorldApplier()
+
+    applier.apply(world, operation)
+
+    assert world.resource_balances[1].amount == 100
+
+def test_apply_gain_resource_rejects_infinity():
+    world = build_world()
+
+    world.resource_balances[1] = ResourceBalance(
+        id=1,
+        resource_id=1,
+        owner_id=1,
+        amount=100,
+    )
+
+    operation = GainResourceOperation(
+        resource_id=1,
+        owner_id=1,
+        amount=float("inf"),
+    )
+
+    applier = WorldApplier()
+
+    applier.apply(world, operation)
+
+    assert world.resource_balances[1].amount == 100
+
+def test_apply_gain_resource_rejects_duplicate_balances():
+    world = build_world()
+
+    world.resource_balances[1] = ResourceBalance(
+        id=1,
+        resource_id=1,
+        owner_id=1,
+        amount=100,
+    )
+
+    world.resource_balances[2] = ResourceBalance(
+        id=2,
+        resource_id=1,
+        owner_id=1,
+        amount=50,
+    )
+
+    operation = GainResourceOperation(
+        resource_id=1,
+        owner_id=1,
+        amount=25,
+    )
+
+    applier = WorldApplier()
+
+    applier.apply(world, operation)
+
+    assert world.resource_balances[1].amount == 100
+    assert world.resource_balances[2].amount == 50

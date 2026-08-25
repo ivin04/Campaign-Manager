@@ -30,6 +30,25 @@ def build_world():
         relations={},
     )
 
+def build_resolver():
+    world = build_world()
+
+    world.relations["rel-1"] = Relation(
+        id="rel-1",
+        subject_id=1,
+        relation_type="ALLIED_WITH",
+        target_id=2,
+    )
+
+    return WorldResolver(
+        entities=world.entities,
+        items=world.items,
+        item_instances=world.item_instances,
+        resources=world.resources,
+        resource_balances=world.resource_balances,
+        relations=world.relations,
+    )
+
 
 def test_resolve_relation_created():
     world = build_world()
@@ -50,6 +69,7 @@ def test_resolve_relation_created():
         item_instances=world.item_instances,
         resources=world.resources,
         resource_balances=world.resource_balances,
+        relations=world.relations,
     )
 
     operations = resolver.resolve([fact])
@@ -84,6 +104,7 @@ def test_resolve_relation_rejects_unknown_subject():
         item_instances=world.item_instances,
         resources=world.resources,
         resource_balances=world.resource_balances,
+        relations=world.relations,
     )
 
     operations = resolver.resolve([fact])
@@ -110,6 +131,7 @@ def test_resolve_relation_rejects_unknown_target():
         item_instances=world.item_instances,
         resources=world.resources,
         resource_balances=world.resource_balances,
+        relations=world.relations,
     )
 
     operations = resolver.resolve([fact])
@@ -135,6 +157,7 @@ def test_resolve_relation_rejects_missing_relation_id():
         item_instances=world.item_instances,
         resources=world.resources,
         resource_balances=world.resource_balances,
+        relations=world.relations,
     )
 
     operations = resolver.resolve([fact])
@@ -430,6 +453,7 @@ def build_resolver():
         item_instances=world.item_instances,
         resources=world.resources,
         resource_balances=world.resource_balances,
+        relations=world.relations,
     )
 
 def test_resolve_relation_created_rejects_invalid_relation_id_type():
@@ -749,3 +773,154 @@ def test_resolve_relation_removed_rejects_blank_relation_id():
     )
 
     assert resolver.resolve([fact]) == []
+
+def test_resolve_relation_changed_rejects_no_changes():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CHANGED",
+        data={
+            "relation_id": "rel-1",
+        },
+    )
+
+    operations = resolver.resolve([fact])
+
+    assert operations == []
+
+def test_resolve_relation_changed_accepts_metadata_dict():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CHANGED",
+        data={
+            "relation_id": "rel-1",
+            "relation_type": "enemy",
+            "metadata": {
+                "reason": "betrayal",
+            },
+        },
+    )
+
+    operations = resolver.resolve([fact])
+
+    assert len(operations) == 1
+
+    operation = operations[0]
+
+    assert isinstance(operation, UpdateRelationOperation)
+    assert operation.relation_id == "rel-1"
+    assert operation.relation_type == "enemy"
+    assert operation.metadata == {
+        "reason": "betrayal",
+    }
+
+def test_resolve_relation_changed_accepts_active_bool():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CHANGED",
+        data={
+            "relation_id": "rel-1",
+            "active": False,
+        },
+    )
+
+    operations = resolver.resolve([fact])
+
+    assert len(operations) == 1
+
+    operation = operations[0]
+
+    assert isinstance(operation, UpdateRelationOperation)
+    assert operation.relation_id == "rel-1"
+    assert operation.active is False
+
+def test_resolve_relation_changed_rejects_invalid_active_type():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CHANGED",
+        data={
+            "relation_id": "rel-1",
+            "active": 1,
+        },
+    )
+
+    operations = resolver.resolve([fact])
+
+    assert operations == []
+
+def test_resolve_relation_changed_accepts_empty_metadata():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CHANGED",
+        data={
+            "relation_id": "rel-1",
+            "metadata": {},
+        },
+    )
+
+    operations = resolver.resolve([fact])
+
+    assert len(operations) == 1
+
+    operation = operations[0]
+
+    assert isinstance(operation, UpdateRelationOperation)
+    assert operation.relation_id == "rel-1"
+    assert operation.metadata == {}
+
+def test_resolve_relation_changed_rejects_explicit_none_metadata_only():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CHANGED",
+        data={
+            "relation_id": "rel-1",
+            "metadata": None,
+        },
+    )
+
+    operations = resolver.resolve([fact])
+
+    assert operations == []
+
+def test_resolve_relation_removed_accepts_valid_relation_id():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_REMOVED",
+        data={
+            "relation_id": "rel-1",
+        },
+    )
+
+    operations = resolver.resolve([fact])
+
+    assert len(operations) == 1
+
+    operation = operations[0]
+
+    assert isinstance(operation, RemoveRelationOperation)
+    assert operation.relation_id == "rel-1"
+
+def test_resolve_relation_removed_preserves_relation_id():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_REMOVED",
+        data={
+            "relation_id": " relation-1 ",
+        },
+    )
+
+    operations = resolver.resolve([fact])
+
+    assert len(operations) == 1
+
+    operation = operations[0]
+
+    assert isinstance(operation, RemoveRelationOperation)
+    assert operation.relation_id == " relation-1 "

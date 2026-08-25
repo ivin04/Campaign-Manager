@@ -87,6 +87,7 @@ def test_transfer_item_from_owner_to_target():
         item_instances=world.item_instances,
         resources=world.resources,
         resource_balances=world.resource_balances,
+        relations=world.relations,
     )
 
     operations = resolver.resolve([fact])
@@ -128,6 +129,7 @@ def test_transfer_selects_instance_owned_by_source():
         item_instances=world.item_instances,
         resources=world.resources,
         resource_balances=world.resource_balances,
+        relations=world.relations,
     )
 
     operations = resolver.resolve([fact])
@@ -158,6 +160,7 @@ def test_ambiguous_item_is_not_transferred():
         item_instances=world.item_instances,
         resources=world.resources,
         resource_balances=world.resource_balances,
+        relations=world.relations,
     )
 
     operations = resolver.resolve([fact])
@@ -188,6 +191,7 @@ def test_unknown_target_does_not_transfer_item():
         item_instances=world.item_instances,
         resources=world.resources,
         resource_balances=world.resource_balances,
+        relations=world.relations,
     )
 
     operations = resolver.resolve([fact])
