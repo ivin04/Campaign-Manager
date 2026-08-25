@@ -5,6 +5,7 @@ from typing import Optional
 from models.world_operations_in import WorldOperationsIn
 from services.operation_parser import OperationParser, OperationParseError
 from services.world_service import WorldService
+from services.memory_search_service import MemorySearchService
 
 from database import init_db, rows, one, execute
 
@@ -38,6 +39,8 @@ init_db()
 
 world_service = WorldService()
 world_service.load()
+
+memory_search_service = MemorySearchService()
 
 operation_parser = OperationParser()
 
@@ -284,209 +287,33 @@ def get_sessions():
 
 @app.get("/memory/search")
 def search_memory(q: str = Query(..., min_length=1)):
+    """
+    Busca información relevante dentro del WorldState actual.
 
-    # Convertir la consulta en palabras
-    words = re.findall(
-        r"[A-Za-zÁÉÍÓÚáéíóúÑñÜü0-9]+",
-        q
+    La fuente de verdad es WorldService -> WorldState.
+    """
+
+    world = world_service.get_world()
+
+    return memory_search_service.search(
+        world,
+        q,
     )
-
-    # Palabras que no aportan mucho a la búsqueda
-    stopwords = {
-        "el", "la", "los", "las",
-        "un", "una", "unos", "unas",
-        "de", "del", "en", "por", "para",
-        "con", "sin", "que", "qué",
-        "y", "o", "a",
-        "es", "me", "se",
-        "su", "sus",
-        "como", "cómo",
-        "donde", "dónde",
-        "quien", "quién",
-        "sobre",
-        "hay"
-    }
-
-    words = [
-        word.lower()
-        for word in words
-        if len(word) >= 3
-        and word.lower() not in stopwords
-    ]
-
-    # Quitar duplicados
-    words = list(dict.fromkeys(words))
-
-    empty_result = {
-        "characters": [],
-        "locations": [],
-        "factions": [],
-        "quests": [],
-        "items": [],
-        "events": [],
-    }
-
-    if not words:
-        return empty_result
-
-    def search_table(table, columns):
-
-        conditions = []
-        params = []
-
-        for word in words:
-
-            like = f"%{word}%"
-
-            word_conditions = []
-
-            for column in columns:
-                word_conditions.append(
-                    f"{column} LIKE ?"
-                )
-                params.append(like)
-
-            conditions.append(
-                "(" + " OR ".join(word_conditions) + ")"
-            )
-
-        sql = f"""
-            SELECT *
-            FROM {table}
-            WHERE {" OR ".join(conditions)}
-            LIMIT 20
-        """
-
-        return rows(sql, tuple(params))
-
-    result = {
-        "characters": search_table(
-            "characters",
-            [
-                "name",
-                "description",
-                "personality",
-                "goals",
-                "knowledge",
-                "notes"
-            ]
-        ),
-
-        "locations": search_table(
-            "locations",
-            [
-                "name",
-                "description",
-                "inhabitants",
-                "notes"
-            ]
-        ),
-
-        "factions": search_table(
-            "factions",
-            [
-                "name",
-                "description",
-                "goals",
-                "allies",
-                "enemies",
-                "notes"
-            ]
-        ),
-
-        "quests": search_table(
-            "quests",
-            [
-                "name",
-                "description",
-                "clues",
-                "related_npcs",
-                "consequences"
-            ]
-        ),
-
-        "items": search_table(
-            "items",
-            [
-                "name",
-                "description",
-                "owner",
-                "location",
-                "significance"
-            ]
-        ),
-
-        "events": search_table(
-            "events",
-            [
-                "title",
-                "description",
-                "consequences"
-            ]
-        ),
-    }
-
-    # ============================================================
-    # SEGURIDAD DE MEMORIA
-    # ============================================================
-
-    # Los secretos de personajes NO salen hacia SillyTavern.
-    for character in result["characters"]:
-        character.pop("secrets", None)
-
-    # Los eventos marcados como secretos NO salen hacia SillyTavern.
-    result["events"] = [
-        event
-        for event in result["events"]
-        if not bool(event.get("secret", 0))
-    ]
-
-    return result
 
 @app.get("/memory/context")
 def memory_context(q: str = Query(..., min_length=1)):
+    """
+    Devuelve contexto de memoria para SillyTavern.
 
-    data = search_memory(q)
+    La búsqueda se realiza exclusivamente sobre el WorldState.
+    """
 
-    lines = [
-        "MEMORIA DE CAMPAÑA RELEVANTE:",
-        "La información siguiente procede de la memoria persistente de la campaña."
-    ]
+    world = world_service.get_world()
 
-    for category, entries in data.items():
-
-        if not entries:
-            continue
-
-        lines.append(f"\n[{category.upper()}]")
-
-        seen = set()
-
-        for e in entries:
-
-            clean = {
-                k: v
-                for k, v in e.items()
-                if k not in (
-                    "id",
-                    "created_at",
-                    "updated_at",
-                    "secret"
-                )
-            }
-
-            key = str(clean)
-
-            if key in seen:
-                continue
-
-            seen.add(key)
-            lines.append(key)
-
-    return {
-        "query": q,
-        "context": "\n".join(lines)
-    }
+    return memory_search_service.context(
+        world,
+        q,
+    )
 
 @app.get("/export")
 def export_memory():

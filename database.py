@@ -348,64 +348,6 @@ def init_db():
         -- NO las utilizaremos para el nuevo WorldState.
         -- ============================================================
 
-        CREATE TABLE IF NOT EXISTS characters (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            kind TEXT NOT NULL DEFAULT 'npc',
-            description TEXT DEFAULT '',
-            personality TEXT DEFAULT '',
-            goals TEXT DEFAULT '',
-            knowledge TEXT DEFAULT '',
-            secrets TEXT DEFAULT '',
-            status TEXT DEFAULT 'active',
-            location TEXT DEFAULT '',
-            notes TEXT DEFAULT '',
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-
-        CREATE TABLE IF NOT EXISTS locations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,
-            kind TEXT DEFAULT '',
-            description TEXT DEFAULT '',
-            inhabitants TEXT DEFAULT '',
-            secrets TEXT DEFAULT '',
-            notes TEXT DEFAULT '',
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-
-        CREATE TABLE IF NOT EXISTS factions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,
-            description TEXT DEFAULT '',
-            goals TEXT DEFAULT '',
-            resources TEXT DEFAULT '',
-            allies TEXT DEFAULT '',
-            enemies TEXT DEFAULT '',
-            notes TEXT DEFAULT '',
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-
-        CREATE TABLE IF NOT EXISTS quests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            status TEXT DEFAULT 'active',
-            description TEXT DEFAULT '',
-            clues TEXT DEFAULT '',
-            related_npcs TEXT DEFAULT '',
-            consequences TEXT DEFAULT '',
-            notes TEXT DEFAULT '',
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-
         CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
@@ -418,40 +360,9 @@ def init_db():
         );
 
 
-        CREATE TABLE IF NOT EXISTS relationships (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source_type TEXT NOT NULL,
-            source_id INTEGER NOT NULL,
-            target_type TEXT NOT NULL,
-            target_id INTEGER NOT NULL,
-            relation TEXT NOT NULL,
-            strength INTEGER DEFAULT 0,
-            notes TEXT DEFAULT '',
-            UNIQUE(
-                source_type,
-                source_id,
-                target_type,
-                target_id,
-                relation
-            )
-        );
-
-
         -- ============================================================
         -- LEGACY INDEXES
         -- ============================================================
-
-        CREATE INDEX IF NOT EXISTS idx_characters_name
-            ON characters(name);
-
-        CREATE INDEX IF NOT EXISTS idx_locations_name
-            ON locations(name);
-
-        CREATE INDEX IF NOT EXISTS idx_factions_name
-            ON factions(name);
-
-        CREATE INDEX IF NOT EXISTS idx_quests_name
-            ON quests(name);
 
         CREATE INDEX IF NOT EXISTS idx_events_title
             ON events(title);
