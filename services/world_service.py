@@ -1,0 +1,75 @@
+from models.world_state import WorldState
+from repositories.world_repository import WorldRepository
+from services.world_applier import WorldApplier
+
+
+class WorldService:
+    """
+    Fachada principal para trabajar con el estado persistente del mundo.
+
+    Responsabilidades:
+
+    - Cargar el mundo desde el repositorio.
+    - Mantener el WorldState en memoria.
+    - Aplicar operaciones mediante WorldApplier.
+    - Persistir el estado mediante WorldRepository.
+
+    WorldService NO contiene la lógica específica de cada operación.
+    """
+
+    def __init__(
+        self,
+        repository: WorldRepository | None = None,
+        applier: WorldApplier | None = None,
+    ):
+        self.repository = repository or WorldRepository()
+        self.applier = applier or WorldApplier()
+
+        self.world = WorldState()
+
+    def load(self) -> WorldState:
+        """
+        Carga el mundo desde SQLite y lo establece como estado actual.
+        """
+
+        self.world = self.repository.load_world()
+
+        return self.world
+
+    def save(self) -> None:
+        """
+        Persiste el estado actual del mundo.
+        """
+
+        self.repository.save_world(self.world)
+
+    def apply(self, operation) -> WorldState:
+        """
+        Aplica una operación al mundo en memoria.
+
+        No guarda automáticamente en SQLite.
+        """
+
+        self.applier.apply(
+            self.world,
+            operation,
+        )
+
+        return self.world
+
+    def apply_and_save(self, operation) -> WorldState:
+        """
+        Aplica una operación y persiste inmediatamente el resultado.
+        """
+
+        self.apply(operation)
+        self.save()
+
+        return self.world
+
+    def get_world(self) -> WorldState:
+        """
+        Devuelve el estado actual del mundo.
+        """
+
+        return self.world

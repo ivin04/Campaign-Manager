@@ -260,22 +260,26 @@ class WorldApplier:
         if not operation.relation_type:
             return
 
+        try:
+            subject_id = int(operation.subject_id)
+            target_id = int(operation.target_id)
+        except (TypeError, ValueError):
+            return
+
         if subject_id not in world.entities:
             return
 
         if target_id not in world.entities:
             return
 
-        relation = Relation(
+        world.relations[operation.relation_id] = Relation(
             id=operation.relation_id,
-            subject_id=subject_id,       # ← INT
+            subject_id=subject_id,
             relation_type=operation.relation_type,
-            target_id=target_id,         # ← INT
+            target_id=target_id,
             metadata=operation.metadata,
             active=True,
         )
-
-        world.relations[operation.relation_id] = relation
 
 
     def _apply_update_relation(
