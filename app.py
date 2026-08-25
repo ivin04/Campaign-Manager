@@ -2,15 +2,15 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 
+from models.world_operations_in import WorldOperationsIn
+from services.operation_parser import OperationParser, OperationParseError
+from services.world_service import WorldService
+
 from database import init_db, rows, one, execute
 
 from models.schemas import (
     CampaignUpdate,
     CampaignSessionUpdate,
-    CharacterIn,
-    LocationIn,
-    FactionIn,
-    QuestIn,
     ItemIn,
     EventIn,
     SessionIn,
@@ -35,6 +35,11 @@ app.add_middleware(
 )
 
 init_db()
+
+world_service = WorldService()
+world_service.load()
+
+operation_parser = OperationParser()
 
 @app.get("/")
 def root():
@@ -77,72 +82,6 @@ def update_campaign_session(data: CampaignSessionUpdate):
     )
 
     return one("SELECT * FROM campaign WHERE id=1")
-
-@app.post("/characters")
-def create_character(data: CharacterIn):
-    cid = execute("""INSERT INTO characters
-        (name, kind, description, personality, goals, knowledge, secrets, status, location, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        tuple(data.model_dump().values()))
-    return one("SELECT * FROM characters WHERE id=?", (cid,))
-
-@app.get("/characters")
-def get_characters(q: Optional[str] = None):
-    if q:
-        like = f"%{q}%"
-        return rows("""SELECT * FROM characters WHERE name LIKE ? OR description LIKE ?
-                       OR personality LIKE ? OR goals LIKE ? OR notes LIKE ?""",
-                    (like, like, like, like, like))
-    return rows("SELECT * FROM characters ORDER BY id")
-
-@app.post("/locations")
-def create_location(data: LocationIn):
-    try:
-        lid = execute("""INSERT INTO locations
-            (name, kind, description, inhabitants, secrets, notes)
-            VALUES (?, ?, ?, ?, ?, ?)""", tuple(data.model_dump().values()))
-    except Exception as e:
-        raise HTTPException(409, f"Location already exists or could not be saved: {e}")
-    return one("SELECT * FROM locations WHERE id=?", (lid,))
-
-@app.get("/locations")
-def get_locations(q: Optional[str] = None):
-    if q:
-        like = f"%{q}%"
-        return rows("""SELECT * FROM locations WHERE name LIKE ? OR description LIKE ?
-                       OR inhabitants LIKE ? OR notes LIKE ?""", (like, like, like, like))
-    return rows("SELECT * FROM locations ORDER BY id")
-
-@app.post("/factions")
-def create_faction(data: FactionIn):
-    try:
-        fid = execute("""INSERT INTO factions
-            (name, description, goals, resources, allies, enemies, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)""", tuple(data.model_dump().values()))
-    except Exception as e:
-        raise HTTPException(409, f"Faction already exists or could not be saved: {e}")
-    return one("SELECT * FROM factions WHERE id=?", (fid,))
-
-@app.get("/factions")
-def get_factions(q: Optional[str] = None):
-    if q:
-        like = f"%{q}%"
-        return rows("""SELECT * FROM factions WHERE name LIKE ? OR description LIKE ?
-                       OR goals LIKE ? OR notes LIKE ?""", (like, like, like, like))
-    return rows("SELECT * FROM factions ORDER BY id")
-
-@app.post("/quests")
-def create_quest(data: QuestIn):
-    qid = execute("""INSERT INTO quests
-        (name, status, description, clues, related_npcs, consequences, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?)""", tuple(data.model_dump().values()))
-    return one("SELECT * FROM quests WHERE id=?", (qid,))
-
-@app.get("/quests")
-def get_quests(status: Optional[str] = None):
-    if status:
-        return rows("SELECT * FROM quests WHERE status=? ORDER BY id", (status,))
-    return rows("SELECT * FROM quests ORDER BY id")
 
 @app.post("/items/extracted")
 def save_extracted_item(data: ItemIn):
@@ -560,4 +499,51 @@ def export_memory():
         "items": get_items(),
         "events": get_events(),
         "sessions": get_sessions(),
+    }
+
+@app.post("/world/operations")
+def apply_world_operations(data: WorldOperationsIn):
+    """
+    Recibe operaciones estructuradas desde SillyTavern,
+    las parsea y las aplica al mundo persistente.
+    """
+
+    try:
+        operations = operation_parser.parse(
+            {
+                "operations": data.operations
+            }
+        )
+
+    except OperationParseError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        )
+
+    for operation in operations:
+        world_service.apply_and_save(operation)
+
+    return {
+        "ok": True,
+        "received": len(data.operations),
+        "applied": len(operations),
+    }
+
+@app.get("/world")
+def get_world():
+    """
+    Devuelve el estado actual del mundo.
+    """
+
+    world = world_service.get_world()
+
+    return {
+        "entities": list(world.entities.values()),
+        "items": list(world.items.values()),
+        "item_instances": list(world.item_instances.values()),
+        "resources": list(world.resources.values()),
+        "resource_balances": list(world.resource_balances.values()),
+        "relations": list(world.relations.values()),
+        "events": list(world.events.values()),
     }

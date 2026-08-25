@@ -14,48 +14,6 @@ class CampaignSessionUpdate(BaseModel):
     session_id: int | None = None
 
 
-class CharacterIn(BaseModel):
-    name: str
-    kind: str = "npc"
-    description: str = ""
-    personality: str = ""
-    goals: str = ""
-    knowledge: str = ""
-    secrets: str = ""
-    status: str = "active"
-    location: str = ""
-    notes: str = ""
-
-
-class LocationIn(BaseModel):
-    name: str
-    kind: str = ""
-    description: str = ""
-    inhabitants: str = ""
-    secrets: str = ""
-    notes: str = ""
-
-
-class FactionIn(BaseModel):
-    name: str
-    description: str = ""
-    goals: str = ""
-    resources: str = ""
-    allies: str = ""
-    enemies: str = ""
-    notes: str = ""
-
-
-class QuestIn(BaseModel):
-    name: str
-    status: str = "active"
-    description: str = ""
-    clues: str = ""
-    related_npcs: str = ""
-    consequences: str = ""
-    notes: str = ""
-
-
 class ItemIn(BaseModel):
     name: str
     description: str = ""
