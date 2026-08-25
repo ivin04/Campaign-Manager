@@ -295,3 +295,46 @@ def test_memory_context_http_requires_query():
     response = client.get("/memory/context")
 
     assert response.status_code == 422
+
+def test_export_returns_world_state_categories(clean_world):
+    clean_world.entities[1] = Entity(
+        id=1,
+        name="Fungoso",
+        entity_type="character",
+        description="Un aventurero peculiar.",
+        notes="",
+        active=True,
+    )
+
+    response = client.get("/export")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert set(data.keys()) == {
+        "entities",
+        "items",
+        "item_instances",
+        "resources",
+        "resource_balances",
+        "relations",
+        "events",
+    }
+
+    assert data["entities"][0]["name"] == "Fungoso"
+
+
+def test_export_does_not_expose_legacy_categories(clean_world):
+    response = client.get("/export")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert "characters" not in data
+    assert "locations" not in data
+    assert "factions" not in data
+    assert "quests" not in data
+    assert "campaign" not in data
+    assert "sessions" not in data

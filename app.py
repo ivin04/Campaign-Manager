@@ -19,6 +19,7 @@ from models.schemas import (
 
 from repositories import item_repository
 from services import item_service
+from dataclasses import asdict
 
 import re
 
@@ -51,10 +52,6 @@ def root():
 @app.get("/health")
 def health():
     return {"ok": True}
-
-@app.get("/campaign")
-def get_campaign():
-    return one("SELECT * FROM campaign WHERE id=1")
 
 @app.patch("/campaign")
 def update_campaign(data: CampaignUpdate):
@@ -142,13 +139,6 @@ def update_item(item_id: int, data: ItemIn):
     )
 
     return item_service.get_item(item_id)
-
-@app.get("/items")
-def get_items(q: Optional[str] = None):
-    if q:
-        return item_service.search_items(q)
-
-    return item_service.get_all_items()
 
 @app.post("/events")
 def create_event(data: EventIn):
@@ -264,26 +254,12 @@ def update_event(event_id: int, data: EventIn):
         (event_id,)
     )
 
-@app.get("/events")
-def get_events(session: Optional[int] = None, q: Optional[str] = None):
-    if session is not None:
-        return rows("SELECT * FROM events WHERE session=? ORDER BY id", (session,))
-    if q:
-        like = f"%{q}%"
-        return rows("""SELECT * FROM events WHERE title LIKE ? OR description LIKE ?
-                       OR consequences LIKE ? ORDER BY id""", (like, like, like))
-    return rows("SELECT * FROM events ORDER BY id")
-
 @app.post("/sessions")
 def create_session(data: SessionIn):
     sid = execute("""INSERT INTO sessions
         (number, title, summary, start_location, end_location, notes)
         VALUES (?, ?, ?, ?, ?, ?)""", tuple(data.model_dump().values()))
     return one("SELECT * FROM sessions WHERE id=?", (sid,))
-
-@app.get("/sessions")
-def get_sessions():
-    return rows("SELECT * FROM sessions ORDER BY number")
 
 @app.get("/memory/search")
 def search_memory(q: str = Query(..., min_length=1)):
@@ -317,15 +293,44 @@ def memory_context(q: str = Query(..., min_length=1)):
 
 @app.get("/export")
 def export_memory():
+    """
+    Exporta el estado actual de la campaña.
+
+    WorldState es la única fuente de verdad.
+    No se consultan tablas ni estructuras legacy.
+    """
+
+    world = world_service.get_world()
+
     return {
-        "campaign": get_campaign(),
-        "characters": get_characters(),
-        "locations": get_locations(),
-        "factions": get_factions(),
-        "quests": get_quests(),
-        "items": get_items(),
-        "events": get_events(),
-        "sessions": get_sessions(),
+        "entities": [
+            asdict(entity)
+            for entity in world.entities.values()
+        ],
+        "items": [
+            asdict(item)
+            for item in world.items.values()
+        ],
+        "item_instances": [
+            asdict(item_instance)
+            for item_instance in world.item_instances.values()
+        ],
+        "resources": [
+            asdict(resource)
+            for resource in world.resources.values()
+        ],
+        "resource_balances": [
+            asdict(balance)
+            for balance in world.resource_balances.values()
+        ],
+        "relations": [
+            asdict(relation)
+            for relation in world.relations.values()
+        ],
+        "events": [
+            asdict(event)
+            for event in world.events.values()
+        ],
     }
 
 @app.post("/world/operations")

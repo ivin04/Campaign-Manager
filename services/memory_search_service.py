@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from models.world_state import WorldState
@@ -8,40 +8,39 @@ from models.world_state import WorldState
 
 class MemorySearchService:
     """
-    Servicio de búsqueda de memoria sobre WorldState.
+    Servicio único de memoria del Campaign Manager.
 
-    El WorldState es la única fuente de verdad.
+    Responsabilidades:
+    - Buscar información relevante dentro del WorldState.
+    - Generar contexto textual para SillyTavern.
+    - Exportar memoria pública.
+    - No modificar el WorldState.
+    - No acceder directamente a SQLite.
+    - No conocer tablas legacy.
+    - No exponer entidades inactivas.
+    - No exponer eventos secretos.
 
-    Este servicio:
-    - no modifica el WorldState;
-    - no accede a SQLite;
-    - no conoce tablas legacy;
-    - no expone entidades inactivas;
-    - no expone eventos secretos;
-    - prepara contexto textual para SillyTavern.
+    WorldState es la única fuente de verdad.
     """
 
-    MEMORY_CATEGORIES = (
-        "entities",
-        "items",
-        "resources",
-        "relations",
-        "events",
-    )
+    # ============================================================
+    # SEARCH
+    # ============================================================
 
     def search(
         self,
         world: WorldState,
         query: str,
     ) -> dict[str, list[dict[str, Any]]]:
+        """
+        Busca información relevante dentro del WorldState.
 
-        if not isinstance(world, WorldState):
-            raise TypeError("world must be a WorldState.")
+        La respuesta utiliza exclusivamente las categorías actuales
+        del WorldState.
+        """
 
-        if not isinstance(query, str):
-            raise TypeError("query must be a string.")
-
-        query = query.strip()
+        self._validate_world(world)
+        query = self._validate_query(query)
 
         if not query:
             return self._empty_result()
@@ -52,39 +51,45 @@ class MemorySearchService:
             "entities": [
                 self._entity_to_dict(entity)
                 for entity in world.entities.values()
-                if entity.active
+                if getattr(entity, "active", True)
                 and self._matches_entity(entity, needle)
             ],
+
             "items": [
                 self._item_to_dict(item)
                 for item in world.items.values()
                 if self._matches_item(item, needle)
             ],
+
             "item_instances": [
                 self._item_instance_to_dict(instance)
                 for instance in world.item_instances.values()
-                if instance.active
-                and self._matches_item_instance(instance, needle)
+                if self._matches_item_instance(instance, needle)
             ],
+
             "resources": [
                 self._resource_to_dict(resource)
                 for resource in world.resources.values()
                 if self._matches_resource(resource, needle)
             ],
+
             "resource_balances": [
                 self._resource_balance_to_dict(balance)
                 for balance in world.resource_balances.values()
                 if self._matches_resource_balance(balance, needle)
             ],
+
             "relations": [
                 self._relation_to_dict(relation)
                 for relation in world.relations.values()
-                if self._matches_relation(relation, needle)
+                if getattr(relation, "active", True)
+                and self._matches_relation(relation, needle)
             ],
+
             "events": [
                 self._event_to_dict(event)
                 for event in world.events.values()
-                if not event.secret
+                if not getattr(event, "secret", False)
                 and self._matches_event(event, needle)
             ],
         }
@@ -98,112 +103,306 @@ class MemorySearchService:
         world: WorldState,
         query: str,
     ) -> dict[str, Any]:
+        """
+        Genera contexto de memoria para consumo externo.
 
-        result = self.search(world, query)
+        Devuelve:
+            {
+                "query": "...",
+                "results": {...},
+                "context": "..."
+            }
+
+        `results` mantiene el resultado estructurado de search().
+        `context` es la representación textual preparada para
+        SillyTavern.
+        """
+
+        self._validate_world(world)
+
+        normalized_query = self._validate_query(query)
+
+        results = self.search(world, normalized_query)
 
         return {
-            "query": query.strip(),
-            "results": result,
-            "context": self._format_context(result),
+            "query": normalized_query,
+            "results": results,
+            "context": self._build_context(results),
         }
+
+    # ============================================================
+    # EXPORT
+    # ============================================================
+
+    def export(
+        self,
+        world: WorldState,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """
+        Exporta la memoria pública completa del WorldState.
+
+        A diferencia de search(), no necesita una consulta.
+
+        Nunca exporta:
+        - entidades inactivas
+        - relaciones inactivas
+        - eventos secretos
+        """
+
+        self._validate_world(world)
+
+        return {
+            "entities": [
+                self._entity_to_dict(entity)
+                for entity in world.entities.values()
+                if getattr(entity, "active", True)
+            ],
+
+            "items": [
+                self._item_to_dict(item)
+                for item in world.items.values()
+            ],
+
+            "item_instances": [
+                self._item_instance_to_dict(instance)
+                for instance in world.item_instances.values()
+            ],
+
+            "resources": [
+                self._resource_to_dict(resource)
+                for resource in world.resources.values()
+            ],
+
+            "resource_balances": [
+                self._resource_balance_to_dict(balance)
+                for balance in world.resource_balances.values()
+            ],
+
+            "relations": [
+                self._relation_to_dict(relation)
+                for relation in world.relations.values()
+                if getattr(relation, "active", True)
+            ],
+
+            "events": [
+                self._event_to_dict(event)
+                for event in world.events.values()
+                if not getattr(event, "secret", False)
+            ],
+        }
+
+    # ============================================================
+    # MATCHING
+    # ============================================================
 
     @staticmethod
-    def _format_context(
-        result: dict[str, list[dict[str, Any]]],
-    ) -> str:
+    def _matches_entity(
+        entity: Any,
+        needle: str,
+    ) -> bool:
+        return MemorySearchService._matches(
+            needle,
+            getattr(entity, "id", None),
+            getattr(entity, "name", None),
+            getattr(entity, "entity_type", None),
+            getattr(entity, "description", None),
+            getattr(entity, "notes", None),
+        )
 
-        sections = []
+    @staticmethod
+    def _matches_item(
+        item: Any,
+        needle: str,
+    ) -> bool:
+        return MemorySearchService._matches(
+            needle,
+            getattr(item, "id", None),
+            getattr(item, "name", None),
+            getattr(item, "description", None),
+            getattr(item, "significance", None),
+            getattr(item, "notes", None),
+        )
 
-        labels = {
-            "entities": "ENTITIES",
-            "items": "ITEMS",
-            "item_instances": "ITEM INSTANCES",
-            "resources": "RESOURCES",
-            "resource_balances": "RESOURCE BALANCES",
-            "relations": "RELATIONS",
-            "events": "EVENTS",
-        }
+    @staticmethod
+    def _matches_item_instance(
+        instance: Any,
+        needle: str,
+    ) -> bool:
+        return MemorySearchService._matches(
+            needle,
+            getattr(instance, "id", None),
+            getattr(instance, "item_id", None),
+            getattr(instance, "owner_id", None),
+            getattr(instance, "location_id", None),
+            getattr(instance, "notes", None),
+            getattr(instance, "metadata", None),
+        )
 
-        for category, label in labels.items():
+    @staticmethod
+    def _matches_resource(
+        resource: Any,
+        needle: str,
+    ) -> bool:
+        return MemorySearchService._matches(
+            needle,
+            getattr(resource, "id", None),
+            getattr(resource, "name", None),
+            getattr(resource, "resource_type", None),
+            getattr(resource, "unit", None),
+            getattr(resource, "notes", None),
+        )
 
-            entries = result.get(category, [])
+    @staticmethod
+    def _matches_resource_balance(
+        balance: Any,
+        needle: str,
+    ) -> bool:
+        return MemorySearchService._matches(
+            needle,
+            getattr(balance, "id", None),
+            getattr(balance, "resource_id", None),
+            getattr(balance, "owner_id", None),
+            getattr(balance, "amount", None),
+            getattr(balance, "notes", None),
+            getattr(balance, "metadata", None),
+        )
 
-            if not entries:
+    @staticmethod
+    def _matches_relation(
+        relation: Any,
+        needle: str,
+    ) -> bool:
+        return MemorySearchService._matches(
+            needle,
+            getattr(relation, "id", None),
+            getattr(relation, "source_id", None),
+            getattr(relation, "target_id", None),
+            getattr(relation, "relation_type", None),
+            getattr(relation, "description", None),
+            getattr(relation, "notes", None),
+            getattr(relation, "metadata", None),
+        )
+
+    @staticmethod
+    def _matches_event(
+        event: Any,
+        needle: str,
+    ) -> bool:
+        return MemorySearchService._matches(
+            needle,
+            getattr(event, "id", None),
+            getattr(event, "event_type", None),
+            getattr(event, "title", None),
+            getattr(event, "description", None),
+            getattr(event, "consequences", None),
+            getattr(event, "session_id", None),
+            getattr(event, "metadata", None),
+        )
+
+    @staticmethod
+    def _matches(
+        needle: str,
+        *values: Any,
+    ) -> bool:
+        """
+        Busca needle dentro de valores escalares o estructuras
+        de metadata.
+        """
+
+        for value in values:
+            if value is None:
                 continue
 
-            lines = [f"[{label}]"]
+            if isinstance(value, dict):
+                value = " ".join(
+                    f"{key} {val}"
+                    for key, val in value.items()
+                )
 
-            for entry in entries:
-                if category == "entities":
-                    lines.append(
-                        f"- {entry.get('name', '')}"
-                        f" ({entry.get('entity_type', '')}): "
-                        f"{entry.get('description', '')}"
-                        + (
-                            f" Notas: {entry['notes']}"
-                            if entry.get("notes")
-                            else ""
-                        )
-                    )
+            elif isinstance(value, (list, tuple, set)):
+                value = " ".join(str(item) for item in value)
 
-                elif category == "items":
-                    lines.append(
-                        f"- {entry.get('name', '')}: "
-                        f"{entry.get('description', '')}"
-                        + (
-                            f" Importancia: {entry['significance']}"
-                            if entry.get("significance")
-                            else ""
-                        )
-                    )
+            if needle in str(value).casefold():
+                return True
 
-                elif category == "events":
-                    lines.append(
-                        f"- {entry.get('title', '')}: "
-                        f"{entry.get('description', '')}"
-                    )
+        return False
 
-                else:
-                    lines.append(f"- {entry}")
+    # ============================================================
+    # CONTEXT BUILDING
+    # ============================================================
 
-            sections.append("\n".join(lines))
-
-        if not sections:
-            return "MEMORIA DE CAMPAÑA RELEVANTE:\n- No se encontró información relevante."
-
-        return "MEMORIA DE CAMPAÑA RELEVANTE:\n" + "\n\n".join(sections)
-
+    @staticmethod
     def _build_context(
-        self,
         results: dict[str, list[dict[str, Any]]],
     ) -> str:
         """
-        Convierte los resultados estructurados en contexto legible
-        para el modelo narrativo.
+        Convierte resultados estructurados en contexto legible
+        para SillyTavern.
+
+        Solo se incluyen categorías que tengan resultados.
         """
 
         sections: list[str] = [
             "MEMORIA DE CAMPAÑA RELEVANTE:"
         ]
 
-        found_any = False
+        MemorySearchService._append_entities(
+            sections,
+            results.get("entities", []),
+        )
 
-        # --------------------------------------------------------
-        # ENTIDADES
-        # --------------------------------------------------------
+        MemorySearchService._append_items(
+            sections,
+            results.get("items", []),
+        )
 
-        for entity in results["entities"]:
-            found_any = True
+        MemorySearchService._append_item_instances(
+            sections,
+            results.get("item_instances", []),
+        )
 
-            name = entity.get("name", "Entidad desconocida")
-            entity_type = entity.get("entity_type", "")
+        MemorySearchService._append_resources(
+            sections,
+            results.get("resources", []),
+        )
+
+        MemorySearchService._append_resource_balances(
+            sections,
+            results.get("resource_balances", []),
+        )
+
+        MemorySearchService._append_relations(
+            sections,
+            results.get("relations", []),
+        )
+
+        MemorySearchService._append_events(
+            sections,
+            results.get("events", []),
+        )
+
+        if len(sections) == 1:
+            sections.append("Sin información relevante.")
+
+        return "\n".join(sections)
+
+    @staticmethod
+    def _append_entities(
+        sections: list[str],
+        entities: list[dict[str, Any]],
+    ) -> None:
+        if not entities:
+            return
+
+        sections.append("[ENTITIES]")
+
+        for entity in entities:
+            name = entity.get("name", "Sin nombre")
+            entity_type = entity.get("entity_type", "unknown")
             description = entity.get("description", "")
             notes = entity.get("notes", "")
 
-            line = f"- {name}"
-
-            if entity_type:
-                line += f" ({entity_type})"
+            line = f"- {name} ({entity_type})"
 
             if description:
                 line += f": {description}"
@@ -213,19 +412,23 @@ class MemorySearchService:
 
             sections.append(line)
 
-        # --------------------------------------------------------
-        # ITEMS
-        # --------------------------------------------------------
+    @staticmethod
+    def _append_items(
+        sections: list[str],
+        items: list[dict[str, Any]],
+    ) -> None:
+        if not items:
+            return
 
-        for item in results["items"]:
-            found_any = True
+        sections.append("[ITEMS]")
 
-            name = item.get("name", "Objeto desconocido")
+        for item in items:
+            name = item.get("name", "Sin nombre")
             description = item.get("description", "")
             significance = item.get("significance", "")
             notes = item.get("notes", "")
 
-            line = f"- Objeto: {name}"
+            line = f"- {name}"
 
             if description:
                 line += f": {description}"
@@ -238,19 +441,52 @@ class MemorySearchService:
 
             sections.append(line)
 
-        # --------------------------------------------------------
-        # RESOURCES
-        # --------------------------------------------------------
+    @staticmethod
+    def _append_item_instances(
+        sections: list[str],
+        instances: list[dict[str, Any]],
+    ) -> None:
+        if not instances:
+            return
 
-        for resource in results["resources"]:
-            found_any = True
+        sections.append("[ITEM_INSTANCES]")
 
-            name = resource.get("name", "Recurso desconocido")
+        for instance in instances:
+            instance_id = instance.get("id", "unknown")
+            item_id = instance.get("item_id")
+            owner_id = instance.get("owner_id")
+            location_id = instance.get("location_id")
+
+            line = f"- Instancia {instance_id}"
+
+            if item_id is not None:
+                line += f" item={item_id}"
+
+            if owner_id is not None:
+                line += f" propietario={owner_id}"
+
+            if location_id is not None:
+                line += f" ubicación={location_id}"
+
+            sections.append(line)
+
+    @staticmethod
+    def _append_resources(
+        sections: list[str],
+        resources: list[dict[str, Any]],
+    ) -> None:
+        if not resources:
+            return
+
+        sections.append("[RESOURCES]")
+
+        for resource in resources:
+            name = resource.get("name", "Sin nombre")
             resource_type = resource.get("resource_type", "")
             unit = resource.get("unit", "")
             notes = resource.get("notes", "")
 
-            line = f"- Recurso: {name}"
+            line = f"- {name}"
 
             if resource_type:
                 line += f" ({resource_type})"
@@ -263,41 +499,84 @@ class MemorySearchService:
 
             sections.append(line)
 
-        # --------------------------------------------------------
-        # RELATIONS
-        # --------------------------------------------------------
+    @staticmethod
+    def _append_resource_balances(
+        sections: list[str],
+        balances: list[dict[str, Any]],
+    ) -> None:
+        if not balances:
+            return
 
-        for relation in results["relations"]:
-            found_any = True
+        sections.append("[RESOURCE_BALANCES]")
 
-            relation_id = relation.get("id", "")
-            subject_id = relation.get("subject_id", "")
-            relation_type = relation.get("relation_type", "")
-            target_id = relation.get("target_id", "")
-            metadata = relation.get("metadata")
+        for balance in balances:
+            balance_id = balance.get("id", "unknown")
+            resource_id = balance.get("resource_id")
+            owner_id = balance.get("owner_id")
+            amount = balance.get("amount")
 
-            line = (
-                f"- Relación {relation_id}: "
-                f"{subject_id} --{relation_type}--> {target_id}"
-            )
+            line = f"- Balance {balance_id}"
 
-            if metadata:
-                line += f" Metadata: {metadata}"
+            if resource_id is not None:
+                line += f" recurso={resource_id}"
+
+            if owner_id is not None:
+                line += f" propietario={owner_id}"
+
+            if amount is not None:
+                line += f" cantidad={amount}"
 
             sections.append(line)
 
-        # --------------------------------------------------------
-        # EVENTS
-        # --------------------------------------------------------
+    @staticmethod
+    def _append_relations(
+        sections: list[str],
+        relations: list[dict[str, Any]],
+    ) -> None:
+        if not relations:
+            return
 
-        for event in results["events"]:
-            found_any = True
+        sections.append("[RELATIONS]")
 
-            title = event.get("title", "Evento")
+        for relation in relations:
+            relation_type = relation.get(
+                "relation_type",
+                "unknown",
+            )
+
+            source_id = relation.get("source_id")
+            target_id = relation.get("target_id")
+
+            line = f"- {relation_type}"
+
+            if source_id is not None:
+                line += f": {source_id}"
+
+            if target_id is not None:
+                line += f" -> {target_id}"
+
+            description = relation.get("description")
+            if description:
+                line += f" {description}"
+
+            sections.append(line)
+
+    @staticmethod
+    def _append_events(
+        sections: list[str],
+        events: list[dict[str, Any]],
+    ) -> None:
+        if not events:
+            return
+
+        sections.append("[EVENTS]")
+
+        for event in events:
+            title = event.get("title", "Sin título")
             description = event.get("description", "")
             consequences = event.get("consequences", "")
 
-            line = f"- Evento: {title}"
+            line = f"- {title}"
 
             if description:
                 line += f": {description}"
@@ -307,143 +586,90 @@ class MemorySearchService:
 
             sections.append(line)
 
-        if not found_any:
-            sections.append("- No se encontró memoria relevante.")
-
-        return "\n".join(sections)
-
-    # ============================================================
-    # MATCHING
-    # ============================================================
-
-    @staticmethod
-    def _matches_entity(entity: Any, needle: str) -> bool:
-        return MemorySearchService._matches(
-            needle,
-            entity.name,
-            entity.entity_type,
-            entity.description,
-            entity.notes,
-        )
-
-    @staticmethod
-    def _matches_item(item: Any, needle: str) -> bool:
-        return MemorySearchService._matches(
-            needle,
-            item.name,
-            item.description,
-            item.significance,
-            item.notes,
-        )
-
-    @staticmethod
-    def _matches_item_instance(instance: Any, needle: str) -> bool:
-        return MemorySearchService._matches(
-            needle,
-            instance.id,
-            instance.item_id,
-            instance.instance_number,
-            instance.owner_id,
-            instance.location_id,
-            instance.condition,
-            instance.notes,
-        )
-
-
-    @staticmethod
-    def _matches_resource_balance(balance: Any, needle: str) -> bool:
-        return MemorySearchService._matches(
-            needle,
-            balance.id,
-            balance.resource_id,
-            balance.owner_id,
-            balance.amount,
-            balance.notes,
-        )
-
-    @staticmethod
-    def _matches_resource(resource: Any, needle: str) -> bool:
-        return MemorySearchService._matches(
-            needle,
-            resource.name,
-            resource.resource_type,
-            resource.unit,
-            resource.notes,
-        )
-
-    @staticmethod
-    def _matches_relation(relation: Any, needle: str) -> bool:
-        return MemorySearchService._matches(
-            needle,
-            relation.id,
-            relation.subject_id,
-            relation.relation_type,
-            relation.target_id,
-            getattr(relation, "metadata", None),
-        )
-
-    @staticmethod
-    def _matches_event(event: Any, needle: str) -> bool:
-        return MemorySearchService._matches(
-            needle,
-            event.id,
-            event.event_type,
-            event.title,
-            event.description,
-            event.consequences,
-            event.session_id,
-            getattr(event, "metadata", None),
-        )
-
-    @staticmethod
-    def _matches(needle: str, *values: Any) -> bool:
-        for value in values:
-            if value is None:
-                continue
-
-            if isinstance(value, (dict, list, tuple, set)):
-                value = str(value)
-
-            if needle in str(value).casefold():
-                return True
-
-        return False
-
     # ============================================================
     # SERIALIZATION
     # ============================================================
 
     @staticmethod
-    def _entity_to_dict(entity: Any) -> dict[str, Any]:
-        return asdict(entity)
+    def _serialize(value: Any) -> dict[str, Any]:
+        """
+        Serialización defensiva de objetos del dominio.
+        """
 
-    @staticmethod
-    def _item_to_dict(item: Any) -> dict[str, Any]:
-        return asdict(item)
+        if is_dataclass(value):
+            return asdict(value)
 
-    @staticmethod
-    def _item_instance_to_dict(instance: Any) -> dict[str, Any]:
-        return asdict(instance)
+        if isinstance(value, dict):
+            return dict(value)
 
+        if hasattr(value, "__dict__"):
+            return dict(value.__dict__)
 
-    @staticmethod
-    def _resource_balance_to_dict(balance: Any) -> dict[str, Any]:
-        return asdict(balance)
+        raise TypeError(
+            f"Cannot serialize value of type {type(value).__name__}."
+        )
 
-    @staticmethod
-    def _resource_to_dict(resource: Any) -> dict[str, Any]:
-        return asdict(resource)
+    @classmethod
+    def _entity_to_dict(cls, entity: Any) -> dict[str, Any]:
+        return cls._serialize(entity)
 
-    @staticmethod
-    def _relation_to_dict(relation: Any) -> dict[str, Any]:
-        return asdict(relation)
+    @classmethod
+    def _item_to_dict(cls, item: Any) -> dict[str, Any]:
+        return cls._serialize(item)
 
-    @staticmethod
-    def _event_to_dict(event: Any) -> dict[str, Any]:
-        return asdict(event)
+    @classmethod
+    def _item_instance_to_dict(
+        cls,
+        instance: Any,
+    ) -> dict[str, Any]:
+        return cls._serialize(instance)
+
+    @classmethod
+    def _resource_to_dict(
+        cls,
+        resource: Any,
+    ) -> dict[str, Any]:
+        return cls._serialize(resource)
+
+    @classmethod
+    def _resource_balance_to_dict(
+        cls,
+        balance: Any,
+    ) -> dict[str, Any]:
+        return cls._serialize(balance)
+
+    @classmethod
+    def _relation_to_dict(
+        cls,
+        relation: Any,
+    ) -> dict[str, Any]:
+        return cls._serialize(relation)
+
+    @classmethod
+    def _event_to_dict(
+        cls,
+        event: Any,
+    ) -> dict[str, Any]:
+        return cls._serialize(event)
 
     # ============================================================
-    # EMPTY
+    # VALIDATION
+    # ============================================================
+
+    @staticmethod
+    def _validate_world(world: WorldState) -> None:
+        if not isinstance(world, WorldState):
+            raise TypeError("world must be a WorldState.")
+
+    @staticmethod
+    def _validate_query(query: str) -> str:
+        if not isinstance(query, str):
+            raise TypeError("query must be a string.")
+
+        return query.strip()
+
+    # ============================================================
+    # EMPTY RESULT
     # ============================================================
 
     @staticmethod
