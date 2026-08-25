@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import MISSING
 from typing import Any
 
 from operations.world_operations import (
@@ -22,12 +23,15 @@ class OperationParseError(ValueError):
 
 class OperationParser:
     """
-    Converts the structured output produced by the narrative/LLM layer into
+    Converts structured output produced by the narrative/LLM layer into
     concrete WorldOperation instances.
 
-    This class does not inspect or mutate WorldState. Semantic validation
-    (for example, whether an entity exists) remains the responsibility of
-    WorldApplier/WorldService.
+    This class performs structural/type normalization only.
+
+    It does NOT inspect WorldState and therefore does not check whether
+    referenced entities, items, resources, etc. actually exist.
+
+    Semantic validation belongs to WorldApplier / WorldService.
     """
 
     _BUILDERS = {
@@ -43,12 +47,14 @@ class OperationParser:
 
     def parse(self, payload: str | dict[str, Any]) -> list[WorldOperation]:
         """Parse an LLM JSON response into validated operation objects."""
+
         data = self._decode(payload)
 
         if not isinstance(data, dict):
             raise OperationParseError("Root JSON must be an object.")
 
         operations = data.get("operations")
+
         if not isinstance(operations, list):
             raise OperationParseError("'operations' must be a list.")
 
@@ -56,7 +62,9 @@ class OperationParser:
 
         for index, raw_operation in enumerate(operations):
             try:
-                result.append(self._parse_operation(raw_operation))
+                operation = self._parse_operation(raw_operation)
+                result.append(operation)
+
             except OperationParseError as exc:
                 raise OperationParseError(
                     f"Invalid operation at index {index}: {exc}"
@@ -64,60 +72,86 @@ class OperationParser:
 
         return result
 
+    # ------------------------------------------------------------------
+    # JSON decoding
+    # ------------------------------------------------------------------
+
     def _decode(self, payload: str | dict[str, Any]) -> Any:
+
         if isinstance(payload, dict):
             return payload
 
         if not isinstance(payload, str):
-            raise OperationParseError("Payload must be a JSON string or dict.")
+            raise OperationParseError(
+                "Payload must be a JSON string or dict."
+            )
 
         try:
             return json.loads(payload)
+
         except json.JSONDecodeError as exc:
-            raise OperationParseError("Invalid JSON payload.") from exc
+            raise OperationParseError(
+                "Invalid JSON payload."
+            ) from exc
+
+    # ------------------------------------------------------------------
+    # Operation parsing
+    # ------------------------------------------------------------------
 
     def _parse_operation(self, raw: Any) -> WorldOperation:
+
         if not isinstance(raw, dict):
-            raise OperationParseError("Operation must be an object.")
+            raise OperationParseError(
+                "Operation must be an object."
+            )
 
         operation_type = raw.get("type")
+
         if not isinstance(operation_type, str) or not operation_type:
-            raise OperationParseError("Operation requires a non-empty 'type'.")
+            raise OperationParseError(
+                "Operation requires a non-empty 'type'."
+            )
 
         builder = self._BUILDERS.get(operation_type)
+
         if builder is None:
             raise OperationParseError(
                 f"Unknown operation type: {operation_type!r}."
             )
 
         fields = dict(raw)
+
+        # "type" is used to select the operation class and is not
+        # passed to the dataclass constructor.
         fields.pop("type", None)
 
         expected = builder.__dataclass_fields__
+
+        # --------------------------------------------------------------
+        # Unknown fields
+        # --------------------------------------------------------------
+
         unknown = set(fields) - set(expected)
+
         if unknown:
             names = ", ".join(sorted(unknown))
+
             raise OperationParseError(
                 f"Unknown field(s) for {operation_type}: {names}."
             )
 
-        missing = [
-            name
-            for name, field in expected.items()
-            if field.default is field.default_factory is field.default
-            and name not in fields
-        ]
-
-        # Dataclasses use MISSING for required fields. The explicit check below
-        # is kept separate so optional fields with defaults remain optional.
-        from dataclasses import MISSING
+        # --------------------------------------------------------------
+        # Missing required fields
+        # --------------------------------------------------------------
 
         missing = [
             name
             for name, field in expected.items()
-            if field.default is MISSING
-            and field.default_factory is MISSING
-            and name not in fields
+            if (
+                field.default is MISSING
+                and field.default_factory is MISSING
+                and name not in fields
+            )
         ]
 
         if missing:
@@ -127,47 +161,259 @@ class OperationParser:
                 + "."
             )
 
-        self._validate_fields(operation_type, fields)
+        # --------------------------------------------------------------
+        # Normalize entity IDs
+        # --------------------------------------------------------------
+
+        self._normalize_entity_ids(
+            operation_type,
+            fields,
+        )
+
+        # --------------------------------------------------------------
+        # Validate fields
+        # --------------------------------------------------------------
+
+        self._validate_fields(
+            operation_type,
+            fields,
+        )
+
+        # --------------------------------------------------------------
+        # Build operation
+        # --------------------------------------------------------------
 
         try:
             return builder(**fields)
+
         except (TypeError, ValueError) as exc:
             raise OperationParseError(
                 f"Invalid fields for {operation_type}: {exc}"
             ) from exc
 
-    def _validate_fields(self, operation_type: str, fields: dict[str, Any]) -> None:
+    # ------------------------------------------------------------------
+    # Entity ID normalization
+    # ------------------------------------------------------------------
+
+    def _normalize_entity_ids(
+        self,
+        operation_type: str,
+        fields: dict[str, Any],
+    ) -> None:
+        """
+        Convert entity IDs coming from SillyTavern/LLM from strings to ints.
+
+        Example:
+
+            "subject_id": "1"
+
+        becomes:
+
+            "subject_id": 1
+
+        This method intentionally does NOT check whether the entity exists.
+        """
+
+        entity_id_fields = {
+            "transfer_item": {
+                "new_owner_id",
+            },
+            "gain_resource": {
+                "owner_id",
+            },
+            "spend_resource": {
+                "owner_id",
+            },
+            "transfer_resource": {
+                "source_id",
+                "target_id",
+            },
+            "create_relation": {
+                "subject_id",
+                "target_id",
+            },
+            "update_relation": {
+                "target_id",
+            },
+        }.get(operation_type, set())
+
+        for field_name in entity_id_fields:
+
+            if field_name not in fields:
+                continue
+
+            value = fields[field_name]
+
+            if value is None:
+                continue
+
+            fields[field_name] = self._parse_entity_id(value)
+
+    def _parse_entity_id(self, value: Any) -> int:
+        """
+        Convert an entity ID from an integer or numeric string to int.
+
+        Accepted:
+
+            1
+            "1"
+            " 1 "
+
+        Rejected:
+
+            True
+            ""
+            "abc"
+            1.5
+            None
+            []
+        """
+
+        if isinstance(value, bool):
+            raise OperationParseError(
+                "Entity ID must be an integer or numeric string."
+            )
+
+        if isinstance(value, int):
+            return value
+
+        if isinstance(value, str):
+
+            value = value.strip()
+
+            if not value:
+                raise OperationParseError(
+                    "Entity ID cannot be empty."
+                )
+
+            try:
+                return int(value)
+
+            except ValueError as exc:
+                raise OperationParseError(
+                    f"Invalid entity ID: {value!r}."
+                ) from exc
+
+        raise OperationParseError(
+            f"Invalid entity ID type: {type(value).__name__}."
+        )
+
+    # ------------------------------------------------------------------
+    # Generic field validation
+    # ------------------------------------------------------------------
+
+    def _validate_fields(
+        self,
+        operation_type: str,
+        fields: dict[str, Any],
+    ) -> None:
+
+        # These fields must ultimately be integers.
         integer_fields = {
-            "transfer_item": {"instance_id", "new_owner_id"},
-            "gain_resource": {"resource_id", "owner_id"},
-            "spend_resource": {"resource_id", "owner_id"},
-            "transfer_resource": {"resource_id", "source_id", "target_id"},
-            "create_relation": {"subject_id", "target_id"},
-            "update_relation": {"target_id"},
-            "create_event": {"session_id"},
+            "transfer_item": {
+                "instance_id",
+                "new_owner_id",
+            },
+            "gain_resource": {
+                "resource_id",
+                "owner_id",
+            },
+            "spend_resource": {
+                "resource_id",
+                "owner_id",
+            },
+            "transfer_resource": {
+                "resource_id",
+                "source_id",
+                "target_id",
+            },
+            "create_relation": {
+                "subject_id",
+                "target_id",
+            },
+            "update_relation": {
+                "target_id",
+            },
+            "create_event": {
+                "session_id",
+            },
         }.get(operation_type, set())
 
         for name in integer_fields:
-            if name not in fields or fields[name] is None:
+
+            if name not in fields:
                 continue
-            if not isinstance(fields[name], int) or isinstance(fields[name], bool):
-                raise OperationParseError(f"'{name}' must be an integer.")
+
+            value = fields[name]
+
+            if value is None:
+                continue
+
+            if isinstance(value, bool):
+                raise OperationParseError(
+                    f"'{name}' must be an integer."
+                )
+
+            if not isinstance(value, int):
+                raise OperationParseError(
+                    f"'{name}' must be an integer."
+                )
+
+        # --------------------------------------------------------------
+        # Amount
+        # --------------------------------------------------------------
 
         amount = fields.get("amount")
-        if amount is not None and (
-            not isinstance(amount, (int, float)) or isinstance(amount, bool)
-        ):
-            raise OperationParseError("'amount' must be a number.")
 
-        for name in {"metadata"}:
-            if name in fields and fields[name] is not None and not isinstance(fields[name], dict):
-                raise OperationParseError(f"'{name}' must be an object or null.")
+        if amount is not None:
+            if (
+                not isinstance(amount, (int, float))
+                or isinstance(amount, bool)
+            ):
+                raise OperationParseError(
+                    "'amount' must be a number."
+                )
 
-        if "active" in fields and fields["active"] is not None and not isinstance(fields["active"], bool):
-            raise OperationParseError("'active' must be boolean or null.")
+        # --------------------------------------------------------------
+        # Metadata
+        # --------------------------------------------------------------
 
-        if "secret" in fields and not isinstance(fields["secret"], bool):
-            raise OperationParseError("'secret' must be boolean.")
+        metadata = fields.get("metadata")
+
+        if metadata is not None and not isinstance(metadata, dict):
+            raise OperationParseError(
+                "'metadata' must be an object or null."
+            )
+
+        # --------------------------------------------------------------
+        # Active
+        # --------------------------------------------------------------
+
+        if "active" in fields:
+
+            active = fields["active"]
+
+            if active is not None and not isinstance(active, bool):
+                raise OperationParseError(
+                    "'active' must be boolean or null."
+                )
+
+        # --------------------------------------------------------------
+        # Secret
+        # --------------------------------------------------------------
+
+        if "secret" in fields:
+
+            secret = fields["secret"]
+
+            if not isinstance(secret, bool):
+                raise OperationParseError(
+                    "'secret' must be boolean."
+                )
+
+        # --------------------------------------------------------------
+        # String fields
+        # --------------------------------------------------------------
 
         string_fields = {
             "relation_id",
@@ -180,5 +426,13 @@ class OperationParser:
         }
 
         for name in string_fields:
-            if name in fields and fields[name] is not None and not isinstance(fields[name], str):
-                raise OperationParseError(f"'{name}' must be a string or null.")
+
+            if name not in fields:
+                continue
+
+            value = fields[name]
+
+            if value is not None and not isinstance(value, str):
+                raise OperationParseError(
+                    f"'{name}' must be a string or null."
+                )

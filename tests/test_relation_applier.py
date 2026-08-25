@@ -1,3 +1,5 @@
+import pytest
+
 from models.entity import Entity
 from models.relation import Relation
 from models.world_state import WorldState
@@ -7,6 +9,7 @@ from operations.world_operations import (
     UpdateRelationOperation,
 )
 
+from services.operation_parser import OperationParser, OperationParseError
 from services.world_applier import WorldApplier
 
 
@@ -424,3 +427,58 @@ def test_update_relation_can_update_multiple_fields():
         "reason": "betrayal"
     }
     assert relation.active is False
+
+def test_create_relation_accepts_string_entity_ids():
+    parser = OperationParser()
+
+    operations = parser.parse({
+        "operations": [
+            {
+                "type": "create_relation",
+                "relation_id": "rel-1",
+                "subject_id": "1",
+                "relation_type": "enemy",
+                "target_id": "2",
+            }
+        ]
+    })
+
+    operation = operations[0]
+
+    assert operation.subject_id == 1
+    assert operation.target_id == 2
+    assert isinstance(operation.subject_id, int)
+    assert isinstance(operation.target_id, int)
+
+def test_create_relation_rejects_invalid_entity_id():
+    parser = OperationParser()
+
+    with pytest.raises(OperationParseError):
+        parser.parse({
+            "operations": [
+                {
+                    "type": "create_relation",
+                    "relation_id": "rel-1",
+                    "subject_id": "Fungoso",
+                    "relation_type": "enemy",
+                    "target_id": "2",
+                }
+            ]
+        })
+
+def test_parser_does_not_validate_entity_existence():
+    parser = OperationParser()
+
+    operations = parser.parse({
+        "operations": [
+            {
+                "type": "create_relation",
+                "relation_id": "rel-1",
+                "subject_id": "999",
+                "relation_type": "enemy",
+                "target_id": "888",
+            }
+        ]
+    })
+
+    assert len(operations) == 1

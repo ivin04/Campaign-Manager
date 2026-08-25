@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .venv/
 data/*.db
+.pytest_cache/
+*.py[cod]
+*$py.class
