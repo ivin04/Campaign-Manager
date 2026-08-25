@@ -8,9 +8,6 @@ from operations.world_operations import (
     GainResourceOperation,
     SpendResourceOperation,
     TransferResourceOperation,
-)
-
-from operations.relation import (
     CreateRelationOperation,
     UpdateRelationOperation,
     RemoveRelationOperation,
@@ -19,6 +16,19 @@ from operations.relation import (
 from services.entity_resolution import EntityResolver
 from services.item_resolution import ItemResolver
 
+from typing import Union
+
+import math
+
+WorldOperation = Union[
+    TransferItemOperation,
+    GainResourceOperation,
+    SpendResourceOperation,
+    TransferResourceOperation,
+    CreateRelationOperation,
+    UpdateRelationOperation,
+    RemoveRelationOperation,
+]
 
 class WorldResolver:
 
@@ -43,74 +53,38 @@ class WorldResolver:
     def resolve(
         self,
         facts: list[ExtractedFact],
-    ) -> list[object]:
+    ) -> list[WorldOperation]:
 
         operations = []
 
         for fact in facts:
 
             if fact.fact_type == "ITEM_TRANSFERRED":
+                operation = self._resolve_item_transfer(fact)
 
-                operation = self._resolve_item_transfer(
-                    fact
-                )
+            elif fact.fact_type == "RESOURCE_GAINED":
+                operation = self._resolve_resource_gained(fact)
 
-                if operation:
-                    operations.append(operation)
+            elif fact.fact_type == "RESOURCE_SPENT":
+                operation = self._resolve_resource_spent(fact)
 
-            if fact.fact_type == "RESOURCE_GAINED":
+            elif fact.fact_type == "RESOURCE_TRANSFERRED":
+                operation = self._resolve_resource_transferred(fact)
 
-                operation = self._resolve_resource_gained(
-                    fact
-                )
+            elif fact.fact_type == "RELATION_CREATED":
+                operation = self._resolve_relation_created(fact)
 
-                if operation:
-                    operations.append(operation)
+            elif fact.fact_type == "RELATION_CHANGED":
+                operation = self._resolve_relation_changed(fact)
 
-            if fact.fact_type == "RESOURCE_SPENT":
+            elif fact.fact_type == "RELATION_REMOVED":
+                operation = self._resolve_relation_removed(fact)
 
-                operation = self._resolve_resource_spent(
-                    fact
-                )
+            else:
+                operation = None
 
-                if operation:
-                    operations.append(operation)
-
-            if fact.fact_type == "RESOURCE_TRANSFERRED":
-
-                operation = self._resolve_resource_transferred(
-                    fact
-                )
-
-                if operation:
-                    operations.append(operation)
-
-            if fact.fact_type == "RELATION_CREATED":
-
-                operation = self._resolve_relation_created(
-                    fact
-                )
-
-                if operation:
-                    operations.append(operation)
-
-            if fact.fact_type == "RELATION_CHANGED":
-
-                operation = self._resolve_relation_changed(
-                    fact
-                )
-
-                if operation:
-                    operations.append(operation)
-
-            if fact.fact_type == "RELATION_REMOVED":
-
-                operation = self._resolve_relation_removed(
-                    fact
-                )
-
-                if operation:
-                    operations.append(operation)
+            if operation is not None:
+                operations.append(operation)
 
         return operations
 
@@ -194,18 +168,13 @@ class WorldResolver:
         except (TypeError, ValueError):
             return None
 
+        if not math.isfinite(amount):
+            return None
+
         if amount <= 0:
             return None
 
-        resource = next(
-            (
-                resource
-                for resource in self.resources.values()
-                if resource.name.casefold()
-                == resource_name.casefold()
-            ),
-            None,
-        )
+        resource = self._find_resource(resource_name)
 
         if not resource:
             return None
@@ -244,18 +213,13 @@ class WorldResolver:
         except (TypeError, ValueError):
             return None
 
+        if not math.isfinite(amount):
+            return None
+
         if amount <= 0:
             return None
 
-        resource = next(
-            (
-                resource
-                for resource in self.resources.values()
-                if resource.name.casefold()
-                == resource_name.casefold()
-            ),
-            None,
-        )
+        resource = self._find_resource(resource_name)
 
         if not resource:
             return None
@@ -267,14 +231,9 @@ class WorldResolver:
         if not owner:
             return None
 
-        balance = next(
-            (
-                balance
-                for balance in self.resource_balances.values()
-                if balance.resource_id == resource.id
-                and balance.owner_id == owner.id
-            ),
-            None,
+        balance = self._find_balance(
+            resource.id,
+            owner.id,
         )
 
         if not balance:
@@ -316,18 +275,13 @@ class WorldResolver:
         except (TypeError, ValueError):
             return None
 
+        if not math.isfinite(amount):
+            return None
+
         if amount <= 0:
             return None
 
-        resource = next(
-            (
-                resource
-                for resource in self.resources.values()
-                if resource.name.casefold()
-                == resource_name.casefold()
-            ),
-            None,
-        )
+        resource = self._find_resource(resource_name)
 
         if not resource:
             return None
@@ -346,14 +300,12 @@ class WorldResolver:
         if not target:
             return None
 
-        balance = next(
-            (
-                balance
-                for balance in self.resource_balances.values()
-                if balance.resource_id == resource.id
-                and balance.owner_id == source.id
-            ),
-            None,
+        if source.id == target.id:
+            return None
+
+        balance = self._find_balance(
+            resource.id,
+            source.id,
         )
 
         if not balance:
@@ -380,16 +332,28 @@ class WorldResolver:
         target_name = fact.data.get("target", "")
         metadata = fact.data.get("metadata")
 
-        if not relation_id:
+        if not isinstance(relation_id, str):
             return None
 
-        if not subject_name:
+        if not relation_id.strip():
             return None
 
-        if not relation_type:
+        if not isinstance(subject_name, str):
             return None
 
-        if not target_name:
+        if not subject_name.strip():
+            return None
+
+        if not isinstance(relation_type, str):
+            return None
+
+        if not relation_type.strip():
+            return None
+            
+        if not isinstance(target_name, str):
+            return None
+
+        if not target_name.strip():
             return None
 
         subject = self.entity_resolver.find(
@@ -423,23 +387,60 @@ class WorldResolver:
     ) -> UpdateRelationOperation | None:
 
         relation_id = fact.data.get("relation_id", "")
+        relation_type = fact.data.get("relation_type")
+        target_id = fact.data.get("target_id")
         metadata = fact.data.get("metadata")
         active = fact.data.get("active")
 
-        if not relation_id:
+        if not isinstance(relation_id, str):
             return None
 
-        if metadata is None and active is None:
+        if not relation_id.strip():
             return None
 
+        # Tiene que haber al menos un cambio
+        if (
+            relation_type is None
+            and target_id is None
+            and metadata is None
+            and active is None
+        ):
+            return None
+
+        # Validar relation_type si viene
+        if relation_type is not None:
+            if not isinstance(relation_type, str):
+                return None
+
+            if not relation_type.strip():
+                return None
+
+        # Validar target_id si viene
+        if target_id is not None:
+
+            if isinstance(target_id, bool):
+                return None
+
+            try:
+                target_id = int(target_id)
+            except (TypeError, ValueError):
+                return None
+
+            if target_id not in self.entity_resolver.entities:
+                return None
+
+        # Validar metadata
         if metadata is not None and not isinstance(metadata, dict):
             return None
 
+        # Validar active
         if active is not None and not isinstance(active, bool):
             return None
 
         return UpdateRelationOperation(
             relation_id=relation_id,
+            relation_type=relation_type,
+            target_id=target_id,
             metadata=metadata,
             active=active,
         )
@@ -451,9 +452,50 @@ class WorldResolver:
 
         relation_id = fact.data.get("relation_id", "")
 
-        if not relation_id:
+        if not isinstance(relation_id, str):
+            return None
+
+        if not relation_id.strip():
             return None
 
         return RemoveRelationOperation(
             relation_id=relation_id,
         )
+
+    def _find_resource(
+        self,
+        resource_name: str,
+    ) -> Resource | None:
+
+        normalized_name = resource_name.strip().casefold()
+
+        if not normalized_name:
+            return None
+
+        return next(
+            (
+                resource
+                for resource in self.resources.values()
+                if resource.name.strip().casefold()
+                == normalized_name
+            ),
+            None,
+        )
+
+    def _find_balance(
+        self,
+        resource_id: int,
+        owner_id: int,
+    ) -> ResourceBalance | None:
+
+        balances = [
+            balance
+            for balance in self.resource_balances.values()
+            if balance.resource_id == resource_id
+            and balance.owner_id == owner_id
+        ]
+
+        if len(balances) != 1:
+            return None
+
+        return balances[0]

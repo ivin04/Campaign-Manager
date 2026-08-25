@@ -105,3 +105,23 @@ def test_apply_resource_spent_rejects_insufficient_balance():
     applier.apply(world, operation)
 
     assert world.resource_balances[200].amount == 100
+
+def test_spend_resource_does_not_create_missing_balance():
+    world = build_world()
+
+    operation = SpendResourceOperation(
+        resource_id=1,
+        owner_id=1,
+        amount=50,
+    )
+
+    WorldApplier().apply(world, operation)
+
+    balances = [
+        balance
+        for balance in world.resource_balances.values()
+        if balance.resource_id == 1
+        and balance.owner_id == 1
+    ]
+
+    assert balances == []

@@ -1,19 +1,17 @@
 from models.world_state import WorldState
 from models.relation import Relation
 from models.event import Event
+from models.resource import ResourceBalance
 
 from operations.world_operations import (
     TransferItemOperation,
     GainResourceOperation,
     SpendResourceOperation,
     TransferResourceOperation,
-    CreateEventOperation,
-)
-
-from operations.relation import (
     CreateRelationOperation,
     UpdateRelationOperation,
     RemoveRelationOperation,
+    CreateEventOperation,
 )
 
 
@@ -127,10 +125,20 @@ class WorldApplier:
             None,
         )
 
-        if not balance:
+        if balance is not None:
+            balance.amount += operation.amount
             return
 
-        balance.amount += operation.amount
+        balance_id = (
+            max(world.resource_balances.keys(), default=0) + 1
+        )
+
+        world.resource_balances[balance_id] = ResourceBalance(
+            id=balance_id,
+            resource_id=operation.resource_id,
+            owner_id=operation.owner_id,
+            amount=operation.amount,
+        )
 
     def _apply_spend_resource(
         self,
@@ -157,7 +165,7 @@ class WorldApplier:
             None,
         )
 
-        if not balance:
+        if balance is None:
             return
 
         if balance.amount < operation.amount:
@@ -193,7 +201,7 @@ class WorldApplier:
             None,
         )
 
-        if not source_balance:
+        if source_balance is None:
             return
 
         if source_balance.amount < operation.amount:
@@ -209,8 +217,19 @@ class WorldApplier:
             None,
         )
 
-        if not target_balance:
-            return
+        if target_balance is None:
+            balance_id = (
+                max(world.resource_balances.keys(), default=0) + 1
+            )
+
+            target_balance = ResourceBalance(
+                id=balance_id,
+                resource_id=operation.resource_id,
+                owner_id=operation.target_id,
+                amount=0,
+            )
+
+            world.resource_balances[balance_id] = target_balance
 
         source_balance.amount -= operation.amount
         target_balance.amount += operation.amount

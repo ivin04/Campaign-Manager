@@ -2,7 +2,7 @@ from models.entity import Entity
 from models.relation import Relation
 from models.world_state import WorldState
 
-from operations.relation import (
+from operations.world_operations import (
     CreateRelationOperation,
     UpdateRelationOperation,
 )

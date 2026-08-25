@@ -9,8 +9,8 @@ class WorldOperation:
     """
 
     operation_type: str
-
     data: dict[str, Any]
+
 
 OP_CREATE_ENTITY = "CREATE_ENTITY"
 OP_UPDATE_ENTITY = "UPDATE_ENTITY"
@@ -27,6 +27,7 @@ OP_UPDATE_RELATION = "UPDATE_RELATION"
 
 OP_CREATE_EVENT = "CREATE_EVENT"
 
+
 @dataclass
 class TransferItemOperation:
     """
@@ -36,6 +37,7 @@ class TransferItemOperation:
 
     instance_id: int
     new_owner_id: int
+
 
 @dataclass
 class GainResourceOperation:
@@ -48,6 +50,7 @@ class GainResourceOperation:
     owner_id: int
     amount: float
 
+
 @dataclass
 class SpendResourceOperation:
     """
@@ -57,6 +60,7 @@ class SpendResourceOperation:
     resource_id: int
     owner_id: int
     amount: float
+
 
 @dataclass
 class TransferResourceOperation:
@@ -70,6 +74,7 @@ class TransferResourceOperation:
     target_id: int
     amount: float
 
+
 @dataclass
 class CreateRelationOperation:
     """
@@ -77,21 +82,21 @@ class CreateRelationOperation:
     """
 
     relation_id: str
-    subject_id: str | int
+    subject_id: int | str
     relation_type: str
-    target_id: str | int
-
+    target_id: int | str
     metadata: dict[str, Any] | None = None
-
-    active: bool = True
 
 
 @dataclass
 class UpdateRelationOperation:
-    relation_id: str
+    """
+    Modifica una relación existente.
+    """
 
+    relation_id: str
     relation_type: str | None = None
-    target_id: int | None = None
+    target_id: int | str | None = None
     metadata: dict[str, Any] | None = None
     active: bool | None = None
 

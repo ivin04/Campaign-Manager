@@ -3,7 +3,7 @@ from models.relation import Relation
 from models.world_state import WorldState
 from models.extraction import ExtractedFact
 
-from operations.relation import (
+from operations.world_operations import (
     CreateRelationOperation,
     UpdateRelationOperation,
     RemoveRelationOperation,
@@ -310,3 +310,442 @@ def test_apply_remove_relation_unknown_relation():
     applier.apply(world, operation)
 
     assert world.relations == {}
+
+def test_resolve_relation_changed_type():
+
+    resolver = build_resolver()
+
+    facts = [
+        ExtractedFact(
+            fact_type="RELATION_CHANGED",
+            data={
+                "relation_id": "rel-1",
+                "relation_type": "enemy",
+            },
+        )
+    ]
+
+    operations = resolver.resolve(facts)
+
+    assert len(operations) == 1
+
+    operation = operations[0]
+
+    assert isinstance(
+        operation,
+        UpdateRelationOperation,
+    )
+
+    assert operation.relation_id == "rel-1"
+    assert operation.relation_type == "enemy"
+
+def test_resolve_relation_changed_target():
+
+    resolver = build_resolver()
+
+    facts = [
+        ExtractedFact(
+            fact_type="RELATION_CHANGED",
+            data={
+                "relation_id": "rel-1",
+                "target_id": "2",
+            },
+        )
+    ]
+
+    operations = resolver.resolve(facts)
+
+    assert len(operations) == 1
+
+    operation = operations[0]
+
+    assert isinstance(
+        operation,
+        UpdateRelationOperation,
+    )
+
+    assert operation.relation_id == "rel-1"
+    assert operation.target_id == 2
+
+def test_resolve_relation_changed_rejects_empty_relation_id():
+
+    resolver = build_resolver()
+
+    facts = [
+        ExtractedFact(
+            fact_type="RELATION_CHANGED",
+            data={
+                "relation_id": "",
+                "relation_type": "enemy",
+            },
+        )
+    ]
+
+    operations = resolver.resolve(facts)
+
+    assert operations == []
+
+def test_resolve_relation_changed_rejects_invalid_metadata():
+
+    resolver = build_resolver()
+
+    facts = [
+        ExtractedFact(
+            fact_type="RELATION_CHANGED",
+            data={
+                "relation_id": "rel-1",
+                "metadata": "not-a-dict",
+            },
+        )
+    ]
+
+    operations = resolver.resolve(facts)
+
+    assert operations == []
+
+def test_resolve_relation_changed_rejects_invalid_active():
+
+    resolver = build_resolver()
+
+    facts = [
+        ExtractedFact(
+            fact_type="RELATION_CHANGED",
+            data={
+                "relation_id": "rel-1",
+                "active": "false",
+            },
+        )
+    ]
+
+    operations = resolver.resolve(facts)
+
+    assert operations == []
+
+def build_resolver():
+    world = build_world()
+
+    return WorldResolver(
+        entities=world.entities,
+        items=world.items,
+        item_instances=world.item_instances,
+        resources=world.resources,
+        resource_balances=world.resource_balances,
+    )
+
+def test_resolve_relation_created_rejects_invalid_relation_id_type():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CREATED",
+        data={
+            "relation_id": 123,
+            "subject": "Fungoso",
+            "relation_type": "enemy",
+            "target": "Elric",
+        },
+    )
+
+    assert resolver.resolve([fact]) == []
+
+def test_resolve_relation_changed_rejects_invalid_relation_id_type():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CHANGED",
+        data={
+            "relation_id": 123,
+            "active": True,
+        },
+    )
+
+    assert resolver.resolve([fact]) == []
+
+def test_resolve_relation_removed_rejects_invalid_relation_id_type():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_REMOVED",
+        data={
+            "relation_id": 123,
+        },
+    )
+
+    assert resolver.resolve([fact]) == []
+
+def test_resolve_relation_changed_rejects_blank_relation_id():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CHANGED",
+        data={
+            "relation_id": "   ",
+            "active": True,
+        },
+    )
+
+    assert resolver.resolve([fact]) == []
+
+def test_resolve_relation_created_rejects_invalid_relation_type():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CREATED",
+        data={
+            "relation_id": "rel-1",
+            "subject": "Fungoso",
+            "relation_type": 123,
+            "target": "Elric",
+        },
+    )
+
+    assert resolver.resolve([fact]) == []
+
+def test_resolve_relation_created_rejects_blank_relation_type():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CREATED",
+        data={
+            "relation_id": "rel-1",
+            "subject": "Fungoso",
+            "relation_type": "   ",
+            "target": "Elric",
+        },
+    )
+
+    assert resolver.resolve([fact]) == []
+
+def test_resolve_relation_changed_rejects_blank_relation_type():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CHANGED",
+        data={
+            "relation_id": "rel-1",
+            "relation_type": "   ",
+        },
+    )
+
+    assert resolver.resolve([fact]) == []
+
+def test_resolve_relation_changed_rejects_boolean_target_id():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CHANGED",
+        data={
+            "relation_id": "rel-1",
+            "target_id": True,
+        },
+    )
+
+    assert resolver.resolve([fact]) == []
+
+def test_resolve_relation_changed_rejects_false_target_id():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CHANGED",
+        data={
+            "relation_id": "rel-1",
+            "target_id": False,
+        },
+    )
+
+    assert resolver.resolve([fact]) == []
+
+def test_resolve_relation_changed_converts_target_id_to_int():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CHANGED",
+        data={
+            "relation_id": "rel-1",
+            "target_id": "2",
+        },
+    )
+
+    operations = resolver.resolve([fact])
+
+    assert len(operations) == 1
+    assert operations[0].target_id == 2
+
+def test_resolve_relation_created_accepts_metadata_dict():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CREATED",
+        data={
+            "relation_id": "rel-1",
+            "subject": "Fungoso",
+            "relation_type": "enemy",
+            "target": "Neria",
+            "metadata": {
+                "reason": "betrayal",
+            },
+        },
+    )
+
+    operations = resolver.resolve([fact])
+
+    assert len(operations) == 1
+
+    operation = operations[0]
+
+    assert isinstance(operation, CreateRelationOperation)
+    assert operation.relation_id == "rel-1"
+    assert operation.subject_id == 1
+    assert operation.relation_type == "enemy"
+    assert operation.target_id == 2
+    assert operation.metadata == {
+        "reason": "betrayal",
+    }
+
+
+def test_resolve_relation_created_accepts_empty_metadata():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CREATED",
+        data={
+            "relation_id": "rel-1",
+            "subject": "Fungoso",
+            "relation_type": "enemy",
+            "target": "Neria",
+            "metadata": {},
+        },
+    )
+
+    operations = resolver.resolve([fact])
+
+    assert len(operations) == 1
+
+    operation = operations[0]
+
+    assert isinstance(operation, CreateRelationOperation)
+    assert operation.metadata == {}
+
+def test_resolve_relation_changed_rejects_invalid_metadata():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CHANGED",
+        data={
+            "relation_id": "rel-1",
+            "metadata": "invalid",
+        },
+    )
+
+    assert resolver.resolve([fact]) == []
+
+def test_resolve_relation_created_rejects_invalid_subject_type():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CREATED",
+        data={
+            "relation_id": "rel-1",
+            "subject": 123,
+            "relation_type": "enemy",
+            "target": "Neria",
+        },
+    )
+
+    assert resolver.resolve([fact]) == []
+
+
+def test_resolve_relation_created_rejects_blank_subject():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CREATED",
+        data={
+            "relation_id": "rel-1",
+            "subject": "   ",
+            "relation_type": "enemy",
+            "target": "Neria",
+        },
+    )
+
+    assert resolver.resolve([fact]) == []
+
+
+def test_resolve_relation_created_rejects_invalid_target_type():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CREATED",
+        data={
+            "relation_id": "rel-1",
+            "subject": "Fungoso",
+            "relation_type": "enemy",
+            "target": 123,
+        },
+    )
+
+    assert resolver.resolve([fact]) == []
+
+
+def test_resolve_relation_created_rejects_blank_target():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_CREATED",
+        data={
+            "relation_id": "rel-1",
+            "subject": "Fungoso",
+            "relation_type": "enemy",
+            "target": "   ",
+        },
+    )
+
+    assert resolver.resolve([fact]) == []
+
+def test_resolve_relation_removed():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_REMOVED",
+        data={
+            "relation_id": "rel-1",
+        },
+    )
+
+    operations = resolver.resolve([fact])
+
+    assert len(operations) == 1
+
+    operation = operations[0]
+
+    assert isinstance(
+        operation,
+        RemoveRelationOperation,
+    )
+
+    assert operation.relation_id == "rel-1"
+
+
+def test_resolve_relation_removed_rejects_empty_relation_id():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_REMOVED",
+        data={
+            "relation_id": "",
+        },
+    )
+
+    assert resolver.resolve([fact]) == []
+
+
+def test_resolve_relation_removed_rejects_blank_relation_id():
+    resolver = build_resolver()
+
+    fact = ExtractedFact(
+        fact_type="RELATION_REMOVED",
+        data={
+            "relation_id": "   ",
+        },
+    )
+
+    assert resolver.resolve([fact]) == []

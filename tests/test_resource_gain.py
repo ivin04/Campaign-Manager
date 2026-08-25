@@ -2,6 +2,7 @@ from models.entity import Entity
 from models.extraction import ExtractedFact
 from models.resource import Resource, ResourceBalance
 from models.world_state import WorldState
+from models.resource import Resource
 
 from operations.world_operations import GainResourceOperation
 
@@ -133,3 +134,29 @@ def test_apply_resource_gained_rejects_non_positive_amount():
     applier.apply(world, operation)
 
     assert world.resource_balances[200].amount == 100
+
+def test_gain_resource_creates_missing_balance():
+    world = build_world()
+
+    world.resources[1] = Resource(
+        id=1,
+        name="Gold",
+    )
+
+    operation = GainResourceOperation(
+        resource_id=1,
+        owner_id=1,
+        amount=100,
+    )
+
+    WorldApplier().apply(world, operation)
+
+    balances = [
+        balance
+        for balance in world.resource_balances.values()
+        if balance.resource_id == 1
+        and balance.owner_id == 1
+    ]
+
+    assert len(balances) == 1
+    assert balances[0].amount == 100

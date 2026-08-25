@@ -1,6 +1,7 @@
 from models.entity import Entity
 from models.resource import Resource, ResourceBalance
 from models.world_state import WorldState
+from models.resource import Resource, ResourceBalance
 
 from operations.world_operations import TransferResourceOperation
 from services.world_applier import WorldApplier
@@ -145,3 +146,44 @@ def test_transfer_resource_rejects_insufficient_balance():
 
     assert world.resource_balances[200].amount == 100
     assert world.resource_balances[201].amount == 25
+
+def test_transfer_resource_creates_missing_target_balance():
+    world = build_world()
+
+    world.resources[1] = Resource(
+        id=1,
+        name="Gold",
+    )
+
+    world.resource_balances[1] = ResourceBalance(
+        id=1,
+        resource_id=1,
+        owner_id=1,
+        amount=100,
+    )
+
+    operation = TransferResourceOperation(
+        resource_id=1,
+        source_id=1,
+        target_id=2,
+        amount=40,
+    )
+
+    WorldApplier().apply(world, operation)
+
+    source = next(
+        balance
+        for balance in world.resource_balances.values()
+        if balance.resource_id == 1
+        and balance.owner_id == 1
+    )
+
+    target = next(
+        balance
+        for balance in world.resource_balances.values()
+        if balance.resource_id == 1
+        and balance.owner_id == 2
+    )
+
+    assert source.amount == 60
+    assert target.amount == 40
