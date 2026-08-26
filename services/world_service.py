@@ -3,6 +3,7 @@ from models.operation_result import OperationResult
 from repositories.world_repository import WorldRepository
 from services.world_applier import WorldApplier
 
+import copy
 
 class WorldService:
     """
@@ -60,6 +61,94 @@ class WorldService:
             self.world,
             operation,
         )
+
+    def apply_operations_and_save(
+        self,
+        operations,
+    ):
+        """
+        Aplica varias operaciones de forma atómica a nivel de WorldState.
+
+        Comportamiento:
+
+        - Las operaciones se aplican sobre una copia.
+        - Si una operación devuelve success=False, se aborta todo.
+        - Si una operación lanza una excepción, se aborta todo.
+        - El WorldState original no se modifica si algo falla.
+        - Solo se persiste una vez cuando todas las operaciones tienen éxito.
+
+        NOTA:
+        La atomicidad de SQLite se garantiza en el repositorio.
+        Este método garantiza la atomicidad del WorldState en memoria.
+        """
+
+        # =========================================================
+        # 1. Guardar el estado original
+        # =========================================================
+
+        original_state = self.world
+
+        # =========================================================
+        # 2. Crear estado de trabajo independiente
+        # =========================================================
+
+        working_state = copy.deepcopy(
+            original_state
+        )
+
+        self.world = working_state
+
+        results = []
+
+        try:
+
+            # =====================================================
+            # 3. Aplicar TODAS las operaciones sobre la copia
+            # =====================================================
+
+            for operation in operations:
+
+                result = self.apply(
+                    operation
+                )
+
+                results.append(result)
+
+                # -------------------------------------------------
+                # Si una operación falla lógicamente:
+                # abortamos TODO.
+                # -------------------------------------------------
+
+                if not result.success:
+
+                    self.world = original_state
+
+                    return {
+                        "success": False,
+                        "results": results,
+                    }
+
+            # =====================================================
+            # 4. Todas las operaciones han tenido éxito
+            # =====================================================
+
+            self.save()
+
+            return {
+                "success": True,
+                "results": results,
+                "world": self.world,
+            }
+
+        except Exception:
+
+            # =====================================================
+            # 5. Error inesperado
+            # =====================================================
+
+            self.world = original_state
+
+            raise
 
     def apply_and_save(
         self,

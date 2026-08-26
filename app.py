@@ -7,21 +7,15 @@ from services.operation_parser import OperationParser, OperationParseError
 from services.world_service import WorldService
 from services.memory_search_service import MemorySearchService
 
-from database import init_db, rows, one, execute
+from database import init_db, one, execute
 
 from models.schemas import (
     CampaignUpdate,
     CampaignSessionUpdate,
-    ItemIn,
-    EventIn,
     SessionIn,
 )
 
-from repositories import item_repository
-from services import item_service
 from dataclasses import asdict
-
-import re
 
 app = FastAPI(title="D&D Campaign Manager", version="0.1.0")
 
@@ -82,177 +76,6 @@ def update_campaign_session(data: CampaignSessionUpdate):
     )
 
     return one("SELECT * FROM campaign WHERE id=1")
-
-@app.post("/items/extracted")
-def save_extracted_item(data: ItemIn):
-    try:
-        from services.item_service import save_extracted_item
-
-        item = save_extracted_item(
-            data.model_dump()
-        )
-
-        return item
-
-    except ValueError as e:
-        raise HTTPException(
-            status_code=400,
-            detail=str(e)
-        )
-
-    except Exception as e:
-        print(
-            "[campaign-manager] ERROR saving extracted item:",
-            repr(e)
-        )
-
-        raise HTTPException(
-            status_code=500,
-            detail="Could not save extracted item"
-        )
-
-@app.get("/items/search")
-def search_item(name: str = Query(..., min_length=1)):
-    item = item_service.get_item_by_name(name)
-
-    if not item:
-        raise HTTPException(
-            status_code=404,
-            detail="Item not found"
-        )
-
-    return item
-
-@app.put("/items/{item_id}")
-def update_item(item_id: int, data: ItemIn):
-    item = item_service.get_item(item_id)
-
-    if not item:
-        raise HTTPException(
-            status_code=404,
-            detail="Item not found"
-        )
-
-    item_service.update_item(
-        item_id,
-        data.model_dump()
-    )
-
-    return item_service.get_item(item_id)
-
-@app.post("/events")
-def create_event(data: EventIn):
-    try:
-        d = data.model_dump()
-
-        # Evitar duplicados de eventos esencialmente iguales.
-        existing = one("""
-            SELECT *
-            FROM events
-            WHERE LOWER(TRIM(title)) = LOWER(TRIM(?))
-              AND LOWER(TRIM(description)) = LOWER(TRIM(?))
-            LIMIT 1
-        """, (
-            d["title"],
-            d["description"],
-        ))
-
-        if existing:
-            print(
-                "[campaign-manager] Event already exists, skipping:",
-                d["title"]
-            )
-
-            return existing
-
-        eid = execute("""
-            INSERT INTO events
-            (title, session, event_type, description, consequences, secret)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            d["title"],
-            d["session"],
-            d["event_type"],
-            d["description"],
-            d["consequences"],
-            int(bool(d["secret"]))
-        ))
-
-        event = one(
-            "SELECT * FROM events WHERE id=?",
-            (eid,)
-        )
-
-        print(
-            "[campaign-manager] Event saved:",
-            event
-        )
-
-        return event
-
-    except Exception as e:
-        print(
-            "[campaign-manager] ERROR creating event:",
-            repr(e)
-        )
-        raise
-
-@app.get("/events/search")
-def search_event(title: str = Query(..., min_length=1)):
-    event = one("""
-        SELECT *
-        FROM events
-        WHERE LOWER(title) = LOWER(?)
-        LIMIT 1
-    """, (title.strip(),))
-
-    if not event:
-        raise HTTPException(
-            status_code=404,
-            detail="Event not found"
-        )
-
-    return event
-
-
-@app.put("/events/{event_id}")
-def update_event(event_id: int, data: EventIn):
-    event = one(
-        "SELECT * FROM events WHERE id=?",
-        (event_id,)
-    )
-
-    if not event:
-        raise HTTPException(
-            status_code=404,
-            detail="Event not found"
-        )
-
-    d = data.model_dump()
-
-    execute("""
-        UPDATE events
-        SET title=?,
-            session=?,
-            event_type=?,
-            description=?,
-            consequences=?,
-            secret=?
-        WHERE id=?
-    """, (
-        d["title"],
-        d["session"],
-        d["event_type"],
-        d["description"],
-        d["consequences"],
-        int(bool(d["secret"])),
-        event_id
-    ))
-
-    return one(
-        "SELECT * FROM events WHERE id=?",
-        (event_id,)
-    )
 
 @app.post("/sessions")
 def create_session(data: SessionIn):
@@ -354,7 +177,7 @@ def apply_world_operations(data: WorldOperationsIn):
         )
 
     for operation in operations:
-        world_service.apply_and_save(operation)
+        world_service.apply_operations_and_save(operations)
 
     return {
         "ok": True,
