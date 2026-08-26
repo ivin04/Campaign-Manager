@@ -342,36 +342,6 @@ def init_db():
 
 
         -- ============================================================
-        -- LEGACY TABLES
-        --
-        -- Se mantienen temporalmente.
-        -- NO las utilizaremos para el nuevo WorldState.
-        -- ============================================================
-
-        CREATE TABLE IF NOT EXISTS events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            session INTEGER,
-            event_type TEXT DEFAULT '',
-            description TEXT NOT NULL,
-            consequences TEXT DEFAULT '',
-            secret INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-
-
-        -- ============================================================
-        -- LEGACY INDEXES
-        -- ============================================================
-
-        CREATE INDEX IF NOT EXISTS idx_events_title
-            ON events(title);
-
-        CREATE INDEX IF NOT EXISTS idx_events_session
-            ON events(session);
-
-
-        -- ============================================================
         -- CAMPAIGN DEFAULT
         -- ============================================================
 
