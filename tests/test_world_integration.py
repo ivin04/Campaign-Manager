@@ -578,6 +578,8 @@ def test_update_entity_changes_only_requested_fields():
         applier=WorldApplier(),
     )
 
+    service.load()
+
     operation = UpdateEntityOperation(
         entity_id=1,
         description="Ahora está herido.",
@@ -613,6 +615,8 @@ def test_update_entity_changes_multiple_fields():
         applier=WorldApplier(),
     )
 
+    service.load()
+
     operation = UpdateEntityOperation(
         entity_id=1,
         name="Aldric el Herido",
@@ -640,6 +644,8 @@ def test_update_entity_ignores_unknown_entity():
         repository=InMemoryRepository(world),
         applier=WorldApplier(),
     )
+
+    service.load()
 
     operation = UpdateEntityOperation(
         entity_id=999,
