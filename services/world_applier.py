@@ -4,9 +4,11 @@ from models.world_state import WorldState
 from models.relation import Relation
 from models.event import Event
 from models.resource import ResourceBalance
+from models.entity import Entity
 
 from operations.world_operations import (
     WorldOperation,
+    CreateEntityOperation,
     TransferItemOperation,
     GainResourceOperation,
     SpendResourceOperation,
@@ -37,7 +39,10 @@ class WorldApplier:
         operation: WorldOperation,
     ) -> None:
 
-        if isinstance(operation, TransferItemOperation):
+        if isinstance(operation, CreateEntityOperation):
+            self._apply_create_entity(world, operation)
+
+        elif isinstance(operation, TransferItemOperation):
             self._apply_transfer_item(world, operation)
 
         elif isinstance(operation, GainResourceOperation):
@@ -60,6 +65,37 @@ class WorldApplier:
 
         elif isinstance(operation, CreateEventOperation):
             self._apply_create_event(world, operation)
+
+    # ============================================================
+    # ENTITIES
+    # ============================================================
+
+    def _apply_create_entity(
+        self,
+        world: WorldState,
+        operation: CreateEntityOperation,
+    ) -> None:
+
+        name = operation.name.strip()
+
+        if not name:
+            return
+
+        # Evitar duplicados por nombre.
+        for entity in world.entities.values():
+            if entity.name.strip().lower() == name.lower():
+                return
+
+        entity_id = self._next_entity_id(world)
+
+        world.entities[entity_id] = Entity(
+            id=entity_id,
+            name=name,
+            entity_type=operation.entity_type,
+            description=operation.description,
+            notes=operation.notes,
+            active=operation.active,
+        )
 
     # ============================================================
     # ITEMS
@@ -334,6 +370,20 @@ class WorldApplier:
     # ============================================================
     # HELPERS
     # ============================================================
+
+    @staticmethod
+    def _next_entity_id(
+        world: WorldState,
+    ) -> int:
+
+        numeric_ids = [
+            entity_id
+            for entity_id in world.entities
+            if isinstance(entity_id, int)
+            and not isinstance(entity_id, bool)
+        ]
+
+        return max(numeric_ids, default=0) + 1
 
     @staticmethod
     def _valid_amount(amount: float) -> bool:

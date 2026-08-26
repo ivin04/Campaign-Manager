@@ -5,6 +5,7 @@ from dataclasses import MISSING
 from typing import Any
 
 from operations.world_operations import (
+    CreateEntityOperation,
     CreateEventOperation,
     CreateRelationOperation,
     GainResourceOperation,
@@ -35,6 +36,7 @@ class OperationParser:
     """
 
     _BUILDERS = {
+        "create_entity": CreateEntityOperation,
         "transfer_item": TransferItemOperation,
         "gain_resource": GainResourceOperation,
         "spend_resource": SpendResourceOperation,
@@ -416,14 +418,32 @@ class OperationParser:
         # --------------------------------------------------------------
 
         string_fields = {
+            "name",
+            "entity_type",
+            "description",
+            "notes",
             "relation_id",
             "relation_type",
             "event_id",
             "event_type",
             "title",
-            "description",
             "consequences",
         }
+
+        # --------------------------------------------------------------
+        # Entity name
+        # --------------------------------------------------------------
+
+        if operation_type == "create_entity":
+
+            name = fields.get("name")
+
+            if not isinstance(name, str) or not name.strip():
+                raise OperationParseError(
+                    "'name' is required for create_entity."
+                )
+
+            fields["name"] = name.strip()
 
         for name in string_fields:
 

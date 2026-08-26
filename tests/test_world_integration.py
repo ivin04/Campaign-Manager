@@ -8,8 +8,12 @@ from services.operation_parser import (
     OperationParser,
     OperationParseError,
 )
+
+from operations.world_operations import CreateEntityOperation
+
 from services.world_service import WorldService
 from services.world_applier import WorldApplier
+from services.world_service import WorldService
 
 
 class InMemoryRepository:
@@ -28,7 +32,7 @@ class InMemoryRepository:
     """
 
     def __init__(self, world=None):
-        self.world = world or WorldState()
+        self.world = world if world is not None else WorldState()
         self.saved_world = None
         self.load_calls = 0
         self.save_calls = 0
@@ -480,3 +484,74 @@ def test_apply_then_save_is_explicit():
 
     assert repository.save_calls == 1
     assert repository.saved_world is service.world
+
+def test_create_entity_and_persist():
+    service = WorldService()
+
+    service.load()
+
+    operation = CreateEntityOperation(
+        name="Aldric",
+        entity_type="npc",
+        description="Un minero viejo.",
+        notes="Sabe algo sobre las desapariciones.",
+    )
+
+    service.apply(operation)
+    service.save()
+
+    # Simulamos una nueva instancia del servicio.
+    new_service = WorldService()
+    world = new_service.load()
+
+    entity = next(
+        entity
+        for entity in world.entities.values()
+        if entity.name == "Aldric"
+    )
+
+    assert entity.entity_type == "npc"
+    assert entity.description == "Un minero viejo."
+    assert entity.notes == "Sabe algo sobre las desapariciones."
+    assert entity.active is True
+
+def test_create_entity_generates_next_id():
+    world = WorldState(
+        entities={
+            1: Entity(
+                id=1,
+                name="Fungoso",
+                entity_type="character",
+                description="",
+                notes="",
+                active=True,
+            ),
+            4: Entity(
+                id=4,
+                name="Goblin",
+                entity_type="creature",
+                description="",
+                notes="",
+                active=True,
+            ),
+        }
+    )
+
+    service = WorldService(
+        repository=InMemoryRepository(world),
+        applier=WorldApplier(),
+    )
+
+    service.load()
+
+    operation = CreateEntityOperation(
+        name="Aldric",
+        entity_type="npc",
+        description="Un minero viejo.",
+        notes="",
+    )
+
+    service.apply(operation)
+
+    assert 5 in service.world.entities
+    assert service.world.entities[5].name == "Aldric"

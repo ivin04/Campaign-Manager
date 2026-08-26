@@ -19,6 +19,24 @@ class WorldOperation:
 
     pass
 
+# ============================================================
+# ENTITIES
+# ============================================================
+
+@dataclass(frozen=True)
+class CreateEntityOperation(WorldOperation):
+    """
+    Crea una entidad persistente dentro del mundo.
+
+    El ID se genera por WorldApplier a partir del estado actual.
+    El LLM NO debe proporcionar el ID.
+    """
+
+    name: str
+    entity_type: str = ""
+    description: str = ""
+    notes: str = ""
+    active: bool = True
 
 # ============================================================
 # ITEMS
