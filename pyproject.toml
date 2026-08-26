@@ -1,0 +1,18 @@
+[project]
+name = "campaign-manager"
+version = "0.1.0"
+description = "Campaign world state and operation engine"
+requires-python = ">=3.12"
+
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

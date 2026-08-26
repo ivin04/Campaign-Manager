@@ -5,3 +5,4 @@ data/*.db
 .pytest_cache/
 *.py[cod]
 *$py.class
+data/*.backup
