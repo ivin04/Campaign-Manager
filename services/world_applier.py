@@ -9,6 +9,7 @@ from models.entity import Entity
 from operations.world_operations import (
     WorldOperation,
     CreateEntityOperation,
+    UpdateEntityOperation,
     TransferItemOperation,
     GainResourceOperation,
     SpendResourceOperation,
@@ -41,6 +42,9 @@ class WorldApplier:
 
         if isinstance(operation, CreateEntityOperation):
             self._apply_create_entity(world, operation)
+
+        elif isinstance(operation, UpdateEntityOperation):
+            self._apply_update_entity(world, operation)
 
         elif isinstance(operation, TransferItemOperation):
             self._apply_transfer_item(world, operation)
@@ -96,6 +100,44 @@ class WorldApplier:
             notes=operation.notes,
             active=operation.active,
         )
+
+    def _apply_update_entity(
+        self,
+        world: WorldState,
+        operation: UpdateEntityOperation,
+    ) -> None:
+
+        entity = world.entities.get(operation.entity_id)
+
+        if entity is None:
+            return
+
+        if operation.name is not None:
+            name = operation.name.strip()
+
+            if not name:
+                return
+
+            for entity_id, other in world.entities.items():
+                if entity_id == operation.entity_id:
+                    continue
+
+                if other.name.strip().lower() == name.lower():
+                    return
+
+            entity.name = name
+
+        if operation.entity_type is not None:
+            entity.entity_type = operation.entity_type
+
+        if operation.description is not None:
+            entity.description = operation.description
+
+        if operation.notes is not None:
+            entity.notes = operation.notes
+
+        if operation.active is not None:
+            entity.active = operation.active
 
     # ============================================================
     # ITEMS

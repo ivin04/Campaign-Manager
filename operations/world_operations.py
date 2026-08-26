@@ -19,6 +19,7 @@ class WorldOperation:
 
     pass
 
+
 # ============================================================
 # ENTITIES
 # ============================================================
@@ -37,6 +38,25 @@ class CreateEntityOperation(WorldOperation):
     description: str = ""
     notes: str = ""
     active: bool = True
+
+
+@dataclass(frozen=True)
+class UpdateEntityOperation(WorldOperation):
+    """
+    Modifica únicamente los campos proporcionados de una entidad
+    existente.
+
+    None significa "no modificar ese campo".
+    """
+
+    entity_id: int
+
+    name: str | None = None
+    entity_type: str | None = None
+    description: str | None = None
+    notes: str | None = None
+    active: bool | None = None
+
 
 # ============================================================
 # ITEMS

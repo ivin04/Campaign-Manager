@@ -9,7 +9,10 @@ from services.operation_parser import (
     OperationParseError,
 )
 
-from operations.world_operations import CreateEntityOperation
+from operations.world_operations import (
+    CreateEntityOperation,
+    UpdateEntityOperation,
+)
 
 from services.world_service import WorldService
 from services.world_applier import WorldApplier
@@ -555,3 +558,94 @@ def test_create_entity_generates_next_id():
 
     assert 5 in service.world.entities
     assert service.world.entities[5].name == "Aldric"
+
+def test_update_entity_changes_only_requested_fields():
+    world = WorldState(
+        entities={
+            1: Entity(
+                id=1,
+                name="Aldric",
+                entity_type="npc",
+                description="Un minero viejo.",
+                notes="Sabe algo sobre la mina.",
+                active=True,
+            )
+        }
+    )
+
+    service = WorldService(
+        repository=InMemoryRepository(world),
+        applier=WorldApplier(),
+    )
+
+    operation = UpdateEntityOperation(
+        entity_id=1,
+        description="Ahora está herido.",
+    )
+
+    service.apply(operation)
+
+    entity = service.world.entities[1]
+
+    assert entity.name == "Aldric"
+    assert entity.entity_type == "npc"
+    assert entity.description == "Ahora está herido."
+    assert entity.notes == "Sabe algo sobre la mina."
+    assert entity.active is True
+
+
+def test_update_entity_changes_multiple_fields():
+    world = WorldState(
+        entities={
+            1: Entity(
+                id=1,
+                name="Aldric",
+                entity_type="npc",
+                description="Un minero viejo.",
+                notes="",
+                active=True,
+            )
+        }
+    )
+
+    service = WorldService(
+        repository=InMemoryRepository(world),
+        applier=WorldApplier(),
+    )
+
+    operation = UpdateEntityOperation(
+        entity_id=1,
+        name="Aldric el Herido",
+        entity_type="character",
+        description="Está gravemente herido.",
+        notes="Ya no puede trabajar.",
+        active=False,
+    )
+
+    service.apply(operation)
+
+    entity = service.world.entities[1]
+
+    assert entity.name == "Aldric el Herido"
+    assert entity.entity_type == "character"
+    assert entity.description == "Está gravemente herido."
+    assert entity.notes == "Ya no puede trabajar."
+    assert entity.active is False
+
+
+def test_update_entity_ignores_unknown_entity():
+    world = WorldState()
+
+    service = WorldService(
+        repository=InMemoryRepository(world),
+        applier=WorldApplier(),
+    )
+
+    operation = UpdateEntityOperation(
+        entity_id=999,
+        description="Esto no debería aplicarse.",
+    )
+
+    service.apply(operation)
+
+    assert service.world.entities == {}

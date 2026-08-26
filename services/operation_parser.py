@@ -6,6 +6,7 @@ from typing import Any
 
 from operations.world_operations import (
     CreateEntityOperation,
+    UpdateEntityOperation,
     CreateEventOperation,
     CreateRelationOperation,
     GainResourceOperation,
@@ -37,6 +38,7 @@ class OperationParser:
 
     _BUILDERS = {
         "create_entity": CreateEntityOperation,
+        "update_entity": UpdateEntityOperation,
         "transfer_item": TransferItemOperation,
         "gain_resource": GainResourceOperation,
         "spend_resource": SpendResourceOperation,
