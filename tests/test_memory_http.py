@@ -246,12 +246,15 @@ def test_memory_context_http_returns_context(clean_world):
     data = response.json()
 
     assert data["query"] == "Fungoso"
+    assert "entities" in data
+    assert "context" in data
 
-    assert "results" in data
-    assert "entities" in data["results"]
+    assert any(
+        entity["name"] == "Fungoso"
+        for entity in data["entities"]
+    )
 
-    assert len(data["results"]["entities"]) == 1
-    assert data["results"]["entities"][0]["name"] == "Fungoso"
+    assert "Fungoso" in data["context"]
 
 
 # ============================================================

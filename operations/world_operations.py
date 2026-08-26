@@ -111,7 +111,7 @@ class TransferResourceOperation(WorldOperation):
     """
 
     resource_id: int
-    source_id: int
+    subject_id: int
     target_id: int
     amount: float
 

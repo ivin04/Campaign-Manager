@@ -1,11 +1,11 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional
 
 from models.world_operations_in import WorldOperationsIn
 from services.operation_parser import OperationParser, OperationParseError
 from services.world_service import WorldService
 from services.memory_search_service import MemorySearchService
+from services.context_builder import ContextBuilder
 
 from database import init_db, one, execute
 
@@ -100,16 +100,14 @@ def search_memory(q: str = Query(..., min_length=1)):
     )
 
 @app.get("/memory/context")
-def memory_context(q: str = Query(..., min_length=1)):
-    """
-    Devuelve contexto de memoria para SillyTavern.
-
-    La búsqueda se realiza exclusivamente sobre el WorldState.
-    """
-
+def memory_context(q: str):
     world = world_service.get_world()
 
-    return memory_search_service.context(
+    context_builder = ContextBuilder(
+        memory_search_service=memory_search_service,
+    )
+
+    return context_builder.build(
         world,
         q,
     )
@@ -176,8 +174,7 @@ def apply_world_operations(data: WorldOperationsIn):
             detail=str(exc),
         )
 
-    for operation in operations:
-        world_service.apply_operations_and_save(operations)
+    result = world_service.apply_operations_and_save(operations)
 
     return {
         "ok": True,

@@ -14,24 +14,6 @@ class CampaignSessionUpdate(BaseModel):
     session_id: int | None = None
 
 
-class ItemIn(BaseModel):
-    name: str
-    description: str = ""
-    owner: str = ""
-    location: str = ""
-    significance: str = ""
-    notes: str = ""
-
-
-class EventIn(BaseModel):
-    title: str
-    session: Optional[int] = None
-    event_type: str = ""
-    description: str
-    consequences: str = ""
-    secret: bool = False
-
-
 class SessionIn(BaseModel):
     number: int
     title: str = ""

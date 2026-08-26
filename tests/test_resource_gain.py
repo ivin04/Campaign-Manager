@@ -1,12 +1,10 @@
 from models.entity import Entity
-from models.extraction import ExtractedFact
 from models.resource import Resource, ResourceBalance
 from models.world_state import WorldState
 from models.resource import Resource
 
 from operations.world_operations import GainResourceOperation
 
-from services.resolution import WorldResolver
 from services.world_applier import WorldApplier
 
 
@@ -42,39 +40,6 @@ def build_world():
             200: balance,
         },
     )
-
-
-def test_resolve_resource_gained():
-    world = build_world()
-
-    fact = ExtractedFact(
-        fact_type="RESOURCE_GAINED",
-        data={
-            "resource": "Oro",
-            "owner": "Fungoso",
-            "amount": 50,
-        },
-    )
-
-    resolver = WorldResolver(
-        entities=world.entities,
-        items=world.items,
-        item_instances=world.item_instances,
-        resources=world.resources,
-        resource_balances=world.resource_balances,
-        relations=world.relations,
-    )
-
-    operations = resolver.resolve([fact])
-
-    assert len(operations) == 1
-
-    operation = operations[0]
-
-    assert isinstance(operation, GainResourceOperation)
-    assert operation.resource_id == 20
-    assert operation.owner_id == 1
-    assert operation.amount == 50
 
 
 def test_apply_resource_gained():

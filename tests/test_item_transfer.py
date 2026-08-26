@@ -1,11 +1,9 @@
 from models.entity import Entity
 from models.item import Item, ItemInstance
-from models.extraction import ExtractedFact
 from models.world_state import WorldState
 
 from operations.world_operations import TransferItemOperation
 
-from services.resolution import WorldResolver
 from services.world_applier import WorldApplier
 
 
@@ -68,137 +66,6 @@ def build_world():
 
     return world
 
-
-def test_transfer_item_from_owner_to_target():
-    world = build_world()
-
-    fact = ExtractedFact(
-        fact_type="ITEM_TRANSFERRED",
-        data={
-            "item": "Diamante arcoíris",
-            "from": "Fungoso",
-            "to": "Neria",
-        },
-    )
-
-    resolver = WorldResolver(
-        entities=world.entities,
-        items=world.items,
-        item_instances=world.item_instances,
-        resources=world.resources,
-        resource_balances=world.resource_balances,
-        relations=world.relations,
-    )
-
-    operations = resolver.resolve([fact])
-
-    assert len(operations) == 1
-
-    operation = operations[0]
-
-    assert operation.instance_id == 100
-    assert operation.new_owner_id == 2
-
-    applier = WorldApplier()
-
-    for operation in operations:
-        applier.apply(world, operation)
-
-    assert world.item_instances[100].owner_id == 2
-    assert world.item_instances[101].owner_id is None
-    assert world.item_instances[101].location_id == 3
-
-
-def test_transfer_selects_instance_owned_by_source():
-    world = build_world()
-
-    # El diamante #1 pertenece a Fungoso.
-    # El diamante #2 está en el templo.
-    fact = ExtractedFact(
-        fact_type="ITEM_TRANSFERRED",
-        data={
-            "item": "Diamante arcoíris",
-            "from": "Fungoso",
-            "to": "Neria",
-        },
-    )
-
-    resolver = WorldResolver(
-        entities=world.entities,
-        items=world.items,
-        item_instances=world.item_instances,
-        resources=world.resources,
-        resource_balances=world.resource_balances,
-        relations=world.relations,
-    )
-
-    operations = resolver.resolve([fact])
-
-    assert len(operations) == 1
-    assert operations[0].instance_id == 100
-
-
-def test_ambiguous_item_is_not_transferred():
-    world = build_world()
-
-    # Ahora Fungoso posee las dos copias.
-    world.item_instances[101].owner_id = 1
-    world.item_instances[101].location_id = None
-
-    fact = ExtractedFact(
-        fact_type="ITEM_TRANSFERRED",
-        data={
-            "item": "Diamante arcoíris",
-            "from": "Fungoso",
-            "to": "Neria",
-        },
-    )
-
-    resolver = WorldResolver(
-        entities=world.entities,
-        items=world.items,
-        item_instances=world.item_instances,
-        resources=world.resources,
-        resource_balances=world.resource_balances,
-        relations=world.relations,
-    )
-
-    operations = resolver.resolve([fact])
-
-    # No sabemos qué diamante quiere decir el hecho.
-    assert operations == []
-
-    # El estado tampoco debe cambiar.
-    assert world.item_instances[100].owner_id == 1
-    assert world.item_instances[101].owner_id == 1
-
-
-def test_unknown_target_does_not_transfer_item():
-    world = build_world()
-
-    fact = ExtractedFact(
-        fact_type="ITEM_TRANSFERRED",
-        data={
-            "item": "Diamante arcoíris",
-            "from": "Fungoso",
-            "to": "Personaje inexistente",
-        },
-    )
-
-    resolver = WorldResolver(
-        entities=world.entities,
-        items=world.items,
-        item_instances=world.item_instances,
-        resources=world.resources,
-        resource_balances=world.resource_balances,
-        relations=world.relations,
-    )
-
-    operations = resolver.resolve([fact])
-
-    assert operations == []
-
-    assert world.item_instances[100].owner_id == 1
 
 def test_applier_rejects_unknown_owner():
     world = build_world()

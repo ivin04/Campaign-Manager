@@ -9,6 +9,7 @@ from models.relation import Relation
 from models.resource import Resource
 from models.world_state import WorldState
 from services.memory_search_service import MemorySearchService
+from services.context_builder import ContextBuilder
 
 
 @pytest.fixture
@@ -259,15 +260,31 @@ def test_search_empty_query_returns_empty_result(service, world):
 
 
 def test_context_wraps_search_results(service, world):
-    result = service.context(world, "Fungoso")
+    context_builder = ContextBuilder(
+        memory_search_service=service,
+    )
+
+    result = context_builder.build(
+        world,
+        "Fungoso",
+    )
 
     assert result["query"] == "Fungoso"
+    assert "entities" in result
+    assert "items" in result
+    assert "item_instances" in result
+    assert "resources" in result
+    assert "resource_balances" in result
+    assert "relations" in result
+    assert "events" in result
+    assert "context" in result
 
-    assert "results" in result
-    assert "entities" in result["results"]
+    assert any(
+        entity["name"] == "Fungoso"
+        for entity in result["entities"]
+    )
 
-    assert len(result["results"]["entities"]) == 1
-    assert result["results"]["entities"][0]["name"] == "Fungoso"
+    assert "Fungoso" in result["context"]
 
 
 # ============================================================

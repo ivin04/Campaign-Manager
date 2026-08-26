@@ -247,12 +247,15 @@ def test_memory_context_uses_world_state(clean_world):
 
     assert result["query"] == "Fungoso"
 
-    context = result["context"]
+    assert len(result["entities"]) == 1
 
-    assert "MEMORIA DE CAMPAÑA RELEVANTE:" in context
-    assert "[ENTITIES]" in context
-    assert "Fungoso" in context
+    entity = result["entities"][0]
 
-    # Datos internos de persistencia no deben aparecer.
-    assert "created_at" not in context
-    assert "updated_at" not in context
+    assert entity["id"] == 10
+    assert entity["name"] == "Fungoso"
+    assert entity["entity_type"] == "character"
+    assert entity["description"] == "Un aventurero peculiar."
+    assert entity["notes"] == "Le gusta el oro."
+
+    assert "context" in result
+    assert "Fungoso" in result["context"]

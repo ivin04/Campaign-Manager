@@ -439,12 +439,12 @@ class WorldApplier:
                 operation=operation,
             )
 
-        if operation.source_id not in world.entities:
+        if operation.subject_id not in world.entities:
             return OperationResult(
                 status=OperationStatus.NOT_FOUND,
                 message=(
                     f"Source entity "
-                    f"'{operation.source_id}' does not exist."
+                    f"'{operation.subject_id}' does not exist."
                 ),
                 operation=operation,
             )
@@ -469,7 +469,7 @@ class WorldApplier:
                 operation=operation,
             )
 
-        if operation.source_id == operation.target_id:
+        if operation.subject_id == operation.target_id:
             return OperationResult(
                 status=OperationStatus.INVALID,
                 message="Source and target cannot be the same entity.",
@@ -479,7 +479,7 @@ class WorldApplier:
         source_balance = self._find_balance(
             world,
             operation.resource_id,
-            operation.source_id,
+            operation.subject_id,
         )
 
         if source_balance is None:
@@ -487,7 +487,7 @@ class WorldApplier:
                 status=OperationStatus.NOT_FOUND,
                 message=(
                     f"Source entity "
-                    f"'{operation.source_id}' has no balance "
+                    f"'{operation.subject_id}' has no balance "
                     f"for resource '{operation.resource_id}'."
                 ),
                 operation=operation,
@@ -531,7 +531,7 @@ class WorldApplier:
             message=(
                 f"Transferred {operation.amount} of resource "
                 f"'{operation.resource_id}' from "
-                f"'{operation.source_id}' to "
+                f"'{operation.subject_id}' to "
                 f"'{operation.target_id}'."
             ),
             operation=operation,

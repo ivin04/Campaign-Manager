@@ -51,7 +51,7 @@ def test_transfer_resource():
 
     operation = TransferResourceOperation(
         resource_id=20,
-        source_id=1,
+        subject_id=1,
         target_id=2,
         amount=30,
     )
@@ -68,7 +68,7 @@ def test_transfer_resource_rejects_unknown_resource():
 
     operation = TransferResourceOperation(
         resource_id=999,
-        source_id=1,
+        subject_id=1,
         target_id=2,
         amount=30,
     )
@@ -85,7 +85,7 @@ def test_transfer_resource_rejects_unknown_source():
 
     operation = TransferResourceOperation(
         resource_id=20,
-        source_id=999,
+        subject_id=999,
         target_id=2,
         amount=30,
     )
@@ -102,7 +102,7 @@ def test_transfer_resource_rejects_unknown_target():
 
     operation = TransferResourceOperation(
         resource_id=20,
-        source_id=1,
+        subject_id=1,
         target_id=999,
         amount=30,
     )
@@ -119,7 +119,7 @@ def test_transfer_resource_rejects_non_positive_amount():
 
     operation = TransferResourceOperation(
         resource_id=20,
-        source_id=1,
+        subject_id=1,
         target_id=2,
         amount=-30,
     )
@@ -136,7 +136,7 @@ def test_transfer_resource_rejects_insufficient_balance():
 
     operation = TransferResourceOperation(
         resource_id=20,
-        source_id=1,
+        subject_id=1,
         target_id=2,
         amount=150,
     )
@@ -164,7 +164,7 @@ def test_transfer_resource_creates_missing_target_balance():
 
     operation = TransferResourceOperation(
         resource_id=1,
-        source_id=1,
+        subject_id=1,
         target_id=2,
         amount=40,
     )
@@ -207,7 +207,7 @@ def test_apply_transfer_resource_rejects_nan():
 
     operation = TransferResourceOperation(
         resource_id=1,
-        source_id=1,
+        subject_id=1,
         target_id=2,
         amount=float("nan"),
     )
@@ -238,7 +238,7 @@ def test_apply_transfer_resource_rejects_infinity():
 
     operation = TransferResourceOperation(
         resource_id=1,
-        source_id=1,
+        subject_id=1,
         target_id=2,
         amount=float("inf"),
     )
@@ -276,7 +276,7 @@ def test_apply_transfer_resource_rejects_duplicate_source_balance():
 
     operation = TransferResourceOperation(
         resource_id=1,
-        source_id=1,
+        subject_id=1,
         target_id=2,
         amount=20,
     )
@@ -301,7 +301,7 @@ def test_apply_transfer_resource_rejects_missing_target_balance():
 
     operation = TransferResourceOperation(
         resource_id=1,
-        source_id=1,
+        subject_id=1,
         target_id=2,
         amount=40,
     )
@@ -325,7 +325,7 @@ def test_apply_transfer_resource_rejects_non_positive_amount():
 
     operation = TransferResourceOperation(
         resource_id=1,
-        source_id=1,
+        subject_id=1,
         target_id=2,
         amount=0,
     )
@@ -349,7 +349,7 @@ def test_apply_transfer_resource_rejects_self_transfer():
 
     operation = TransferResourceOperation(
         resource_id=1,
-        source_id=1,
+        subject_id=1,
         target_id=1,
         amount=40,
     )
@@ -372,7 +372,7 @@ def test_apply_transfer_resource_rejects_unknown_source():
 
     operation = TransferResourceOperation(
         resource_id=1,
-        source_id=999,
+        subject_id=999,
         target_id=2,
         amount=40,
     )
@@ -403,7 +403,7 @@ def test_apply_transfer_resource_rejects_unknown_resource():
 
     operation = TransferResourceOperation(
         resource_id=999,
-        source_id=1,
+        subject_id=1,
         target_id=2,
         amount=40,
     )

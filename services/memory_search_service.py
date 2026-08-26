@@ -95,42 +95,6 @@ class MemorySearchService:
         }
 
     # ============================================================
-    # CONTEXT
-    # ============================================================
-
-    def context(
-        self,
-        world: WorldState,
-        query: str,
-    ) -> dict[str, Any]:
-        """
-        Genera contexto de memoria para consumo externo.
-
-        Devuelve:
-            {
-                "query": "...",
-                "results": {...},
-                "context": "..."
-            }
-
-        `results` mantiene el resultado estructurado de search().
-        `context` es la representación textual preparada para
-        SillyTavern.
-        """
-
-        self._validate_world(world)
-
-        normalized_query = self._validate_query(query)
-
-        results = self.search(world, normalized_query)
-
-        return {
-            "query": normalized_query,
-            "results": results,
-            "context": self._build_context(results),
-        }
-
-    # ============================================================
     # EXPORT
     # ============================================================
 
@@ -275,7 +239,7 @@ class MemorySearchService:
         return MemorySearchService._matches(
             needle,
             getattr(relation, "id", None),
-            getattr(relation, "source_id", None),
+            getattr(relation, "subject_id", None),
             getattr(relation, "target_id", None),
             getattr(relation, "relation_type", None),
             getattr(relation, "description", None),
@@ -326,65 +290,6 @@ class MemorySearchService:
                 return True
 
         return False
-
-    # ============================================================
-    # CONTEXT BUILDING
-    # ============================================================
-
-    @staticmethod
-    def _build_context(
-        results: dict[str, list[dict[str, Any]]],
-    ) -> str:
-        """
-        Convierte resultados estructurados en contexto legible
-        para SillyTavern.
-
-        Solo se incluyen categorías que tengan resultados.
-        """
-
-        sections: list[str] = [
-            "MEMORIA DE CAMPAÑA RELEVANTE:"
-        ]
-
-        MemorySearchService._append_entities(
-            sections,
-            results.get("entities", []),
-        )
-
-        MemorySearchService._append_items(
-            sections,
-            results.get("items", []),
-        )
-
-        MemorySearchService._append_item_instances(
-            sections,
-            results.get("item_instances", []),
-        )
-
-        MemorySearchService._append_resources(
-            sections,
-            results.get("resources", []),
-        )
-
-        MemorySearchService._append_resource_balances(
-            sections,
-            results.get("resource_balances", []),
-        )
-
-        MemorySearchService._append_relations(
-            sections,
-            results.get("relations", []),
-        )
-
-        MemorySearchService._append_events(
-            sections,
-            results.get("events", []),
-        )
-
-        if len(sections) == 1:
-            sections.append("Sin información relevante.")
-
-        return "\n".join(sections)
 
     @staticmethod
     def _append_entities(
@@ -544,13 +449,13 @@ class MemorySearchService:
                 "unknown",
             )
 
-            source_id = relation.get("source_id")
+            subject_id = relation.get("subject_id")
             target_id = relation.get("target_id")
 
             line = f"- {relation_type}"
 
-            if source_id is not None:
-                line += f": {source_id}"
+            if subject_id is not None:
+                line += f": {subject_id}"
 
             if target_id is not None:
                 line += f" -> {target_id}"

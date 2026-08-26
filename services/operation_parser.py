@@ -229,7 +229,7 @@ class OperationParser:
                 "owner_id",
             },
             "transfer_resource": {
-                "source_id",
+                "subject_id",
                 "target_id",
             },
             "create_relation": {
@@ -328,7 +328,7 @@ class OperationParser:
             },
             "transfer_resource": {
                 "resource_id",
-                "source_id",
+                "subject_id",
                 "target_id",
             },
             "create_relation": {
