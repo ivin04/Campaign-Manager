@@ -1,4 +1,5 @@
 from models.world_state import WorldState
+from models.operation_result import OperationResult
 from repositories.world_repository import WorldRepository
 from services.world_applier import WorldApplier
 
@@ -43,29 +44,40 @@ class WorldService:
 
         self.repository.save_world(self.world)
 
-    def apply(self, operation) -> WorldState:
+    def apply(
+        self,
+        operation,
+    ) -> OperationResult:
         """
         Aplica una operación al mundo en memoria.
 
         No guarda automáticamente en SQLite.
+
+        Devuelve el OperationResult producido por WorldApplier.
         """
 
-        self.applier.apply(
+        return self.applier.apply(
             self.world,
             operation,
         )
 
-        return self.world
-
-    def apply_and_save(self, operation) -> WorldState:
+    def apply_and_save(
+        self,
+        operation,
+    ) -> OperationResult:
         """
-        Aplica una operación y persiste inmediatamente el resultado.
+        Aplica una operación y persiste el mundo únicamente
+        si la operación ha tenido éxito.
         """
 
-        self.apply(operation)
+        result = self.apply(operation)
+
+        if not result.success:
+            return result
+
         self.save()
 
-        return self.world
+        return result
 
     def get_world(self) -> WorldState:
         """

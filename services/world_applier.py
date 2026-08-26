@@ -6,6 +6,11 @@ from models.event import Event
 from models.resource import ResourceBalance
 from models.entity import Entity
 
+from models.operation_result import (
+    OperationResult,
+    OperationStatus,
+)
+
 from operations.world_operations import (
     WorldOperation,
     CreateEntityOperation,
@@ -38,37 +43,46 @@ class WorldApplier:
         self,
         world: WorldState,
         operation: WorldOperation,
-    ) -> None:
+    ) -> OperationResult:
 
         if isinstance(operation, CreateEntityOperation):
-            self._apply_create_entity(world, operation)
+            return self._apply_create_entity(world, operation)
 
-        elif isinstance(operation, UpdateEntityOperation):
-            self._apply_update_entity(world, operation)
+        if isinstance(operation, UpdateEntityOperation):
+            return self._apply_update_entity(world, operation)
 
-        elif isinstance(operation, TransferItemOperation):
-            self._apply_transfer_item(world, operation)
+        if isinstance(operation, TransferItemOperation):
+            return self._apply_transfer_item(world, operation)
 
-        elif isinstance(operation, GainResourceOperation):
-            self._apply_gain_resource(world, operation)
+        if isinstance(operation, GainResourceOperation):
+            return self._apply_gain_resource(world, operation)
 
-        elif isinstance(operation, SpendResourceOperation):
-            self._apply_spend_resource(world, operation)
+        if isinstance(operation, SpendResourceOperation):
+            return self._apply_spend_resource(world, operation)
 
-        elif isinstance(operation, TransferResourceOperation):
-            self._apply_transfer_resource(world, operation)
+        if isinstance(operation, TransferResourceOperation):
+            return self._apply_transfer_resource(world, operation)
 
-        elif isinstance(operation, CreateRelationOperation):
-            self._apply_create_relation(world, operation)
+        if isinstance(operation, CreateRelationOperation):
+            return self._apply_create_relation(world, operation)
 
-        elif isinstance(operation, UpdateRelationOperation):
-            self._apply_update_relation(world, operation)
+        if isinstance(operation, UpdateRelationOperation):
+            return self._apply_update_relation(world, operation)
 
-        elif isinstance(operation, RemoveRelationOperation):
-            self._apply_remove_relation(world, operation)
+        if isinstance(operation, RemoveRelationOperation):
+            return self._apply_remove_relation(world, operation)
 
-        elif isinstance(operation, CreateEventOperation):
-            self._apply_create_event(world, operation)
+        if isinstance(operation, CreateEventOperation):
+            return self._apply_create_event(world, operation)
+
+        return OperationResult(
+            status=OperationStatus.UNSUPPORTED,
+            message=(
+                f"Unsupported operation: "
+                f"{type(operation).__name__}"
+            ),
+            operation=operation,
+        )
 
     # ============================================================
     # ENTITIES
@@ -78,21 +92,29 @@ class WorldApplier:
         self,
         world: WorldState,
         operation: CreateEntityOperation,
-    ) -> None:
+    ) -> OperationResult:
 
         name = operation.name.strip()
 
         if not name:
-            return
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message="Entity name cannot be empty.",
+                operation=operation,
+            )
 
         # Evitar duplicados por nombre.
         for entity in world.entities.values():
             if entity.name.strip().lower() == name.lower():
-                return
+                return OperationResult(
+                    status=OperationStatus.DUPLICATE,
+                    message=f"Entity '{name}' already exists.",
+                    operation=operation,
+                )
 
         entity_id = self._next_entity_id(world)
 
-        world.entities[entity_id] = Entity(
+        entity = Entity(
             id=entity_id,
             name=name,
             entity_type=operation.entity_type,
@@ -101,43 +123,96 @@ class WorldApplier:
             active=operation.active,
         )
 
+        world.entities[entity_id] = entity
+
+        return OperationResult(
+            status=OperationStatus.SUCCESS,
+            message=f"Entity '{entity.name}' created.",
+            operation=operation,
+        )
+
     def _apply_update_entity(
         self,
         world: WorldState,
         operation: UpdateEntityOperation,
-    ) -> None:
+    ) -> OperationResult:
 
         entity = world.entities.get(operation.entity_id)
 
         if entity is None:
-            return
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"Entity '{operation.entity_id}' "
+                    f"does not exist."
+                ),
+                operation=operation,
+            )
+
+        changed = False
 
         if operation.name is not None:
+
             name = operation.name.strip()
 
             if not name:
-                return
+                return OperationResult(
+                    status=OperationStatus.INVALID,
+                    message="Entity name cannot be empty.",
+                    operation=operation,
+                )
 
             for entity_id, other in world.entities.items():
+
                 if entity_id == operation.entity_id:
                     continue
 
                 if other.name.strip().lower() == name.lower():
-                    return
+                    return OperationResult(
+                        status=OperationStatus.DUPLICATE,
+                        message=(
+                            f"Entity named '{name}' "
+                            f"already exists."
+                        ),
+                        operation=operation,
+                    )
 
-            entity.name = name
+            if entity.name != name:
+                entity.name = name
+                changed = True
 
         if operation.entity_type is not None:
-            entity.entity_type = operation.entity_type
+            if entity.entity_type != operation.entity_type:
+                entity.entity_type = operation.entity_type
+                changed = True
 
         if operation.description is not None:
-            entity.description = operation.description
+            if entity.description != operation.description:
+                entity.description = operation.description
+                changed = True
 
         if operation.notes is not None:
-            entity.notes = operation.notes
+            if entity.notes != operation.notes:
+                entity.notes = operation.notes
+                changed = True
 
         if operation.active is not None:
-            entity.active = operation.active
+            if entity.active != operation.active:
+                entity.active = operation.active
+                changed = True
+
+        if not changed:
+            return OperationResult(
+                status=OperationStatus.NO_CHANGE,
+                message="Entity already had the requested state.",
+                operation=operation,
+            )
+
+        return OperationResult(
+            status=OperationStatus.SUCCESS,
+            message=f"Entity '{entity.id}' updated.",
+            operation=operation,
+        )
 
     # ============================================================
     # ITEMS
@@ -147,20 +222,52 @@ class WorldApplier:
         self,
         world: WorldState,
         operation: TransferItemOperation,
-    ) -> None:
+    ) -> OperationResult:
 
-        instance = world.item_instances.get(operation.instance_id)
+        instance = world.item_instances.get(
+            operation.instance_id
+        )
 
         if instance is None:
-            return
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"Item instance "
+                    f"'{operation.instance_id}' does not exist."
+                ),
+                operation=operation,
+            )
 
         if operation.new_owner_id not in world.entities:
-            return
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"New owner "
+                    f"'{operation.new_owner_id}' does not exist."
+                ),
+                operation=operation,
+            )
 
         if instance.owner_id == operation.new_owner_id:
-            return
+            return OperationResult(
+                status=OperationStatus.NO_CHANGE,
+                message=(
+                    "Item instance already belongs "
+                    "to the requested owner."
+                ),
+                operation=operation,
+            )
 
         instance.owner_id = operation.new_owner_id
+
+        return OperationResult(
+            status=OperationStatus.SUCCESS,
+            message=(
+                f"Item instance '{operation.instance_id}' "
+                f"transferred successfully."
+            ),
+            operation=operation,
+        )
 
     # ============================================================
     # RESOURCES
@@ -170,16 +277,37 @@ class WorldApplier:
         self,
         world: WorldState,
         operation: GainResourceOperation,
-    ) -> None:
+    ) -> OperationResult:
 
         if operation.resource_id not in world.resources:
-            return
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"Resource "
+                    f"'{operation.resource_id}' does not exist."
+                ),
+                operation=operation,
+            )
 
         if operation.owner_id not in world.entities:
-            return
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"Owner "
+                    f"'{operation.owner_id}' does not exist."
+                ),
+                operation=operation,
+            )
 
         if not self._valid_amount(operation.amount):
-            return
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message=(
+                    f"Invalid resource amount: "
+                    f"{operation.amount!r}."
+                ),
+                operation=operation,
+            )
 
         balance = self._find_balance(
             world,
@@ -189,7 +317,16 @@ class WorldApplier:
 
         if balance is not None:
             balance.amount += operation.amount
-            return
+
+            return OperationResult(
+                status=OperationStatus.SUCCESS,
+                message=(
+                    f"Added {operation.amount} of resource "
+                    f"'{operation.resource_id}' "
+                    f"to owner '{operation.owner_id}'."
+                ),
+                operation=operation,
+            )
 
         balance_id = self._next_balance_id(world)
 
@@ -200,20 +337,51 @@ class WorldApplier:
             amount=operation.amount,
         )
 
+        return OperationResult(
+            status=OperationStatus.SUCCESS,
+            message=(
+                f"Created resource balance with "
+                f"{operation.amount} of resource "
+                f"'{operation.resource_id}'."
+            ),
+            operation=operation,
+        )
+
     def _apply_spend_resource(
         self,
         world: WorldState,
         operation: SpendResourceOperation,
-    ) -> None:
+    ) -> OperationResult:
 
         if operation.resource_id not in world.resources:
-            return
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"Resource "
+                    f"'{operation.resource_id}' does not exist."
+                ),
+                operation=operation,
+            )
 
         if operation.owner_id not in world.entities:
-            return
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"Owner "
+                    f"'{operation.owner_id}' does not exist."
+                ),
+                operation=operation,
+            )
 
         if not self._valid_amount(operation.amount):
-            return
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message=(
+                    f"Invalid resource amount: "
+                    f"{operation.amount!r}."
+                ),
+                operation=operation,
+            )
 
         balance = self._find_balance(
             world,
@@ -222,30 +390,91 @@ class WorldApplier:
         )
 
         if balance is None:
-            return
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"No balance exists for resource "
+                    f"'{operation.resource_id}' "
+                    f"and owner '{operation.owner_id}'."
+                ),
+                operation=operation,
+            )
 
         if balance.amount < operation.amount:
-            return
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message=(
+                    f"Insufficient resource balance. "
+                    f"Available: {balance.amount}, "
+                    f"requested: {operation.amount}."
+                ),
+                operation=operation,
+            )
 
         balance.amount -= operation.amount
+
+        return OperationResult(
+            status=OperationStatus.SUCCESS,
+            message=(
+                f"Spent {operation.amount} of resource "
+                f"'{operation.resource_id}' "
+                f"from owner '{operation.owner_id}'."
+            ),
+            operation=operation,
+        )
 
     def _apply_transfer_resource(
         self,
         world: WorldState,
         operation: TransferResourceOperation,
-    ) -> None:
+    ) -> OperationResult:
 
         if operation.resource_id not in world.resources:
-            return
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"Resource "
+                    f"'{operation.resource_id}' does not exist."
+                ),
+                operation=operation,
+            )
 
         if operation.source_id not in world.entities:
-            return
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"Source entity "
+                    f"'{operation.source_id}' does not exist."
+                ),
+                operation=operation,
+            )
 
         if operation.target_id not in world.entities:
-            return
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"Target entity "
+                    f"'{operation.target_id}' does not exist."
+                ),
+                operation=operation,
+            )
 
         if not self._valid_amount(operation.amount):
-            return
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message=(
+                    f"Invalid resource amount: "
+                    f"{operation.amount!r}."
+                ),
+                operation=operation,
+            )
+
+        if operation.source_id == operation.target_id:
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message="Source and target cannot be the same entity.",
+                operation=operation,
+            )
 
         source_balance = self._find_balance(
             world,
@@ -254,10 +483,26 @@ class WorldApplier:
         )
 
         if source_balance is None:
-            return
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"Source entity "
+                    f"'{operation.source_id}' has no balance "
+                    f"for resource '{operation.resource_id}'."
+                ),
+                operation=operation,
+            )
 
         if source_balance.amount < operation.amount:
-            return
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message=(
+                    f"Insufficient resource balance. "
+                    f"Available: {source_balance.amount}, "
+                    f"requested: {operation.amount}."
+                ),
+                operation=operation,
+            )
 
         target_balance = self._find_balance(
             world,
@@ -281,6 +526,17 @@ class WorldApplier:
         source_balance.amount -= operation.amount
         target_balance.amount += operation.amount
 
+        return OperationResult(
+            status=OperationStatus.SUCCESS,
+            message=(
+                f"Transferred {operation.amount} of resource "
+                f"'{operation.resource_id}' from "
+                f"'{operation.source_id}' to "
+                f"'{operation.target_id}'."
+            ),
+            operation=operation,
+        )
+
     # ============================================================
     # RELATIONS
     # ============================================================
@@ -289,13 +545,24 @@ class WorldApplier:
         self,
         world: WorldState,
         operation: CreateRelationOperation,
-    ) -> None:
+    ) -> OperationResult:
 
         if operation.relation_id in world.relations:
-            return
+            return OperationResult(
+                status=OperationStatus.DUPLICATE,
+                message=(
+                    f"Relation "
+                    f"'{operation.relation_id}' already exists."
+                ),
+                operation=operation,
+            )
 
         if not operation.relation_type:
-            return
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message="Relation type cannot be empty.",
+                operation=operation,
+            )
 
         subject_id = self._coerce_entity_id(
             operation.subject_id
@@ -305,14 +572,45 @@ class WorldApplier:
             operation.target_id
         )
 
-        if subject_id is None or target_id is None:
-            return
+        if subject_id is None:
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message=(
+                    f"Invalid subject entity ID: "
+                    f"{operation.subject_id!r}."
+                ),
+                operation=operation,
+            )
+
+        if target_id is None:
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message=(
+                    f"Invalid target entity ID: "
+                    f"{operation.target_id!r}."
+                ),
+                operation=operation,
+            )
 
         if subject_id not in world.entities:
-            return
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"Subject entity "
+                    f"'{subject_id}' does not exist."
+                ),
+                operation=operation,
+            )
 
         if target_id not in world.entities:
-            return
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"Target entity "
+                    f"'{target_id}' does not exist."
+                ),
+                operation=operation,
+            )
 
         world.relations[operation.relation_id] = Relation(
             id=operation.relation_id,
@@ -323,23 +621,48 @@ class WorldApplier:
             active=True,
         )
 
+        return OperationResult(
+            status=OperationStatus.SUCCESS,
+            message=(
+                f"Relation '{operation.relation_id}' created."
+            ),
+            operation=operation,
+        )
+
     def _apply_update_relation(
         self,
         world: WorldState,
         operation: UpdateRelationOperation,
-    ) -> None:
+    ) -> OperationResult:
 
-        relation = world.relations.get(operation.relation_id)
+        relation = world.relations.get(
+            operation.relation_id
+        )
 
         if relation is None:
-            return
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"Relation "
+                    f"'{operation.relation_id}' does not exist."
+                ),
+                operation=operation,
+            )
+
+        changed = False
 
         if operation.relation_type is not None:
 
             if not operation.relation_type:
-                return
+                return OperationResult(
+                    status=OperationStatus.INVALID,
+                    message="Relation type cannot be empty.",
+                    operation=operation,
+                )
 
-            relation.relation_type = operation.relation_type
+            if relation.relation_type != operation.relation_type:
+                relation.relation_type = operation.relation_type
+                changed = True
 
         if operation.target_id is not None:
 
@@ -348,33 +671,99 @@ class WorldApplier:
             )
 
             if target_id is None:
-                return
+                return OperationResult(
+                    status=OperationStatus.INVALID,
+                    message=(
+                        f"Invalid target entity ID: "
+                        f"{operation.target_id!r}."
+                    ),
+                    operation=operation,
+                )
 
             if target_id not in world.entities:
-                return
+                return OperationResult(
+                    status=OperationStatus.NOT_FOUND,
+                    message=(
+                        f"Target entity "
+                        f"'{target_id}' does not exist."
+                    ),
+                    operation=operation,
+                )
 
-            relation.target_id = target_id
+            if relation.target_id != target_id:
+                relation.target_id = target_id
+                changed = True
 
         if operation.metadata is not None:
-            relation.metadata = operation.metadata
+            if relation.metadata != operation.metadata:
+                relation.metadata = operation.metadata
+                changed = True
 
         if operation.active is not None:
-            relation.active = operation.active
+            if relation.active != operation.active:
+                relation.active = operation.active
+                changed = True
+
+        if not changed:
+            return OperationResult(
+                status=OperationStatus.NO_CHANGE,
+                message=(
+                    f"Relation "
+                    f"'{operation.relation_id}' already had "
+                    f"the requested state."
+                ),
+                operation=operation,
+            )
+
+        return OperationResult(
+            status=OperationStatus.SUCCESS,
+            message=(
+                f"Relation "
+                f"'{operation.relation_id}' updated."
+            ),
+            operation=operation,
+        )
 
     def _apply_remove_relation(
         self,
         world: WorldState,
         operation: RemoveRelationOperation,
-    ) -> None:
+    ) -> OperationResult:
 
         relation = world.relations.get(
             operation.relation_id
         )
 
         if relation is None:
-            return
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"Relation "
+                    f"'{operation.relation_id}' does not exist."
+                ),
+                operation=operation,
+            )
+
+        if not relation.active:
+            return OperationResult(
+                status=OperationStatus.NO_CHANGE,
+                message=(
+                    f"Relation "
+                    f"'{operation.relation_id}' is already inactive."
+                ),
+                operation=operation,
+            )
 
         relation.active = False
+
+        return OperationResult(
+            status=OperationStatus.SUCCESS,
+            message=(
+                f"Relation "
+                f"'{operation.relation_id}' removed."
+            ),
+            operation=operation,
+        )
 
     # ============================================================
     # EVENTS
@@ -384,19 +773,38 @@ class WorldApplier:
         self,
         world: WorldState,
         operation: CreateEventOperation,
-    ) -> None:
+    ) -> OperationResult:
 
         if not operation.event_id:
-            return
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message="Event ID cannot be empty.",
+                operation=operation,
+            )
 
         if not operation.event_type:
-            return
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message="Event type cannot be empty.",
+                operation=operation,
+            )
 
         if not operation.title:
-            return
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message="Event title cannot be empty.",
+                operation=operation,
+            )
 
         if operation.event_id in world.events:
-            return
+            return OperationResult(
+                status=OperationStatus.DUPLICATE,
+                message=(
+                    f"Event "
+                    f"'{operation.event_id}' already exists."
+                ),
+                operation=operation,
+            )
 
         world.events[operation.event_id] = Event(
             id=operation.event_id,
@@ -407,6 +815,14 @@ class WorldApplier:
             session_id=operation.session_id,
             secret=operation.secret,
             metadata=operation.metadata or {},
+        )
+
+        return OperationResult(
+            status=OperationStatus.SUCCESS,
+            message=(
+                f"Event '{operation.event_id}' created."
+            ),
+            operation=operation,
         )
 
     # ============================================================

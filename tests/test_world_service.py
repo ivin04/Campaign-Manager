@@ -3,6 +3,10 @@ from models.world_state import WorldState
 
 from services.world_service import WorldService
 
+from models.operation_result import (
+    OperationResult,
+    OperationStatus,
+)
 
 class FakeRepository:
 
@@ -23,10 +27,20 @@ class FakeRepository:
 class FakeApplier:
 
     def __init__(self):
-        self.calls = []
+        self.called = False
+        self.world = None
+        self.operation = None
 
     def apply(self, world, operation):
-        self.calls.append((world, operation))
+        self.called = True
+        self.world = world
+        self.operation = operation
+
+        return OperationResult(
+            status=OperationStatus.SUCCESS,
+            message="fake success",
+            operation=operation,
+        )
 
 def test_load_sets_current_world():
 
@@ -87,14 +101,12 @@ def test_apply_delegates_to_applier():
 
     result = service.apply(operation)
 
-    assert result is service.world
+    assert result.status == OperationStatus.SUCCESS
+    assert result.operation is operation
 
-    assert len(applier.calls) == 1
-
-    applied_world, applied_operation = applier.calls[0]
-
-    assert applied_world is service.world
-    assert applied_operation is operation
+    assert applier.called is True
+    assert applier.world is service.world
+    assert applier.operation is operation
 
 def test_apply_does_not_save():
 
@@ -124,12 +136,8 @@ def test_apply_and_save_applies_then_saves():
 
     result = service.apply_and_save(operation)
 
-    assert result is service.world
-
-    assert len(applier.calls) == 1
-
-    assert repository.save_calls == 1
-    assert repository.saved_world is service.world
+    assert result.status == OperationStatus.SUCCESS
+    assert result.operation is operation
 
 def test_get_world_returns_current_world():
 

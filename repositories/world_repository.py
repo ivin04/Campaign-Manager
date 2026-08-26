@@ -227,6 +227,8 @@ class WorldRepository:
 
         with get_conn() as conn:
 
+            self._delete_missing_records(conn, world)
+
             self._save_entities(conn, world)
             self._save_items(conn, world)
             self._save_item_instances(conn, world)
@@ -486,3 +488,104 @@ class WorldRepository:
                 int(event.secret),
                 metadata,
             ))
+
+    def _delete_missing_records(self, conn, world: WorldState):
+
+        entity_ids = list(world.entities.keys())
+        item_ids = list(world.items.keys())
+        item_instance_ids = list(world.item_instances.keys())
+        resource_ids = list(world.resources.keys())
+        balance_ids = list(world.resource_balances.keys())
+        relation_ids = list(world.relations.keys())
+        event_ids = list(world.events.keys())
+
+        if entity_ids:
+            placeholders = ",".join("?" for _ in entity_ids)
+
+            conn.execute(
+                f"""
+                DELETE FROM entities
+                WHERE id NOT IN ({placeholders})
+                """,
+                entity_ids,
+            )
+        else:
+            conn.execute("DELETE FROM entities")
+
+        if item_ids:
+            placeholders = ",".join("?" for _ in item_ids)
+
+            conn.execute(
+                f"""
+                DELETE FROM items
+                WHERE id NOT IN ({placeholders})
+                """,
+                item_ids,
+            )
+        else:
+            conn.execute("DELETE FROM items")
+
+        if item_instance_ids:
+            placeholders = ",".join("?" for _ in item_instance_ids)
+
+            conn.execute(
+                f"""
+                DELETE FROM item_instances
+                WHERE id NOT IN ({placeholders})
+                """,
+                item_instance_ids,
+            )
+        else:
+            conn.execute("DELETE FROM item_instances")
+
+        if resource_ids:
+            placeholders = ",".join("?" for _ in resource_ids)
+
+            conn.execute(
+                f"""
+                DELETE FROM resources
+                WHERE id NOT IN ({placeholders})
+                """,
+                resource_ids,
+            )
+        else:
+            conn.execute("DELETE FROM resources")
+
+        if balance_ids:
+            placeholders = ",".join("?" for _ in balance_ids)
+
+            conn.execute(
+                f"""
+                DELETE FROM resource_balances
+                WHERE id NOT IN ({placeholders})
+                """,
+                balance_ids,
+            )
+        else:
+            conn.execute("DELETE FROM resource_balances")
+
+        if relation_ids:
+            placeholders = ",".join("?" for _ in relation_ids)
+
+            conn.execute(
+                f"""
+                DELETE FROM relations
+                WHERE id NOT IN ({placeholders})
+                """,
+                relation_ids,
+            )
+        else:
+            conn.execute("DELETE FROM relations")
+
+        if event_ids:
+            placeholders = ",".join("?" for _ in event_ids)
+
+            conn.execute(
+                f"""
+                DELETE FROM world_events
+                WHERE id NOT IN ({placeholders})
+                """,
+                event_ids,
+            )
+        else:
+            conn.execute("DELETE FROM world_events")
