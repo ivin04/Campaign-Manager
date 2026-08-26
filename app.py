@@ -6,8 +6,9 @@ from services.operation_parser import OperationParser, OperationParseError
 from services.world_service import WorldService
 from services.memory_search_service import MemorySearchService
 from services.context_builder import ContextBuilder
+from repositories.campaign_repository import CampaignRepository
 
-from database import init_db, one, execute
+from database import init_db
 
 from models.schemas import (
     CampaignUpdate,
@@ -35,6 +36,8 @@ init_db()
 world_service = WorldService()
 world_service.load()
 
+campaign_repository = CampaignRepository()
+
 memory_search_service = MemorySearchService()
 
 operation_parser = OperationParser()
@@ -49,40 +52,36 @@ def health():
 
 @app.patch("/campaign")
 def update_campaign(data: CampaignUpdate):
-    current = one("SELECT * FROM campaign WHERE id=1")
+
+    current = campaign_repository.get_campaign()
+
     values = {
         "name": data.name if data.name is not None else current["name"],
         "system": data.system if data.system is not None else current["system"],
         "tone": data.tone if data.tone is not None else current["tone"],
         "summary": data.summary if data.summary is not None else current["summary"],
     }
-    execute("""UPDATE campaign SET name=?, system=?, tone=?, summary=?,
-               updated_at=CURRENT_TIMESTAMP WHERE id=1""",
-            (values["name"], values["system"], values["tone"], values["summary"]))
-    return one("SELECT * FROM campaign WHERE id=1")
+
+    return campaign_repository.update_campaign(
+        campaign_id=1,
+        **values,
+    )
 
 
 @app.patch("/campaign/session")
 def update_campaign_session(data: CampaignSessionUpdate):
 
-    execute(
-        """
-        UPDATE campaign
-        SET current_session_id=?,
-            updated_at=CURRENT_TIMESTAMP
-        WHERE id=1
-        """,
-        (data.session_id,)
+    return campaign_repository.update_current_session(
+        campaign_id=1,
+        session_id=data.session_id,
     )
-
-    return one("SELECT * FROM campaign WHERE id=1")
 
 @app.post("/sessions")
 def create_session(data: SessionIn):
-    sid = execute("""INSERT INTO sessions
-        (number, title, summary, start_location, end_location, notes)
-        VALUES (?, ?, ?, ?, ?, ?)""", tuple(data.model_dump().values()))
-    return one("SELECT * FROM sessions WHERE id=?", (sid,))
+
+    return campaign_repository.create_session(
+        **data.model_dump()
+    )
 
 @app.get("/memory/search")
 def search_memory(q: str = Query(..., min_length=1)):
