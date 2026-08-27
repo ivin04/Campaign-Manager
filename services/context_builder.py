@@ -4,6 +4,7 @@ from typing import Any
 
 from models.world_state import WorldState
 from services.memory_search_service import MemorySearchService
+from services.world_serializer import WorldSerializer
 
 class ContextBuilder:
     """
@@ -384,7 +385,7 @@ class ContextBuilder:
                 continue
 
             entity_data = (
-                self.memory_search_service._entity_to_dict(
+                WorldSerializer.entity_to_dict(
                     entity
                 )
             )
@@ -607,7 +608,7 @@ class ContextBuilder:
                 continue
 
             result.append(
-                MemorySearchService._relation_to_dict(
+                WorldSerializer.relation_to_dict(
                     relation
                 )
             )
@@ -677,7 +678,7 @@ class ContextBuilder:
                 continue
 
             result.append(
-                MemorySearchService._event_to_dict(
+                WorldSerializer.event_to_dict(
                     event
                 )
             )
@@ -1527,7 +1528,7 @@ class ContextBuilder:
                 continue
 
             result["items"].append(
-                self.memory_search_service._item_to_dict(
+                WorldSerializer.item_to_dict(
                     item
                 )
             )
@@ -1572,7 +1573,7 @@ class ContextBuilder:
                 continue
 
             result["resources"].append(
-                self.memory_search_service._resource_to_dict(
+                WorldSerializer.resource_to_dict(
                     resource
                 )
             )

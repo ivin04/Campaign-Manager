@@ -4,6 +4,7 @@ from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from models.world_state import WorldState
+from services.world_serializer import WorldSerializer
 
 
 class MemorySearchService:
@@ -52,45 +53,45 @@ class MemorySearchService:
 
         return {
             "entities": [
-                self._entity_to_dict(entity)
+                WorldSerializer.entity_to_dict(entity)
                 for entity in world.entities.values()
                 if getattr(entity, "active", True)
                 and self._matches_entity(entity, needle)
             ],
 
             "items": [
-                self._item_to_dict(item)
+                WorldSerializer.item_to_dict(item)
                 for item in world.items.values()
                 if self._matches_item(item, needle)
             ],
 
             "item_instances": [
-                self._item_instance_to_dict(instance)
+                WorldSerializer.item_instance_to_dict(instance)
                 for instance in world.item_instances.values()
                 if self._matches_item_instance(instance, needle)
             ],
 
             "resources": [
-                self._resource_to_dict(resource)
+                WorldSerializer.resource_to_dict(resource)
                 for resource in world.resources.values()
                 if self._matches_resource(resource, needle)
             ],
 
             "resource_balances": [
-                self._resource_balance_to_dict(balance)
+                WorldSerializer.resource_balance_to_dict(balance)
                 for balance in world.resource_balances.values()
                 if self._matches_resource_balance(balance, needle)
             ],
 
             "relations": [
-                self._relation_to_dict(relation)
+                WorldSerializer.relation_to_dict(relation)
                 for relation in world.relations.values()
                 if getattr(relation, "active", True)
                 and self._matches_relation(relation, needle)
             ],
 
             "events": [
-                self._event_to_dict(event)
+                WorldSerializer.event_to_dict(event)
                 for event in world.events.values()
                 if not getattr(event, "secret", False)
                 and self._matches_event(event, needle)
@@ -120,39 +121,39 @@ class MemorySearchService:
 
         return {
             "entities": [
-                self._entity_to_dict(entity)
+                WorldSerializer.entity_to_dict(entity)
                 for entity in world.entities.values()
                 if getattr(entity, "active", True)
             ],
 
             "items": [
-                self._item_to_dict(item)
+                WorldSerializer.item_to_dict(item)
                 for item in world.items.values()
             ],
 
             "item_instances": [
-                self._item_instance_to_dict(instance)
+                WorldSerializer.item_instance_to_dict(instance)
                 for instance in world.item_instances.values()
             ],
 
             "resources": [
-                self._resource_to_dict(resource)
+                WorldSerializer.resource_to_dict(resource)
                 for resource in world.resources.values()
             ],
 
             "resource_balances": [
-                self._resource_balance_to_dict(balance)
+                WorldSerializer.resource_balance_to_dict(balance)
                 for balance in world.resource_balances.values()
             ],
 
             "relations": [
-                self._relation_to_dict(relation)
+                WorldSerializer.relation_to_dict(relation)
                 for relation in world.relations.values()
                 if getattr(relation, "active", True)
             ],
 
             "events": [
-                self._event_to_dict(event)
+                WorldSerializer.event_to_dict(event)
                 for event in world.events.values()
                 if not getattr(event, "secret", False)
             ],
@@ -293,72 +294,6 @@ class MemorySearchService:
                 return True
 
         return False
-
-    # ============================================================
-    # SERIALIZATION
-    # ============================================================
-
-    @staticmethod
-    def _serialize(value: Any) -> dict[str, Any]:
-        """
-        Serialización defensiva de objetos del dominio.
-        """
-
-        if is_dataclass(value):
-            return asdict(value)
-
-        if isinstance(value, dict):
-            return dict(value)
-
-        if hasattr(value, "__dict__"):
-            return dict(value.__dict__)
-
-        raise TypeError(
-            f"Cannot serialize value of type {type(value).__name__}."
-        )
-
-    @classmethod
-    def _entity_to_dict(cls, entity: Any) -> dict[str, Any]:
-        return cls._serialize(entity)
-
-    @classmethod
-    def _item_to_dict(cls, item: Any) -> dict[str, Any]:
-        return cls._serialize(item)
-
-    @classmethod
-    def _item_instance_to_dict(
-        cls,
-        instance: Any,
-    ) -> dict[str, Any]:
-        return cls._serialize(instance)
-
-    @classmethod
-    def _resource_to_dict(
-        cls,
-        resource: Any,
-    ) -> dict[str, Any]:
-        return cls._serialize(resource)
-
-    @classmethod
-    def _resource_balance_to_dict(
-        cls,
-        balance: Any,
-    ) -> dict[str, Any]:
-        return cls._serialize(balance)
-
-    @classmethod
-    def _relation_to_dict(
-        cls,
-        relation: Any,
-    ) -> dict[str, Any]:
-        return cls._serialize(relation)
-
-    @classmethod
-    def _event_to_dict(
-        cls,
-        event: Any,
-    ) -> dict[str, Any]:
-        return cls._serialize(event)
 
     # ============================================================
     # VALIDATION
