@@ -370,3 +370,132 @@ def test_apply_returns_failure_result_for_invalid_operation():
 
     assert result.success is False
     assert result.status != OperationStatus.SUCCESS
+
+def test_apply_operations_applies_all_operations_without_saving():
+    repository = FakeRepository()
+    applier = FakeApplier()
+
+    service = WorldService(
+        repository=repository,
+        applier=applier,
+    )
+
+    operations = [
+        CreateEntityOperation(
+            name="Fungoso",
+            entity_type="character",
+        ),
+        CreateEntityOperation(
+            name="Goblin",
+            entity_type="creature",
+        ),
+    ]
+
+    result = service.apply_operations(
+        operations
+    )
+
+    assert result["success"] is True
+    assert len(result["results"]) == 2
+
+    assert repository.save_calls == 0
+
+    assert service.world is result["world"]
+
+def test_apply_operations_rolls_back_when_one_operation_fails(
+    monkeypatch,
+):
+    service = WorldService()
+
+    original_world = service.world
+
+    operation_1 = CreateEntityOperation(
+        name="Fungoso",
+        entity_type="character",
+    )
+
+    operation_2 = CreateEntityOperation(
+        name="Goblin",
+        entity_type="creature",
+    )
+
+    call_count = 0
+
+    def fake_apply(operation):
+        nonlocal call_count
+
+        call_count += 1
+
+        if call_count == 1:
+            service.world.entities[1] = Entity(
+                id=1,
+                name="Fungoso",
+                entity_type="character",
+            )
+
+            return OperationResult(
+                status=OperationStatus.SUCCESS,
+                message="Success",
+                operation=operation,
+            )
+
+        return OperationResult(
+            status=OperationStatus.INVALID,
+            message="Operation failed",
+            operation=operation,
+        )
+
+    monkeypatch.setattr(
+        service,
+        "apply",
+        fake_apply,
+    )
+
+    result = service.apply_operations(
+        [
+            operation_1,
+            operation_2,
+        ]
+    )
+
+    assert result["success"] is False
+
+    assert service.world is original_world
+    assert service.world.entities == {}
+
+def test_apply_operations_restores_original_world_when_apply_raises(
+    monkeypatch,
+):
+    service = WorldService()
+
+    original_world = service.world
+
+    operation = CreateEntityOperation(
+        name="Fungoso",
+        entity_type="character",
+    )
+
+    def failing_apply(operation):
+        service.world.entities[1] = Entity(
+            id=1,
+            name="Fungoso",
+            entity_type="character",
+        )
+
+        raise RuntimeError("Unexpected failure")
+
+    monkeypatch.setattr(
+        service,
+        "apply",
+        failing_apply,
+    )
+
+    try:
+        service.apply_operations(
+            [operation]
+        )
+    except RuntimeError:
+        pass
+
+    assert service.world is original_world
+    assert service.world.entities == {}

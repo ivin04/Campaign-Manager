@@ -20,11 +20,24 @@ class FakeWorldService:
     def get_world(self):
         return self.world
 
-    def apply(self, operation):
-        self.applied_operations.append(operation)
+    def apply_operations(self, operations):
+        self.applied_operations.extend(operations)
 
-    def save(self):
+        return {
+            "success": True,
+            "results": [],
+            "world": self.world,
+        }
+
+    def apply_operations_and_save(self, operations):
+        self.applied_operations.extend(operations)
         self.save_calls += 1
+
+        return {
+            "success": True,
+            "results": [],
+            "world": self.world,
+        }
 
 
 def build_world():
