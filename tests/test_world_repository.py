@@ -926,3 +926,144 @@ def test_save_world_is_atomic_when_persistence_fails(monkeypatch, tmp_path):
 
     finally:
         database.DB_PATH = original_db_path
+
+def test_save_world_removes_records_missing_from_world(tmp_path):
+
+    original_db_path = database.DB_PATH
+    database.DB_PATH = tmp_path / "test_campaign.db"
+
+    try:
+        init_db()
+        repository = WorldRepository()
+
+        entity = Entity(
+            id=1,
+            name="Fungoso",
+            entity_type="character",
+        )
+
+        world = WorldState(
+            entities={
+                1: entity,
+            }
+        )
+
+        # --------------------------------------------------------
+        # Primera persistencia
+        # --------------------------------------------------------
+
+        repository.save_world(world)
+
+        loaded = repository.load_world()
+
+        assert 1 in loaded.entities
+
+        # --------------------------------------------------------
+        # Eliminamos la entidad del WorldState
+        # --------------------------------------------------------
+
+        del world.entities[1]
+
+        # --------------------------------------------------------
+        # Segunda persistencia
+        # --------------------------------------------------------
+
+        repository.save_world(world)
+
+        # --------------------------------------------------------
+        # SQLite debe reflejar exactamente el nuevo estado
+        # --------------------------------------------------------
+
+        loaded = repository.load_world()
+
+        assert loaded.entities == {}
+
+    finally:
+        database.DB_PATH = original_db_path
+
+def test_save_world_removes_missing_relations_and_events(tmp_path):
+
+    original_db_path = database.DB_PATH
+    database.DB_PATH = tmp_path / "test_campaign.db"
+
+    try:
+        init_db()
+        repository = WorldRepository()
+
+        entity_a = Entity(
+            id=1,
+            name="Fungoso",
+            entity_type="character",
+        )
+
+        entity_b = Entity(
+            id=2,
+            name="Goblin",
+            entity_type="creature",
+        )
+
+        relation = Relation(
+            id="relation-001",
+            subject_id=1,
+            relation_type="enemy_of",
+            target_id=2,
+        )
+
+        event = Event(
+            id="event-001",
+            event_type="discovery",
+            title="La espada perdida",
+        )
+
+        world = WorldState(
+            entities={
+                1: entity_a,
+                2: entity_b,
+            },
+            relations={
+                relation.id: relation,
+            },
+            events={
+                event.id: event,
+            },
+        )
+
+        # --------------------------------------------------------
+        # Persistir estado inicial
+        # --------------------------------------------------------
+
+        repository.save_world(world)
+
+        loaded = repository.load_world()
+
+        assert "relation-001" in loaded.relations
+        assert "event-001" in loaded.events
+
+        # --------------------------------------------------------
+        # Eliminamos ambos del WorldState
+        # --------------------------------------------------------
+
+        del world.relations["relation-001"]
+        del world.events["event-001"]
+
+        # --------------------------------------------------------
+        # Persistimos nuevamente
+        # --------------------------------------------------------
+
+        repository.save_world(world)
+
+        # --------------------------------------------------------
+        # Deben haber desaparecido de SQLite
+        # --------------------------------------------------------
+
+        loaded = repository.load_world()
+
+        assert loaded.relations == {}
+        assert loaded.events == {}
+
+        # Las entidades siguen existiendo.
+        assert 1 in loaded.entities
+        assert 2 in loaded.entities
+
+    finally:
+        database.DB_PATH = original_db_path
