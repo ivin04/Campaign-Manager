@@ -312,3 +312,32 @@ def test_load_replaces_current_world_completely(tmp_path):
 
     finally:
         database.DB_PATH = original_db_path
+
+def test_apply_and_save_restores_original_world_object_when_save_fails(
+    monkeypatch,
+):
+    service = WorldService()
+
+    original_world = service.world
+
+    def failing_save():
+        raise RuntimeError("Database failure")
+
+    monkeypatch.setattr(service, "save", failing_save)
+
+    operation = CreateEntityOperation(
+        name="Fungoso",
+        entity_type="character",
+    )
+
+    try:
+        service.apply_and_save(operation)
+    except RuntimeError:
+        pass
+
+    # El objeto WorldState original debe seguir siendo
+    # el objeto utilizado por el servicio.
+    assert service.world is original_world
+
+    # Y tampoco debe haber sido modificado.
+    assert service.world.entities == {}
