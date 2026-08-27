@@ -5,7 +5,6 @@ from typing import Any
 from models.world_state import WorldState
 from services.memory_search_service import MemorySearchService
 
-
 class ContextBuilder:
     """
     Construye contexto narrativo relacionado para el LLM.
@@ -40,6 +39,32 @@ class ContextBuilder:
 
     DIRECT_ENTITY_RELEVANCE = 1.0
     RELATED_ENTITY_RELEVANCE = 0.7
+
+    # ============================================================
+    # CONTEXT CANDIDATE SCORING
+    # ============================================================
+
+    CATEGORY_BASE_SCORES = {
+        "entities": 1.00,
+        "relations": 0.80,
+        "events": 0.70,
+        "items": 0.60,
+        "item_instances": 0.50,
+        "resources": 0.40,
+        "resource_balances": 0.30,
+    }
+
+    CATEGORY_PRIORITY = {
+        "entities": 0,
+        "relations": 1,
+        "events": 2,
+        "items": 3,
+        "item_instances": 4,
+        "resources": 5,
+        "resource_balances": 6,
+    }
+
+    DIRECT_MATCH_BONUS = 0.25
 
     # ============================================================
     # RELATION RELEVANCE
@@ -162,6 +187,10 @@ class ContextBuilder:
         }
 
         result["context"] = self._build_text_context(
+            result
+        )
+
+        self._strip_internal_context_fields(
             result
         )
 
@@ -430,17 +459,6 @@ class ContextBuilder:
         # LIMPIAR CAMPOS INTERNOS
         # --------------------------------------------------------
 
-        for entity in result:
-            entity.pop(
-                "_relevance",
-                None,
-            )
-
-            entity.pop(
-                "_depth",
-                None,
-            )
-
         return result
 
     @classmethod
@@ -506,6 +524,71 @@ class ContextBuilder:
 
         if depth < existing_depth:
             entity_depths[entity_id] = depth
+
+    def _entity_context_score(
+        self,
+        entity: dict[str, Any],
+        query: str,
+    ) -> float:
+        """
+        Conserva la relevancia relacional calculada previamente
+        y añade una pequeña bonificación por coincidencia directa.
+        """
+
+        relevance = entity.get(
+            "_relevance",
+            self.DIRECT_ENTITY_RELEVANCE,
+        )
+
+        try:
+            relevance = float(relevance)
+        except (TypeError, ValueError):
+            relevance = self.DIRECT_ENTITY_RELEVANCE
+
+        return (
+            relevance
+            + self._direct_match_bonus(
+                entity,
+                query,
+            )
+        )
+
+    def _direct_match_bonus(
+        self,
+        data: dict[str, Any],
+        query: str,
+    ) -> float:
+        """
+        Añade una pequeña bonificación cuando la consulta aparece
+        directamente en los datos del candidato.
+        """
+
+        if not query:
+            return 0.0
+
+        searchable_fields = (
+            "name",
+            "description",
+            "title",
+            "notes",
+            "significance",
+            "relation_type",
+            "event_type",
+            "resource_type",
+            "unit",
+        )
+
+        for field in searchable_fields:
+
+            value = data.get(field)
+
+            if value is None:
+                continue
+
+            if query in str(value).casefold():
+                return self.DIRECT_MATCH_BONUS
+
+        return 0.0
 
     # ============================================================
     # RELATIONS
@@ -646,25 +729,18 @@ class ContextBuilder:
         result: dict[str, Any],
     ) -> str:
         """
-        Construye contexto textual mediante selección por relevancia.
+        Construye el contexto textual final.
 
-        Cada pieza de información se convierte en un candidato
-        independiente. Los candidatos se puntúan y se incorporan
-        mientras exista presupuesto disponible.
+        El proceso es:
 
-        Prioridad base:
+            1. Crear candidatos.
+            2. Calcular relevancia.
+            3. Ordenar por score.
+            4. Seleccionar dentro del presupuesto.
+            5. Agrupar por categoría.
+            6. Renderizar.
 
-            entidades         1.00
-            relaciones        0.80
-            eventos           0.70
-            items             0.60
-            item_instances    0.50
-            resources         0.40
-            resource_balances 0.30
-
-        La coincidencia directa con la consulta añade relevancia.
-
-        No modifica result ni WorldState.
+        El presupuesto incluye también los headers.
         """
 
         query = str(
@@ -674,15 +750,17 @@ class ContextBuilder:
             )
         ).strip().casefold()
 
-        candidates = (
-            self._build_context_candidates(
-                result,
-                query,
-            )
+        candidates = self._build_context_candidates(
+            result,
+            query,
         )
 
         if not candidates:
             return "Sin información relevante."
+
+        # --------------------------------------------------------
+        # ORDEN DE SELECCIÓN
+        # --------------------------------------------------------
 
         candidates.sort(
             key=lambda candidate: (
@@ -692,24 +770,41 @@ class ContextBuilder:
             )
         )
 
+        # --------------------------------------------------------
+        # SELECCIÓN DENTRO DEL PRESUPUESTO
+        # --------------------------------------------------------
+
         selected: list[dict[str, Any]] = []
+
         current_length = 0
+        selected_categories: set[str] = set()
 
         for candidate in candidates:
+
+            category = candidate["category"]
             text = candidate["text"]
 
-            text_length = len(text)
-
-            separator_length = (
-                1
-                if selected
-                else 0
+            header = self._category_header(
+                category
             )
+
+            additional_length = len(text)
+
+            # Separador antes de la línea.
+            if current_length > 0:
+                additional_length += 1
+
+            # Si todavía no hemos incluido esta categoría,
+            # necesitamos reservar espacio para su header.
+            if category not in selected_categories:
+                additional_length += len(header)
+
+                if current_length > 0:
+                    additional_length += 1
 
             projected_length = (
                 current_length
-                + separator_length
-                + text_length
+                + additional_length
             )
 
             if projected_length > self.max_context_chars:
@@ -718,9 +813,22 @@ class ContextBuilder:
             selected.append(candidate)
 
             current_length = projected_length
+            selected_categories.add(category)
 
         if not selected:
             return "Sin información relevante."
+
+        # --------------------------------------------------------
+        # AGRUPAR PARA RENDERIZAR
+        # --------------------------------------------------------
+
+        selected.sort(
+            key=lambda candidate: (
+                candidate["category_order"],
+                candidate["index"],
+                -candidate["score"],
+            )
+        )
 
         return self._render_selected_candidates(
             selected
@@ -737,7 +845,7 @@ class ContextBuilder:
         query: str,
     ) -> list[dict[str, Any]]:
         """
-        Convierte la información del resultado en candidatos
+        Convierte la información disponible en candidatos
         independientes de contexto.
 
         Cada candidato contiene:
@@ -747,6 +855,9 @@ class ContextBuilder:
             score
             category_order
             index
+
+        La relevancia específica de las entidades se conserva
+        mediante _relevance mientras el contexto se construye.
         """
 
         candidates: list[dict[str, Any]] = []
@@ -808,28 +919,61 @@ class ContextBuilder:
                 [],
             )
 
-            if not isinstance(
-                values,
-                list,
-            ):
+            if not isinstance(values, list):
                 continue
 
-            lines = line_builder(
-                values
-            )
+            for index, value in enumerate(values):
 
-            for index, line in enumerate(lines):
+                if not isinstance(value, dict):
+                    continue
 
-                score = cls._score_context_candidate(
-                    line,
+                lines = line_builder([value])
+
+                if not lines:
+                    continue
+
+                text = lines[0]
+
+                score = base_score
+
+                # ------------------------------------------------
+                # RELEVANCIA PROPIA DE LA ENTIDAD
+                # ------------------------------------------------
+
+                if category == "entities":
+
+                    relevance = value.get(
+                        "_relevance",
+                        cls.DIRECT_ENTITY_RELEVANCE,
+                    )
+
+                    try:
+                        relevance = float(
+                            relevance
+                        )
+                    except (
+                        TypeError,
+                        ValueError,
+                    ):
+                        relevance = (
+                            cls.DIRECT_ENTITY_RELEVANCE
+                        )
+
+                    score = relevance
+
+                # ------------------------------------------------
+                # COINCIDENCIA DIRECTA
+                # ------------------------------------------------
+
+                score += cls._direct_match_bonus(
+                    value,
                     query,
-                    base_score,
                 )
 
                 candidates.append(
                     {
                         "category": category,
-                        "text": line,
+                        "text": text,
                         "score": score,
                         "category_order": category_order,
                         "index": index,
@@ -837,6 +981,49 @@ class ContextBuilder:
                 )
 
         return candidates
+
+    @staticmethod
+    def _direct_match_bonus(
+        data: dict[str, Any],
+        query: str,
+    ) -> float:
+        """
+        Añade relevancia cuando la consulta coincide directamente
+        con algún campo narrativo del candidato.
+        """
+
+        if not query:
+            return 0.0
+
+        query_normalized = query.casefold()
+
+        searchable_fields = (
+            "name",
+            "description",
+            "title",
+            "notes",
+            "significance",
+            "relation_type",
+            "event_type",
+            "resource_type",
+            "unit",
+        )
+
+        for field in searchable_fields:
+
+            value = data.get(field)
+
+            if value is None:
+                continue
+
+            normalized_value = str(
+                value
+            ).casefold()
+
+            if query_normalized in normalized_value:
+                return 0.25
+
+        return 0.0
 
     @staticmethod
     def _score_context_candidate(
@@ -942,9 +1129,11 @@ class ContextBuilder:
     def _relation_lines(
         relations: list[dict[str, Any]],
     ) -> list[str]:
+
         lines: list[str] = []
 
         for relation in relations:
+
             relation_type = relation.get(
                 "relation_type",
                 "unknown",
@@ -978,8 +1167,7 @@ class ContextBuilder:
 
                 if reason:
                     line += (
-                        f" Motivo: "
-                        f"{reason}"
+                        f" Motivo: {reason}"
                     )
 
             lines.append(line)
@@ -1227,38 +1415,36 @@ class ContextBuilder:
     # CONTEXT RENDERING
     # ============================================================
 
-    @staticmethod
+    @classmethod
     def _render_selected_candidates(
+        cls,
         candidates: list[dict[str, Any]],
     ) -> str:
         """
-        Renderiza candidatos seleccionados agrupándolos por
-        categoría.
+        Renderiza los candidatos seleccionados agrupándolos
+        por categoría.
 
-        El ranking decide qué entra.
-        Este método únicamente decide cómo presentarlo.
+        Los candidatos ya han sido seleccionados por relevancia.
+        Aquí únicamente se les da una estructura legible.
         """
 
-        category_headers = {
-            "entities": "[ENTIDADES]",
-            "relations": "[RELACIONES]",
-            "events": "[EVENTOS]",
-            "items": "[ITEMS]",
-            "item_instances": "[ITEM_INSTANCES]",
-            "resources": "[RESOURCES]",
-            "resource_balances": "[RESOURCE_BALANCES]",
-        }
+        if not candidates:
+            return "Sin información relevante."
 
         sections: list[str] = []
 
         current_category: str | None = None
 
         for candidate in candidates:
+
             category = candidate["category"]
 
             if category != current_category:
+
                 sections.append(
-                    category_headers[category]
+                    cls._category_header(
+                        category
+                    )
                 )
 
                 current_category = category
@@ -1268,443 +1454,6 @@ class ContextBuilder:
             )
 
         return "\n".join(sections)
-
-    # ============================================================
-    # CONTEXT BUDGET
-    # ============================================================
-
-    def _apply_context_budget(
-        self,
-        sections: list[str],
-    ) -> str:
-        """
-        Convierte las líneas generadas en texto y limita
-        el resultado al presupuesto configurado.
-
-        Nunca corta una línea por la mitad.
-
-        Si una línea individual supera el presupuesto,
-        se omite.
-        """
-
-        if not sections:
-            return "Sin información relevante."
-
-        result: list[str] = []
-        current_length = 0
-
-        for section in sections:
-
-            section_length = len(section)
-
-            separator_length = (
-                1
-                if result
-                else 0
-            )
-
-            projected_length = (
-                current_length
-                + separator_length
-                + section_length
-            )
-
-            if projected_length > self.max_context_chars:
-
-                if (
-                    not result
-                    and section_length
-                    <= self.max_context_chars
-                ):
-                    result.append(section)
-
-                break
-
-            result.append(section)
-
-            current_length = projected_length
-
-        if not result:
-            return "Sin información relevante."
-
-        return "\n".join(result)
-
-    # ============================================================
-    # TEXT SECTIONS
-    # ============================================================
-
-    @staticmethod
-    def _append_entities(
-        sections: list[str],
-        entities: list[dict[str, Any]],
-    ) -> None:
-
-        if not entities:
-            return
-
-        sections.append(
-            "[ENTIDADES]"
-        )
-
-        for entity in entities:
-
-            name = entity.get(
-                "name",
-                "Sin nombre",
-            )
-
-            entity_type = entity.get(
-                "entity_type",
-                "unknown",
-            )
-
-            description = entity.get(
-                "description",
-                "",
-            )
-
-            notes = entity.get(
-                "notes",
-                "",
-            )
-
-            line = (
-                f"- {name} "
-                f"({entity_type})"
-            )
-
-            if description:
-                line += (
-                    f": {description}"
-                )
-
-            if notes:
-                line += (
-                    f" Notas: {notes}"
-                )
-
-            sections.append(line)
-
-    @staticmethod
-    def _append_items(
-        sections: list[str],
-        items: list[dict[str, Any]],
-    ) -> None:
-
-        if not items:
-            return
-
-        sections.append(
-            "[ITEMS]"
-        )
-
-        for item in items:
-
-            name = item.get(
-                "name",
-                "Sin nombre",
-            )
-
-            description = item.get(
-                "description",
-                "",
-            )
-
-            significance = item.get(
-                "significance",
-                "",
-            )
-
-            notes = item.get(
-                "notes",
-                "",
-            )
-
-            line = f"- {name}"
-
-            if description:
-                line += (
-                    f": {description}"
-                )
-
-            if significance:
-                line += (
-                    f" Importancia: "
-                    f"{significance}"
-                )
-
-            if notes:
-                line += (
-                    f" Notas: {notes}"
-                )
-
-            sections.append(line)
-
-    @staticmethod
-    def _append_item_instances(
-        sections: list[str],
-        instances: list[dict[str, Any]],
-    ) -> None:
-
-        if not instances:
-            return
-
-        sections.append(
-            "[ITEM_INSTANCES]"
-        )
-
-        for instance in instances:
-
-            instance_id = instance.get(
-                "id",
-                "unknown",
-            )
-
-            item_id = instance.get(
-                "item_id"
-            )
-
-            owner_id = instance.get(
-                "owner_id"
-            )
-
-            location_id = instance.get(
-                "location_id"
-            )
-
-            line = (
-                f"- Instancia "
-                f"{instance_id}"
-            )
-
-            if item_id is not None:
-                line += (
-                    f" item={item_id}"
-                )
-
-            if owner_id is not None:
-                line += (
-                    f" propietario="
-                    f"{owner_id}"
-                )
-
-            if location_id is not None:
-                line += (
-                    f" ubicación="
-                    f"{location_id}"
-                )
-
-            sections.append(line)
-
-    @staticmethod
-    def _append_resources(
-        sections: list[str],
-        resources: list[dict[str, Any]],
-    ) -> None:
-
-        if not resources:
-            return
-
-        sections.append(
-            "[RESOURCES]"
-        )
-
-        for resource in resources:
-
-            name = resource.get(
-                "name",
-                "Sin nombre",
-            )
-
-            resource_type = resource.get(
-                "resource_type",
-                "",
-            )
-
-            unit = resource.get(
-                "unit",
-                "",
-            )
-
-            notes = resource.get(
-                "notes",
-                "",
-            )
-
-            line = f"- {name}"
-
-            if resource_type:
-                line += (
-                    f" ({resource_type})"
-                )
-
-            if unit:
-                line += (
-                    f" Unidad: {unit}"
-                )
-
-            if notes:
-                line += (
-                    f" Notas: {notes}"
-                )
-
-            sections.append(line)
-
-    @staticmethod
-    def _append_resource_balances(
-        sections: list[str],
-        balances: list[dict[str, Any]],
-    ) -> None:
-
-        if not balances:
-            return
-
-        sections.append(
-            "[RESOURCE_BALANCES]"
-        )
-
-        for balance in balances:
-
-            balance_id = balance.get(
-                "id",
-                "unknown",
-            )
-
-            resource_id = balance.get(
-                "resource_id"
-            )
-
-            owner_id = balance.get(
-                "owner_id"
-            )
-
-            amount = balance.get(
-                "amount"
-            )
-
-            line = (
-                f"- Balance "
-                f"{balance_id}"
-            )
-
-            if resource_id is not None:
-                line += (
-                    f" recurso="
-                    f"{resource_id}"
-                )
-
-            if owner_id is not None:
-                line += (
-                    f" propietario="
-                    f"{owner_id}"
-                )
-
-            if amount is not None:
-                line += (
-                    f" cantidad="
-                    f"{amount}"
-                )
-
-            sections.append(line)
-
-    @staticmethod
-    def _append_relations(
-        sections: list[str],
-        relations: list[dict[str, Any]],
-    ) -> None:
-
-        if not relations:
-            return
-
-        sections.append(
-            "[RELACIONES]"
-        )
-
-        for relation in relations:
-
-            relation_type = relation.get(
-                "relation_type",
-                "unknown",
-            )
-
-            subject_id = relation.get(
-                "subject_id"
-            )
-
-            target_id = relation.get(
-                "target_id"
-            )
-
-            line = (
-                f"- {relation_type}: "
-                f"{subject_id} -> "
-                f"{target_id}"
-            )
-
-            metadata = relation.get(
-                "metadata"
-            )
-
-            if isinstance(
-                metadata,
-                dict,
-            ):
-                reason = metadata.get(
-                    "reason"
-                )
-
-                if reason:
-                    line += (
-                        f" Motivo: "
-                        f"{reason}"
-                    )
-
-            sections.append(line)
-
-    @staticmethod
-    def _append_events(
-        sections: list[str],
-        events: list[dict[str, Any]],
-    ) -> None:
-
-        if not events:
-            return
-
-        sections.append(
-            "[EVENTOS]"
-        )
-
-        for event in events:
-
-            title = event.get(
-                "title",
-                "Sin título",
-            )
-
-            description = event.get(
-                "description",
-                "",
-            )
-
-            consequences = event.get(
-                "consequences",
-                "",
-            )
-
-            line = f"- {title}"
-
-            if description:
-                line += (
-                    f": {description}"
-                )
-
-            if consequences:
-                line += (
-                    f" Consecuencias: "
-                    f"{consequences}"
-                )
-
-            sections.append(line)
 
     # ============================================================
     # EMPTY RESULT
@@ -1832,3 +1581,48 @@ class ContextBuilder:
             )
 
         return result
+
+    @staticmethod
+    def _strip_internal_context_fields(
+        result: dict[str, Any],
+    ) -> None:
+        """
+        Elimina metadatos internos de relevancia antes de devolver
+        el resultado público.
+        """
+
+        for entity in result.get(
+            "entities",
+            [],
+        ):
+            if not isinstance(entity, dict):
+                continue
+
+            entity.pop(
+                "_relevance",
+                None,
+            )
+
+            entity.pop(
+                "_depth",
+                None,
+            )
+
+    @staticmethod
+    def _category_header(
+        category: str,
+    ) -> str:
+        headers = {
+            "entities": "[ENTIDADES]",
+            "relations": "[RELACIONES]",
+            "events": "[EVENTOS]",
+            "items": "[ITEMS]",
+            "item_instances": "[ITEM_INSTANCES]",
+            "resources": "[RESOURCES]",
+            "resource_balances": "[RESOURCE_BALANCES]",
+        }
+
+        return headers.get(
+            category,
+            f"[{category.upper()}]",
+        )
