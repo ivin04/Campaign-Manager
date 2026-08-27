@@ -159,12 +159,27 @@ class WorldService:
         si la operación ha tenido éxito.
         """
 
-        result = self.apply(operation)
+        original_state = self.world
 
-        if not result.success:
-            return result
+        working_state = copy.deepcopy(
+            original_state
+        )
 
-        self.save()
+        self.world = working_state
+
+        try:
+
+            result = self.apply(operation)
+
+            if not result.success:
+                self.world = original_state
+                return result
+
+            self.save()
+
+        except Exception:
+            self.world = original_state
+            raise
 
         return result
 

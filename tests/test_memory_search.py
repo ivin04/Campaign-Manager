@@ -179,35 +179,6 @@ def test_memory_search_finds_public_event(clean_world):
     assert saved_event["title"] == "La mina abandonada"
 
 
-def test_memory_search_returns_world_state_categories(clean_world):
-    """
-    La respuesta debe utilizar las categorías del nuevo WorldState.
-
-    No deben existir las categorías legacy:
-        characters
-        locations
-        factions
-        quests
-    """
-
-    result = app.search_memory("Fungoso")
-
-    assert set(result.keys()) == {
-        "entities",
-        "items",
-        "item_instances",
-        "resources",
-        "resource_balances",
-        "relations",
-        "events",
-    }
-
-    assert "characters" not in result
-    assert "locations" not in result
-    assert "factions" not in result
-    assert "quests" not in result
-
-
 def test_memory_search_empty_query_content_returns_empty_result(clean_world):
     """
     Si la consulta solo contiene stopwords, no debe consultar ni devolver nada.

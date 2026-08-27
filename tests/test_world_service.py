@@ -1,3 +1,5 @@
+import copy
+
 from models.entity import Entity
 from models.world_state import WorldState
 
@@ -7,6 +9,8 @@ from models.operation_result import (
     OperationResult,
     OperationStatus,
 )
+
+from operations.world_operations import CreateEntityOperation
 
 class FakeRepository:
 
@@ -176,3 +180,60 @@ def test_load_replaces_current_world():
     assert loaded is new_world
     assert service.world is new_world
     assert service.world is not old_world
+
+def test_apply_and_save_does_not_leave_memory_modified_when_save_fails(
+    monkeypatch,
+):
+    service = WorldService()
+
+    original_entities = dict(service.world.entities)
+
+    def failing_save():
+        raise RuntimeError("Database failure")
+
+    monkeypatch.setattr(service, "save", failing_save)
+
+    operation = CreateEntityOperation(
+        name="Fungoso",
+        entity_type="character",
+    )
+
+    try:
+        service.apply_and_save(operation)
+    except RuntimeError:
+        pass
+
+    assert service.world.entities == original_entities
+
+def test_apply_and_save_does_not_save_when_apply_fails(
+    monkeypatch,
+):
+    service = WorldService()
+
+    original_world = copy.deepcopy(service.world)
+
+    save_called = False
+
+    def fake_save():
+        nonlocal save_called
+        save_called = True
+
+    def fake_apply(operation):
+        return OperationResult(
+            status=OperationStatus.INVALID,
+            message="Operation failed",
+        )
+
+    monkeypatch.setattr(service, "save", fake_save)
+    monkeypatch.setattr(service, "apply", fake_apply)
+
+    operation = CreateEntityOperation(
+        name="Fungoso",
+        entity_type="character",
+    )
+
+    result = service.apply_and_save(operation)
+
+    assert result.success is False
+    assert save_called is False
+    assert service.world == original_world

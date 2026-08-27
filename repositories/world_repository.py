@@ -229,6 +229,8 @@ class WorldRepository:
 
             self._delete_missing_records(conn, world)
 
+            self._normalize_world_dependencies(world)
+
             self._save_entities(conn, world)
             self._save_items(conn, world)
             self._save_item_instances(conn, world)
@@ -499,31 +501,18 @@ class WorldRepository:
         relation_ids = list(world.relations.keys())
         event_ids = list(world.events.keys())
 
-        if entity_ids:
-            placeholders = ",".join("?" for _ in entity_ids)
+        if relation_ids:
+            placeholders = ",".join("?" for _ in relation_ids)
 
             conn.execute(
                 f"""
-                DELETE FROM entities
+                DELETE FROM relations
                 WHERE id NOT IN ({placeholders})
                 """,
-                entity_ids,
+                relation_ids,
             )
         else:
-            conn.execute("DELETE FROM entities")
-
-        if item_ids:
-            placeholders = ",".join("?" for _ in item_ids)
-
-            conn.execute(
-                f"""
-                DELETE FROM items
-                WHERE id NOT IN ({placeholders})
-                """,
-                item_ids,
-            )
-        else:
-            conn.execute("DELETE FROM items")
+            conn.execute("DELETE FROM relations")
 
         if item_instance_ids:
             placeholders = ",".join("?" for _ in item_instance_ids)
@@ -538,19 +527,6 @@ class WorldRepository:
         else:
             conn.execute("DELETE FROM item_instances")
 
-        if resource_ids:
-            placeholders = ",".join("?" for _ in resource_ids)
-
-            conn.execute(
-                f"""
-                DELETE FROM resources
-                WHERE id NOT IN ({placeholders})
-                """,
-                resource_ids,
-            )
-        else:
-            conn.execute("DELETE FROM resources")
-
         if balance_ids:
             placeholders = ",".join("?" for _ in balance_ids)
 
@@ -564,19 +540,6 @@ class WorldRepository:
         else:
             conn.execute("DELETE FROM resource_balances")
 
-        if relation_ids:
-            placeholders = ",".join("?" for _ in relation_ids)
-
-            conn.execute(
-                f"""
-                DELETE FROM relations
-                WHERE id NOT IN ({placeholders})
-                """,
-                relation_ids,
-            )
-        else:
-            conn.execute("DELETE FROM relations")
-
         if event_ids:
             placeholders = ",".join("?" for _ in event_ids)
 
@@ -589,3 +552,103 @@ class WorldRepository:
             )
         else:
             conn.execute("DELETE FROM world_events")
+
+        if item_ids:
+            placeholders = ",".join("?" for _ in item_ids)
+
+            conn.execute(
+                f"""
+                DELETE FROM items
+                WHERE id NOT IN ({placeholders})
+                """,
+                item_ids,
+            )
+        else:
+            conn.execute("DELETE FROM items")
+
+        if resource_ids:
+            placeholders = ",".join("?" for _ in resource_ids)
+
+            conn.execute(
+                f"""
+                DELETE FROM resources
+                WHERE id NOT IN ({placeholders})
+                """,
+                resource_ids,
+            )
+        else:
+            conn.execute("DELETE FROM resources")
+
+        if entity_ids:
+            placeholders = ",".join("?" for _ in entity_ids)
+
+            conn.execute(
+                f"""
+                DELETE FROM entities
+                WHERE id NOT IN ({placeholders})
+                """,
+                entity_ids,
+            )
+        else:
+            conn.execute("DELETE FROM entities")
+
+    def _normalize_world_dependencies(self, world: WorldState):
+        """
+        El WorldState es el snapshot autoritativo.
+
+        Si desaparece una entidad, sus relaciones, posesiones y
+        balances asociados también deben desaparecer.
+
+        Si desaparece un item o recurso, sus instancias/balances
+        asociados también deben desaparecer.
+        """
+
+        entity_ids = set(world.entities.keys())
+        item_ids = set(world.items.keys())
+        resource_ids = set(world.resources.keys())
+
+        # ------------------------------------------------------------
+        # RELATIONS
+        # ------------------------------------------------------------
+
+        world.relations = {
+            relation_id: relation
+            for relation_id, relation in world.relations.items()
+            if (
+                relation.subject_id in entity_ids
+                and relation.target_id in entity_ids
+            )
+        }
+
+        # ------------------------------------------------------------
+        # ITEM INSTANCES
+        # ------------------------------------------------------------
+
+        world.item_instances = {
+            instance_id: instance
+            for instance_id, instance in world.item_instances.items()
+            if (
+                instance.item_id in item_ids
+                and (
+                    instance.owner_id is None
+                    or instance.owner_id in entity_ids
+                )
+                and (
+                    instance.location_id is None
+                    or instance.location_id in entity_ids
+                )
+            )
+        }
+
+        # ------------------------------------------------------------
+        # RESOURCE BALANCES
+        # ------------------------------------------------------------
+
+        world.resource_balances = {
+            balance_id: balance
+            for balance_id, balance in world.resource_balances.items()
+            if (
+                balance.resource_id in resource_ids
+                and balance.owner_id in entity_ids
+            )
+        }

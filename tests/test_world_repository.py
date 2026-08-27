@@ -210,3 +210,395 @@ def test_world_repository_round_trip(tmp_path):
     finally:
 
         database.DB_PATH = original_db_path
+
+def test_world_repository_deletes_missing_records(tmp_path):
+
+    original_db_path = database.DB_PATH
+    database.DB_PATH = tmp_path / "test_campaign.db"
+
+    try:
+
+        init_db()
+        repository = WorldRepository()
+
+        # --------------------------------------------------------
+        # Crear mundo con dependencias
+        # --------------------------------------------------------
+
+        fungoso = Entity(
+            id=1,
+            name="Fungoso",
+            entity_type="character",
+        )
+
+        goblin = Entity(
+            id=2,
+            name="Goblin",
+            entity_type="creature",
+        )
+
+        sword = Item(
+            id=1,
+            name="Espada",
+        )
+
+        sword_instance = ItemInstance(
+            id=1,
+            item_id=1,
+            instance_number=1,
+            owner_id=1,
+            location_id=2,
+            condition="Buena",
+        )
+
+        gold = Resource(
+            id=1,
+            name="Oro",
+            resource_type="currency",
+            unit="monedas",
+        )
+
+        gold_balance = ResourceBalance(
+            id=1,
+            resource_id=1,
+            owner_id=1,
+            amount=100,
+        )
+
+        relation = Relation(
+            id="fungoso-goblin",
+            subject_id=1,
+            relation_type="enemy_of",
+            target_id=2,
+        )
+
+        event = Event(
+            id="event-001",
+            event_type="discovery",
+            title="La espada perdida",
+            description="Fungoso encuentra una espada.",
+            session_id=None,
+            secret=False,
+        )
+
+        world = WorldState(
+            entities={
+                fungoso.id: fungoso,
+                goblin.id: goblin,
+            },
+            items={
+                sword.id: sword,
+            },
+            item_instances={
+                sword_instance.id: sword_instance,
+            },
+            resources={
+                gold.id: gold,
+            },
+            resource_balances={
+                gold_balance.id: gold_balance,
+            },
+            relations={
+                relation.id: relation,
+            },
+            events={
+                event.id: event,
+            },
+        )
+
+        # --------------------------------------------------------
+        # Primer SAVE
+        # --------------------------------------------------------
+
+        repository.save_world(world)
+
+        # --------------------------------------------------------
+        # Eliminar todo del estado en memoria
+        # --------------------------------------------------------
+
+        world.events.clear()
+        world.relations.clear()
+        world.item_instances.clear()
+        world.resource_balances.clear()
+        world.items.clear()
+        world.resources.clear()
+        world.entities.clear()
+
+        # --------------------------------------------------------
+        # Segundo SAVE
+        # --------------------------------------------------------
+
+        repository.save_world(world)
+
+        # --------------------------------------------------------
+        # Comprobar que SQLite quedó vacío
+        # --------------------------------------------------------
+
+        loaded = repository.load_world()
+
+        assert loaded.entities == {}
+        assert loaded.items == {}
+        assert loaded.item_instances == {}
+        assert loaded.resources == {}
+        assert loaded.resource_balances == {}
+        assert loaded.relations == {}
+        assert loaded.events == {}
+
+    finally:
+
+        database.DB_PATH = original_db_path
+
+def test_world_repository_can_delete_entity_with_dependencies(tmp_path):
+
+    original_db_path = database.DB_PATH
+    database.DB_PATH = tmp_path / "test_campaign.db"
+
+    try:
+
+        init_db()
+        repository = WorldRepository()
+
+        entity_a = Entity(
+            id=1,
+            name="Fungoso",
+            entity_type="character",
+        )
+
+        entity_b = Entity(
+            id=2,
+            name="Goblin",
+            entity_type="creature",
+        )
+
+        item = Item(
+            id=1,
+            name="Espada",
+        )
+
+        item_instance = ItemInstance(
+            id=1,
+            item_id=1,
+            instance_number=1,
+            owner_id=1,
+        )
+
+        resource = Resource(
+            id=1,
+            name="Oro",
+            resource_type="currency",
+        )
+
+        balance = ResourceBalance(
+            id=1,
+            resource_id=1,
+            owner_id=1,
+            amount=50,
+        )
+
+        relation = Relation(
+            id="relation-001",
+            subject_id=1,
+            relation_type="enemy_of",
+            target_id=2,
+        )
+
+        world = WorldState(
+            entities={
+                1: entity_a,
+                2: entity_b,
+            },
+            items={
+                1: item,
+            },
+            item_instances={
+                1: item_instance,
+            },
+            resources={
+                1: resource,
+            },
+            resource_balances={
+                1: balance,
+            },
+            relations={
+                "relation-001": relation,
+            },
+        )
+
+        # Guardamos el mundo completo.
+        repository.save_world(world)
+
+        # --------------------------------------------------------
+        # Eliminamos SOLO Fungoso
+        # --------------------------------------------------------
+
+        del world.entities[1]
+
+        # --------------------------------------------------------
+        # Debe poder persistirse sin error de FK
+        # --------------------------------------------------------
+
+        repository.save_world(world)
+
+        # --------------------------------------------------------
+        # Comprobar resultado
+        # --------------------------------------------------------
+
+        loaded = repository.load_world()
+
+        assert 1 not in loaded.entities
+
+        # La instancia sigue existiendo, pero ya no tiene propietario.
+        assert 1 in loaded.item_instances
+        assert loaded.item_instances[1].owner_id is None
+
+        # El balance pertenecía a Fungoso.
+        assert 1 not in loaded.resource_balances
+
+        # La relación tenía a Fungoso como subject.
+        assert "relation-001" not in loaded.relations
+
+        # El Goblin sigue existiendo.
+        assert 2 in loaded.entities
+
+        # El item y el recurso siguen existiendo porque no eran
+        # propiedad exclusiva de la entidad en el modelo.
+        assert 1 in loaded.items
+        assert 1 in loaded.resources
+
+    finally:
+
+        database.DB_PATH = original_db_path
+
+def test_world_repository_can_delete_item_with_instances(tmp_path):
+
+    original_db_path = database.DB_PATH
+    database.DB_PATH = tmp_path / "test_campaign.db"
+
+    try:
+
+        init_db()
+        repository = WorldRepository()
+
+        entity = Entity(
+            id=1,
+            name="Fungoso",
+            entity_type="character",
+        )
+
+        item = Item(
+            id=1,
+            name="Espada",
+        )
+
+        item_instance = ItemInstance(
+            id=1,
+            item_id=1,
+            instance_number=1,
+            owner_id=1,
+        )
+
+        world = WorldState(
+            entities={
+                1: entity,
+            },
+            items={
+                1: item,
+            },
+            item_instances={
+                1: item_instance,
+            },
+        )
+
+        # --------------------------------------------------------
+        # Guardar
+        # --------------------------------------------------------
+
+        repository.save_world(world)
+
+        # --------------------------------------------------------
+        # Eliminar el Item del estado
+        # --------------------------------------------------------
+
+        del world.items[1]
+
+        # --------------------------------------------------------
+        # Guardar de nuevo
+        # --------------------------------------------------------
+
+        repository.save_world(world)
+
+        # --------------------------------------------------------
+        # Comprobar
+        # --------------------------------------------------------
+
+        loaded = repository.load_world()
+
+        assert 1 not in loaded.items
+        assert 1 not in loaded.item_instances
+
+        # La entidad no debe desaparecer.
+        assert 1 in loaded.entities
+
+    finally:
+
+        database.DB_PATH = original_db_path
+
+def test_save_world_is_atomic_when_persistence_fails(tmp_path, monkeypatch):
+
+    original_db_path = database.DB_PATH
+    database.DB_PATH = tmp_path / "test_campaign.db"
+
+    try:
+        init_db()
+        repository = WorldRepository()
+
+        entity = Entity(
+            id=1,
+            name="Fungoso",
+            entity_type="character",
+        )
+
+        world = WorldState(
+            entities={
+                1: entity,
+            }
+        )
+
+        # Primera persistencia válida.
+        repository.save_world(world)
+
+        # Nuevo estado que queremos intentar guardar.
+        entity_2 = Entity(
+            id=2,
+            name="Goblin",
+            entity_type="creature",
+        )
+
+        world.entities[2] = entity_2
+
+        def failing_save_entities(conn, world):
+            raise RuntimeError("Database failure")
+
+        monkeypatch.setattr(
+            repository,
+            "_save_entities",
+            failing_save_entities,
+        )
+
+        # La operación debe fallar.
+        try:
+            repository.save_world(world)
+        except RuntimeError:
+            pass
+
+        # --------------------------------------------------------
+        # La base de datos debe seguir exactamente como antes.
+        # --------------------------------------------------------
+
+        loaded = repository.load_world()
+
+        assert 1 in loaded.entities
+        assert 2 not in loaded.entities
+
+    finally:
+        database.DB_PATH = original_db_path
