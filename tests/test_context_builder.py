@@ -550,3 +550,524 @@ def test_context_builder_relation_relevance_propagates():
 
     assert 1 in ids
     assert 2 in ids
+
+# ============================================================
+# CONTEXT CANDIDATE SCORING
+# ============================================================
+
+
+def test_context_builder_direct_entity_has_higher_score_than_related():
+    builder = ContextBuilder()
+
+    direct = {
+        "id": 1,
+        "name": "Fungoso",
+        "_relevance": 1.0,
+    }
+
+    related = {
+        "id": 2,
+        "name": "Aldric",
+        "_relevance": 0.7,
+    }
+
+    direct_score = builder._entity_context_score(
+        direct,
+        "Fungoso",
+    )
+
+    related_score = builder._entity_context_score(
+        related,
+        "Fungoso",
+    )
+
+    assert direct_score > related_score
+
+
+def test_context_builder_direct_query_match_gets_bonus():
+    builder = ContextBuilder()
+
+    data = {
+        "name": "Fungoso",
+        "description": "Un aventurero.",
+    }
+
+    score = builder._direct_match_bonus(
+        data,
+        "fungoso",
+    )
+
+    assert score == builder.DIRECT_MATCH_BONUS
+
+
+def test_context_builder_non_matching_candidate_gets_no_bonus():
+    builder = ContextBuilder()
+
+    data = {
+        "name": "Aldric",
+        "description": "Un minero viejo.",
+    }
+
+    score = builder._direct_match_bonus(
+        data,
+        "fungoso",
+    )
+
+    assert score == 0.0
+
+
+def test_context_builder_query_matching_is_case_insensitive():
+    builder = ContextBuilder()
+
+    data = {
+        "name": "Fungoso",
+    }
+
+    score = builder._direct_match_bonus(
+        data,
+        "fungoso",
+    )
+
+    assert score == builder.DIRECT_MATCH_BONUS
+
+
+def test_context_builder_word_matching_contributes_to_score():
+    builder = ContextBuilder()
+
+    text = "- Fungoso (character): aventurero peculiar"
+
+    score = builder._score_context_candidate(
+        text,
+        "fungoso peculiar",
+        1.0,
+    )
+
+    assert score > 1.0
+
+
+def test_context_builder_empty_query_keeps_base_score():
+    builder = ContextBuilder()
+
+    score = builder._score_context_candidate(
+        "- Fungoso",
+        "",
+        1.0,
+    )
+
+    assert score == 1.0
+
+
+# ============================================================
+# CONTEXT CANDIDATES
+# ============================================================
+
+
+def test_context_builder_builds_candidates_for_all_categories():
+    builder = ContextBuilder()
+
+    result = builder.build(
+        build_world_with_related_data(),
+        "Fungoso",
+    )
+
+    candidates = builder._build_context_candidates(
+        result,
+        "fungoso",
+    )
+
+    categories = {
+        candidate["category"]
+        for candidate in candidates
+    }
+
+    assert "entities" in categories
+    assert "items" in categories
+    assert "item_instances" in categories
+    assert "resources" in categories
+    assert "resource_balances" in categories
+
+
+def test_context_builder_candidates_have_required_fields():
+    builder = ContextBuilder()
+
+    result = builder.build(
+        build_world(),
+        "Fungoso",
+    )
+
+    candidates = builder._build_context_candidates(
+        result,
+        "fungoso",
+    )
+
+    assert candidates
+
+    for candidate in candidates:
+        assert "category" in candidate
+        assert "text" in candidate
+        assert "score" in candidate
+        assert "category_order" in candidate
+        assert "index" in candidate
+
+
+def test_context_builder_candidate_scores_are_numeric():
+    builder = ContextBuilder()
+
+    result = builder.build(
+        build_world(),
+        "Fungoso",
+    )
+
+    candidates = builder._build_context_candidates(
+        result,
+        "fungoso",
+    )
+
+    assert candidates
+
+    for candidate in candidates:
+        assert isinstance(
+            candidate["score"],
+            (int, float),
+        )
+
+
+# ============================================================
+# CONTEXT RENDERING
+# ============================================================
+
+
+def test_context_builder_renders_category_headers():
+    builder = ContextBuilder()
+
+    candidates = [
+        {
+            "category": "entities",
+            "text": "- Fungoso (character)",
+            "score": 1.0,
+            "category_order": 0,
+            "index": 0,
+        },
+        {
+            "category": "relations",
+            "text": "- enemy_of: 1 -> 2",
+            "score": 0.8,
+            "category_order": 1,
+            "index": 0,
+        },
+        {
+            "category": "events",
+            "text": "- La mina abandonada",
+            "score": 0.7,
+            "category_order": 2,
+            "index": 0,
+        },
+    ]
+
+    context = builder._render_selected_candidates(
+        candidates
+    )
+
+    assert "[ENTIDADES]" in context
+    assert "[RELACIONES]" in context
+    assert "[EVENTOS]" in context
+
+
+def test_context_builder_does_not_repeat_category_header():
+    builder = ContextBuilder()
+
+    candidates = [
+        {
+            "category": "entities",
+            "text": "- Fungoso (character)",
+            "score": 1.0,
+            "category_order": 0,
+            "index": 0,
+        },
+        {
+            "category": "entities",
+            "text": "- Goblin (creature)",
+            "score": 0.9,
+            "category_order": 0,
+            "index": 1,
+        },
+    ]
+
+    context = builder._render_selected_candidates(
+        candidates
+    )
+
+    assert context.count("[ENTIDADES]") == 1
+    assert "- Fungoso (character)" in context
+    assert "- Goblin (creature)" in context
+
+
+def test_context_builder_empty_candidates_render_empty_context():
+    builder = ContextBuilder()
+
+    context = builder._render_selected_candidates(
+        []
+    )
+
+    assert context == "Sin información relevante."
+
+
+# ============================================================
+# CONTEXT SELECTION
+# ============================================================
+
+
+def test_context_builder_prefers_higher_scored_candidates():
+    builder = ContextBuilder(
+        max_context_chars=100,
+    )
+
+    result = {
+        "query": "Fungoso",
+        "entities": [
+            {
+                "id": 1,
+                "name": "Fungoso",
+                "entity_type": "character",
+                "description": "El protagonista.",
+                "_relevance": 1.0,
+            },
+        ],
+        "relations": [
+            {
+                "id": "relation-1",
+                "relation_type": "knows",
+                "subject_id": 1,
+                "target_id": 2,
+            },
+        ],
+        "events": [],
+        "items": [],
+        "item_instances": [],
+        "resources": [],
+        "resource_balances": [],
+    }
+
+    context = builder._build_text_context(
+        result
+    )
+
+    assert "Fungoso" in context
+
+
+def test_context_builder_selected_context_respects_budget():
+    builder = ContextBuilder(
+        max_context_chars=120,
+    )
+
+    result = builder.build(
+        build_world(),
+        "Fungoso",
+    )
+
+    assert len(result["context"]) <= 120
+
+
+def test_context_builder_does_not_cut_lines_in_half():
+    builder = ContextBuilder(
+        max_context_chars=70,
+    )
+
+    result = builder.build(
+        build_world(),
+        "Fungoso",
+    )
+
+    context = result["context"]
+
+    for line in context.splitlines():
+        assert line.strip() != ""
+
+
+def test_context_builder_skips_oversized_candidate_and_continues():
+    builder = ContextBuilder(
+        max_context_chars=100,
+    )
+
+    result = {
+        "query": "Fungoso",
+        "entities": [
+            {
+                "id": 1,
+                "name": "X" * 200,
+                "entity_type": "character",
+                "description": "",
+            },
+            {
+                "id": 2,
+                "name": "Fungoso",
+                "entity_type": "character",
+                "description": "",
+            },
+        ],
+        "relations": [],
+        "events": [],
+        "items": [],
+        "item_instances": [],
+        "resources": [],
+        "resource_balances": [],
+    }
+
+    context = builder._build_text_context(
+        result
+    )
+
+    assert "Fungoso" in context
+    assert "X" * 200 not in context
+
+
+# ============================================================
+# INTERNAL FIELD SAFETY
+# ============================================================
+
+
+def test_context_builder_strips_internal_entity_fields():
+    builder = ContextBuilder()
+
+    result = builder.build(
+        build_world(),
+        "Fungoso",
+    )
+
+    for entity in result["entities"]:
+        assert "_relevance" not in entity
+        assert "_depth" not in entity
+
+
+def test_context_builder_does_not_leak_internal_fields_into_text():
+    builder = ContextBuilder()
+
+    result = builder.build(
+        build_world(),
+        "Fungoso",
+    )
+
+    assert "_relevance" not in result["context"]
+    assert "_depth" not in result["context"]
+
+
+# ============================================================
+# CATEGORY HEADER SAFETY
+# ============================================================
+
+
+def test_context_builder_known_category_header():
+    assert (
+        ContextBuilder._category_header(
+            "entities"
+        )
+        == "[ENTIDADES]"
+    )
+
+    assert (
+        ContextBuilder._category_header(
+            "relations"
+        )
+        == "[RELACIONES]"
+    )
+
+    assert (
+        ContextBuilder._category_header(
+            "events"
+        )
+        == "[EVENTOS]"
+    )
+
+
+def test_context_builder_unknown_category_header_is_deterministic():
+    assert (
+        ContextBuilder._category_header(
+            "unknown_category"
+        )
+        == "[UNKNOWN_CATEGORY]"
+    )
+
+def test_context_builder_related_entity_relevance_is_below_direct():
+    builder = ContextBuilder()
+
+    world = build_world()
+
+    result = builder._expand_entities(
+        world,
+        [{"id": 1}],
+        max_depth=1,
+    )
+
+    relevance = {
+        entity["id"]: entity.get("_relevance")
+        for entity in result
+    }
+
+    assert relevance[1] == 1.0
+    assert relevance[2] < relevance[1]
+
+def test_context_builder_strong_relation_beats_weak_relation():
+    builder = ContextBuilder()
+
+    world = WorldState()
+
+    first = Entity(
+        id=1,
+        name="Heroe",
+        entity_type="character",
+        description="",
+        active=True,
+    )
+
+    friend = Entity(
+        id=2,
+        name="Amigo",
+        entity_type="npc",
+        description="",
+        active=True,
+    )
+
+    stranger = Entity(
+        id=3,
+        name="Conocido",
+        entity_type="npc",
+        description="",
+        active=True,
+    )
+
+    world.entities = {
+        1: first,
+        2: friend,
+        3: stranger,
+    }
+
+    world.relations = {
+        1: Relation(
+            id=1,
+            subject_id=1,
+            relation_type="friend",
+            target_id=2,
+            active=True,
+        ),
+        2: Relation(
+            id=2,
+            subject_id=1,
+            relation_type="knows",
+            target_id=3,
+            active=True,
+        ),
+    }
+
+    result = builder._expand_entities(
+        world,
+        [{"id": 1}],
+        max_depth=1,
+    )
+
+    relevance = {
+        entity["id"]: entity["_relevance"]
+        for entity in result
+    }
+
+    assert relevance[1] == 1.0
+    assert relevance[2] > relevance[3]
