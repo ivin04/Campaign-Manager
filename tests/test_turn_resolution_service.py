@@ -1,0 +1,769 @@
+import pytest
+
+from models.operation_result import (
+    OperationStatus,
+)
+from models.world_state import WorldState
+from operations.world_operations import (
+    CreateEntityOperation,
+)
+from services.context_builder import ContextBuilder
+from services.dm_service import DMService
+
+from services.turn_resolution_service import (
+    TurnResolutionService,
+    TurnResolutionServiceError,
+)
+from services.world_applier import WorldApplier
+from services.fake_llm_provider import FakeLLMProvider
+from services.llm_world_extractor import LLMWorldExtractor
+
+class RecordingDMService(DMService):
+
+    def __init__(self):
+        provider = FakeLLMProvider(
+            response="La puerta se abre lentamente."
+        )
+
+        super().__init__(
+            provider=provider,
+            context_builder=ContextBuilder(),
+        )
+
+        self.calls = []
+
+    def generate(
+        self,
+        world,
+        player_input,
+    ):
+        self.calls.append(
+            ("generate", player_input)
+        )
+
+        return super().generate(
+            world,
+            player_input,
+        )
+
+
+class RecordingExtractor(LLMWorldExtractor):
+
+    def __init__(self, operations=None):
+        self.operations = operations or []
+        self.received_text = None
+        self.received_world = None
+        self.calls = []
+
+    def extract(self, text, world):
+        self.received_text = text
+        self.received_world = world
+        self.calls.append(("extract", text))
+        return self.operations
+
+
+class RecordingApplier(WorldApplier):
+
+    def __init__(self):
+        super().__init__()
+        self.calls = []
+
+    def apply(
+        self,
+        world,
+        operation,
+    ):
+        self.calls.append(
+            operation
+        )
+
+        return super().apply(
+            world,
+            operation,
+        )
+
+
+def make_world():
+
+    return WorldState()
+
+
+def make_service(
+    *,
+    dm_service=None,
+    extractor=None,
+    applier=None,
+):
+
+    dm_service = (
+        dm_service
+        or RecordingDMService()
+    )
+
+    extractor = (
+        extractor
+        or RecordingExtractor()
+    )
+
+    applier = (
+        applier
+        or RecordingApplier()
+    )
+
+    return (
+        TurnResolutionService(
+            dm_service=dm_service,
+            extractor=extractor,
+            world_applier=applier,
+        ),
+        dm_service,
+        extractor,
+        applier,
+    )
+
+
+# ============================================================
+# CONSTRUCTOR
+# ============================================================
+
+
+def test_constructor_requires_dm_service():
+
+    with pytest.raises(TypeError):
+
+        TurnResolutionService(
+            dm_service=object(),
+            extractor=RecordingExtractor(),
+            world_applier=RecordingApplier(),
+        )
+
+
+def test_constructor_requires_extractor():
+
+    dm_service = RecordingDMService()
+
+    with pytest.raises(TypeError):
+
+        TurnResolutionService(
+            dm_service=dm_service,
+            extractor=object(),
+            world_applier=RecordingApplier(),
+        )
+
+
+def test_constructor_requires_world_applier():
+
+    dm_service = RecordingDMService()
+
+    with pytest.raises(TypeError):
+
+        TurnResolutionService(
+            dm_service=dm_service,
+            extractor=RecordingExtractor(),
+            world_applier=object(),
+        )
+
+
+# ============================================================
+# VALIDATION
+# ============================================================
+
+
+def test_world_must_be_world_state():
+
+    service, *_ = make_service()
+
+    with pytest.raises(TypeError):
+
+        service.resolve_turn(
+            object(),
+            "Exploro.",
+        )
+
+
+def test_player_input_must_be_string():
+
+    service, *_ = make_service()
+
+    with pytest.raises(TypeError):
+
+        service.resolve_turn(
+            make_world(),
+            123,
+        )
+
+
+def test_empty_player_input_is_rejected():
+
+    service, *_ = make_service()
+
+    with pytest.raises(
+        TurnResolutionServiceError
+    ):
+
+        service.resolve_turn(
+            make_world(),
+            "   ",
+        )
+
+
+def test_player_input_is_stripped():
+
+    service, dm, *_ = make_service()
+
+    result = service.resolve_turn(
+        make_world(),
+        "   Exploro.   ",
+    )
+
+    assert result.player_input == "Exploro."
+
+    assert dm.calls == [
+        ("generate", "Exploro.")
+    ]
+
+
+# ============================================================
+# NARRATIVE
+# ============================================================
+
+
+def test_narrative_is_returned():
+
+    service, *_ = make_service()
+
+    result = service.resolve_turn(
+        make_world(),
+        "Abro la puerta.",
+    )
+
+    assert (
+        result.narrative
+        == "La puerta se abre lentamente."
+    )
+
+
+def test_empty_narrative_is_rejected():
+
+    dm = RecordingDMService()
+
+    dm.generate = lambda world, player_input: ""
+
+    service = TurnResolutionService(
+        dm_service=dm,
+        extractor=RecordingExtractor(),
+        world_applier=RecordingApplier(),
+    )
+
+    with pytest.raises(
+        TurnResolutionServiceError
+    ):
+
+        service.resolve_turn(
+            make_world(),
+            "Abro.",
+        )
+
+
+def test_dm_failure_is_wrapped():
+
+    dm = RecordingDMService()
+
+    def failing_generate(
+        world,
+        player_input,
+    ):
+        raise RuntimeError("boom")
+
+    dm.generate = failing_generate
+
+    service = TurnResolutionService(
+        dm_service=dm,
+        extractor=RecordingExtractor(),
+        world_applier=RecordingApplier(),
+    )
+
+    with pytest.raises(
+        TurnResolutionServiceError,
+        match="DMService failed",
+    ):
+
+        service.resolve_turn(
+            make_world(),
+            "Abro.",
+        )
+
+
+# ============================================================
+# EXTRACTION
+# ============================================================
+
+
+def test_no_operations_are_valid():
+
+    service, _, extractor, applier = (
+        make_service()
+    )
+
+    result = service.resolve_turn(
+        make_world(),
+        "Miro alrededor.",
+    )
+
+    assert result.operations == ()
+    assert result.operation_results == ()
+
+    assert extractor.calls
+    assert applier.calls == []
+
+
+def test_extractor_receives_generated_narrative():
+
+    service, _, extractor, _ = (
+        make_service()
+    )
+
+    service.resolve_turn(
+        make_world(),
+        "Abro la puerta.",
+    )
+
+    assert extractor.calls == [
+        (
+            "extract",
+            "La puerta se abre lentamente.",
+        )
+    ]
+
+
+def test_extractor_failure_is_wrapped():
+
+    class FailingExtractor(LLMWorldExtractor):
+
+        def __init__(self):
+            super().__init__(
+                provider=lambda prompt: "",
+                operation_parser=object(),
+            )
+
+        def extract(
+            self,
+            text,
+            world,
+        ):
+            raise RuntimeError("extract failed")
+
+    service, dm, _, applier = (
+        make_service()
+    )
+
+    service = TurnResolutionService(
+        dm_service=dm,
+        extractor=FailingExtractor(),
+        world_applier=applier,
+    )
+
+    with pytest.raises(
+        TurnResolutionServiceError,
+        match="LLMWorldExtractor failed",
+    ):
+
+        service.resolve_turn(
+            make_world(),
+            "Abro.",
+        )
+
+
+def test_invalid_extractor_result_is_rejected():
+
+    class InvalidExtractor(LLMWorldExtractor):
+
+        def __init__(self):
+            super().__init__(
+                provider=lambda prompt: "",
+                operation_parser=object(),
+            )
+
+        def extract(
+            self,
+            text,
+            world,
+        ):
+            return [
+                "not an operation"
+            ]
+
+    service, dm, _, applier = (
+        make_service()
+    )
+
+    service = TurnResolutionService(
+        dm_service=dm,
+        extractor=InvalidExtractor(),
+        world_applier=applier,
+    )
+
+    with pytest.raises(
+        TurnResolutionServiceError,
+        match="invalid WorldOperation",
+    ):
+
+        service.resolve_turn(
+            make_world(),
+            "Abro.",
+        )
+
+
+# ============================================================
+# APPLICATION
+# ============================================================
+
+
+def test_operations_are_applied():
+
+    world = make_world()
+
+    operation = CreateEntityOperation(
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader.",
+        notes="",
+        active=True,
+    )
+
+    extractor = RecordingExtractor(
+        operations=[
+            operation,
+        ]
+    )
+
+    service, _, _, applier = (
+        make_service(
+            extractor=extractor
+        )
+    )
+
+    result = service.resolve_turn(
+        world,
+        "Conozco a Aldric.",
+    )
+
+    assert result.operation_count == 1
+    assert result.successful_operation_count == 1
+    assert result.world_changed is True
+
+    assert 1 in world.entities
+    assert world.entities[1].name == "Aldric"
+
+    assert len(
+        applier.calls
+    ) == 1
+
+
+def test_operation_result_is_preserved():
+
+    world = make_world()
+
+    operation = CreateEntityOperation(
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader.",
+        notes="",
+        active=True,
+    )
+
+    extractor = RecordingExtractor(
+        operations=[
+            operation,
+        ]
+    )
+
+    service, *_ = make_service(
+        extractor=extractor
+    )
+
+    result = service.resolve_turn(
+        world,
+        "Conozco a Aldric.",
+    )
+
+    assert len(
+        result.operation_results
+    ) == 1
+
+    operation_result = (
+        result.operation_results[0]
+    )
+
+    assert (
+        operation_result.status
+        == OperationStatus.SUCCESS
+    )
+
+
+def test_failed_operation_does_not_abort_entire_turn():
+
+    world = make_world()
+
+    operation = CreateEntityOperation(
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader.",
+        notes="",
+        active=True,
+    )
+
+    extractor = RecordingExtractor(
+        operations=[
+            operation,
+            operation,
+        ]
+    )
+
+    service, *_ = make_service(
+        extractor=extractor
+    )
+
+    result = service.resolve_turn(
+        world,
+        "Conozco a Aldric.",
+    )
+
+    assert result.operation_count == 2
+
+    assert (
+        result.operation_results[0].success
+        is True
+    )
+
+    assert (
+        result.operation_results[1].success
+        is False
+    )
+
+    assert (
+        result.all_operations_succeeded
+        is False
+    )
+
+    assert (
+        result.successful_operation_count
+        == 1
+    )
+
+    assert (
+        result.failed_operation_count
+        == 1
+    )
+
+
+# ============================================================
+# ORDER
+# ============================================================
+
+
+def test_turn_resolution_order():
+
+    order = []
+
+    dm = RecordingDMService()
+
+    original_generate = dm.generate
+
+    def generate(
+        world,
+        player_input,
+    ):
+        order.append("dm")
+        return original_generate(
+            world,
+            player_input,
+        )
+
+    dm.generate = generate
+
+    extractor = RecordingExtractor()
+
+    original_extract = extractor.extract
+
+    def extract(
+        text,
+        world,
+    ):
+        order.append("extractor")
+
+        return original_extract(
+            text,
+            world,
+        )
+
+    extractor.extract = extract
+
+    applier = RecordingApplier()
+
+    original_apply = applier.apply
+
+    def apply(
+        world,
+        operation,
+    ):
+        order.append("applier")
+
+        return original_apply(
+            world,
+            operation,
+        )
+
+    applier.apply = apply
+
+    service = TurnResolutionService(
+        dm_service=dm,
+        extractor=extractor,
+        world_applier=applier,
+    )
+
+    service.resolve_turn(
+        make_world(),
+        "Exploro.",
+    )
+
+    assert order == [
+        "dm",
+        "extractor",
+    ]
+
+
+# ============================================================
+# CALLABLE / ALIASES
+# ============================================================
+
+
+def test_run_turn_is_alias_for_resolve_turn():
+
+    service, *_ = make_service()
+
+    result = service.run_turn(
+        make_world(),
+        "Exploro.",
+    )
+
+    assert result.narrative
+
+
+def test_service_is_callable():
+
+    service, *_ = make_service()
+
+    result = service(
+        make_world(),
+        "Exploro.",
+    )
+
+    assert result.narrative
+
+
+# ============================================================
+# WORLD STATE
+# ============================================================
+
+
+def test_no_operations_leave_world_unchanged():
+
+    world = make_world()
+
+    before = dict(
+        world.entities
+    )
+
+    service, *_ = make_service()
+
+    service.resolve_turn(
+        world,
+        "Miro.",
+    )
+
+    assert world.entities == before
+
+def test_turn_resolution_order_with_operation():
+
+    order = []
+
+    dm = RecordingDMService()
+
+    original_generate = dm.generate
+
+    def generate(
+        world,
+        player_input,
+    ):
+        order.append("dm")
+
+        return original_generate(
+            world,
+            player_input,
+        )
+
+    dm.generate = generate
+
+    operation = CreateEntityOperation(
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader.",
+        notes="",
+        active=True,
+    )
+
+    extractor = RecordingExtractor(
+        operations=[
+            operation,
+        ]
+    )
+
+    original_extract = extractor.extract
+
+    def extract(
+        text,
+        world,
+    ):
+        order.append("extractor")
+
+        return original_extract(
+            text,
+            world,
+        )
+
+    extractor.extract = extract
+
+    applier = RecordingApplier()
+
+    original_apply = applier.apply
+
+    def apply(
+        world,
+        operation,
+    ):
+        order.append("applier")
+
+        return original_apply(
+            world,
+            operation,
+        )
+
+    applier.apply = apply
+
+    service = TurnResolutionService(
+        dm_service=dm,
+        extractor=extractor,
+        world_applier=applier,
+    )
+
+    service.resolve_turn(
+        make_world(),
+        "Conozco a Aldric.",
+    )
+
+    assert order == [
+        "dm",
+        "extractor",
+        "applier",
+    ]
