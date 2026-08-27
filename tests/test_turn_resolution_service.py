@@ -17,6 +17,7 @@ from services.turn_resolution_service import (
 from services.world_applier import WorldApplier
 from services.fake_llm_provider import FakeLLMProvider
 from services.llm_world_extractor import LLMWorldExtractor
+from services.world_service import WorldService
 
 class RecordingDMService(DMService):
 
@@ -94,7 +95,6 @@ def make_service(
     extractor=None,
     applier=None,
 ):
-
     dm_service = (
         dm_service
         or RecordingDMService()
@@ -110,11 +110,15 @@ def make_service(
         or RecordingApplier()
     )
 
+    world_service = WorldService(
+        applier=applier,
+    )
+
     return (
         TurnResolutionService(
             dm_service=dm_service,
             extractor=extractor,
-            world_applier=applier,
+            world_service=world_service,
         ),
         dm_service,
         extractor,
@@ -134,7 +138,9 @@ def test_constructor_requires_dm_service():
         TurnResolutionService(
             dm_service=object(),
             extractor=RecordingExtractor(),
-            world_applier=RecordingApplier(),
+            world_service=WorldService(
+                applier=RecordingApplier(),
+            ),
         )
 
 
@@ -147,11 +153,13 @@ def test_constructor_requires_extractor():
         TurnResolutionService(
             dm_service=dm_service,
             extractor=object(),
-            world_applier=RecordingApplier(),
+            world_service=WorldService(
+                applier=RecordingApplier(),
+            ),
         )
 
 
-def test_constructor_requires_world_applier():
+def test_constructor_requires_world_service():
 
     dm_service = RecordingDMService()
 
@@ -160,7 +168,7 @@ def test_constructor_requires_world_applier():
         TurnResolutionService(
             dm_service=dm_service,
             extractor=RecordingExtractor(),
-            world_applier=object(),
+            world_service=object(),
         )
 
 
@@ -252,7 +260,9 @@ def test_empty_narrative_is_rejected():
     service = TurnResolutionService(
         dm_service=dm,
         extractor=RecordingExtractor(),
-        world_applier=RecordingApplier(),
+        world_service=WorldService(
+            applier=RecordingApplier(),
+        ),
     )
 
     with pytest.raises(
@@ -280,7 +290,9 @@ def test_dm_failure_is_wrapped():
     service = TurnResolutionService(
         dm_service=dm,
         extractor=RecordingExtractor(),
-        world_applier=RecordingApplier(),
+        world_service=WorldService(
+            applier=RecordingApplier(),
+        ),
     )
 
     with pytest.raises(
@@ -360,7 +372,9 @@ def test_extractor_failure_is_wrapped():
     service = TurnResolutionService(
         dm_service=dm,
         extractor=FailingExtractor(),
-        world_applier=applier,
+        world_service=WorldService(
+            applier=RecordingApplier(),
+        ),
     )
 
     with pytest.raises(
@@ -400,7 +414,9 @@ def test_invalid_extractor_result_is_rejected():
     service = TurnResolutionService(
         dm_service=dm,
         extractor=InvalidExtractor(),
-        world_applier=applier,
+        world_service=WorldService(
+            applier=RecordingApplier(),
+        ),
     )
 
     with pytest.raises(
@@ -452,8 +468,11 @@ def test_operations_are_applied():
     assert result.successful_operation_count == 1
     assert result.world_changed is True
 
-    assert 1 in world.entities
-    assert world.entities[1].name == "Aldric"
+    assert 1 in service.world_service.world.entities
+    assert (
+        service.world_service.world.entities[1].name
+        == "Aldric"
+    )
 
     assert len(
         applier.calls
@@ -501,7 +520,7 @@ def test_operation_result_is_preserved():
     )
 
 
-def test_failed_operation_does_not_abort_entire_turn():
+def test_failed_operation_rolls_back_entire_turn():
 
     world = make_world()
 
@@ -556,6 +575,12 @@ def test_failed_operation_does_not_abort_entire_turn():
         == 1
     )
 
+    # La operación que había tenido éxito debe
+    # desaparecer también por el rollback.
+    assert (
+        service.world_service.world.entities == {}
+        and world.entities == {}
+    )
 
 # ============================================================
 # ORDER
@@ -616,10 +641,14 @@ def test_turn_resolution_order():
 
     applier.apply = apply
 
+    world_service = WorldService(
+        applier=applier,
+    )
+
     service = TurnResolutionService(
         dm_service=dm,
         extractor=extractor,
-        world_applier=applier,
+        world_service=world_service,
     )
 
     service.resolve_turn(
@@ -722,10 +751,14 @@ def test_turn_resolution_order_with_operation():
 
     applier.apply = apply
 
+    world_service = WorldService(
+        applier=applier,
+    )
+
     service = TurnResolutionService(
         dm_service=dm,
         extractor=extractor,
-        world_applier=applier,
+        world_service=world_service,
     )
 
     service.resolve_turn(

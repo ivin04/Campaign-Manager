@@ -13,7 +13,7 @@ from models.operation_result import (
     OperationStatus,
 )
 
-from operations.world_operations import CreateEntityOperation
+from operations.world_operations import CreateEntityOperation, UpdateEntityOperation
 
 from database import init_db
 

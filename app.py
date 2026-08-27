@@ -120,11 +120,11 @@ def create_campaign_turn_service(
     )
 
     world_applier = WorldApplier()
-
+    
     turn_resolution_service = TurnResolutionService(
         dm_service=dm_service,
         extractor=extractor,
-        world_applier=world_applier,
+        world_service=world_service,
     )
 
     return CampaignTurnService(

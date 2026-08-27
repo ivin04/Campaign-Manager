@@ -6,7 +6,7 @@ from models.world_state import WorldState
 from operations.world_operations import WorldOperation
 from services.dm_service import DMService
 from services.llm_world_extractor import LLMWorldExtractor
-from services.world_applier import WorldApplier
+from services.world_service import WorldService
 
 
 class TurnResolutionServiceError(RuntimeError):
@@ -36,11 +36,10 @@ class TurnResolutionService:
         WorldOperation[]
            |
            v
-        WorldApplier
+        WorldService.apply_operations()
            |
            v
         WorldState actualizado
-
 
     Responsabilidades:
 
@@ -48,11 +47,12 @@ class TurnResolutionService:
     - validar entrada del jugador
     - generar narrativa mediante DMService
     - extraer operaciones mediante LLMWorldExtractor
-    - aplicar operaciones mediante WorldApplier
+    - aplicar operaciones de forma atómica mediante WorldService
     - devolver TurnResolutionResult
 
     NO debe:
 
+    - acceder directamente a WorldApplier
     - acceder a SQLite
     - persistir directamente
     - conocer Ollama
@@ -60,15 +60,13 @@ class TurnResolutionService:
     - construir prompts
     - interpretar JSON
     - implementar reglas de dominio
-
-    Cada dependencia mantiene una única responsabilidad.
     """
 
     def __init__(
         self,
         dm_service: DMService,
         extractor: LLMWorldExtractor,
-        world_applier: WorldApplier,
+        world_service: WorldService,
     ) -> None:
 
         if not isinstance(
@@ -84,20 +82,20 @@ class TurnResolutionService:
             LLMWorldExtractor,
         ):
             raise TypeError(
-                "extractor must be an LLMWorldExtractor"
+                "extractor must be a LLMWorldExtractor"
             )
 
         if not isinstance(
-            world_applier,
-            WorldApplier,
+            world_service,
+            WorldService,
         ):
             raise TypeError(
-                "world_applier must be a WorldApplier"
+                "world_service must be a WorldService"
             )
 
         self.dm_service = dm_service
         self.extractor = extractor
-        self.world_applier = world_applier
+        self.world_service = world_service
 
     # ============================================================
     # PUBLIC API
@@ -115,8 +113,14 @@ class TurnResolutionService:
 
             1. narrativa
             2. extracción
-            3. aplicación
+            3. aplicación atómica
 
+        Si una operación falla:
+
+            - ninguna operación queda aplicada
+            - el WorldState original se conserva
+
+        La persistencia en SQLite NO se realiza aquí.
         """
 
         self._validate_world(world)
@@ -141,6 +145,7 @@ class TurnResolutionService:
                 world,
                 normalized_input,
             )
+
         except Exception as exc:
             raise TurnResolutionServiceError(
                 "DMService failed to generate the turn"
@@ -170,6 +175,7 @@ class TurnResolutionService:
                 narrative,
                 world,
             )
+
         except Exception as exc:
             raise TurnResolutionServiceError(
                 "LLMWorldExtractor failed to extract operations"
@@ -184,6 +190,7 @@ class TurnResolutionService:
             )
 
         for operation in operations:
+
             if not isinstance(
                 operation,
                 WorldOperation,
@@ -194,36 +201,64 @@ class TurnResolutionService:
                 )
 
         # ========================================================
-        # 3. APLICAR OPERACIONES
+        # 3. APLICAR OPERACIONES DE FORMA ATÓMICA
         # ========================================================
 
-        operation_results: list[
-            OperationResult
-        ] = []
-
-        for operation in operations:
-
-            try:
-                result = self.world_applier.apply(
-                    world,
-                    operation,
+        try:
+            application = (
+                self.world_service.apply_operations(
+                    operations
                 )
-            except Exception as exc:
-                raise TurnResolutionServiceError(
-                    "WorldApplier failed to apply an operation"
-                ) from exc
+            )
+
+        except Exception as exc:
+            raise TurnResolutionServiceError(
+                "WorldService failed to apply operations"
+            ) from exc
+
+        if not isinstance(
+            application,
+            dict,
+        ):
+            raise TurnResolutionServiceError(
+                "WorldService returned an invalid application result"
+            )
+
+        success = application.get(
+            "success",
+            False,
+        )
+
+        results = application.get(
+            "results",
+            [],
+        )
+
+        if not isinstance(
+            success,
+            bool,
+        ):
+            raise TurnResolutionServiceError(
+                "WorldService returned an invalid success value"
+            )
+
+        if not isinstance(
+            results,
+            list,
+        ):
+            raise TurnResolutionServiceError(
+                "WorldService returned invalid operation results"
+            )
+
+        for result in results:
 
             if not isinstance(
                 result,
                 OperationResult,
             ):
                 raise TurnResolutionServiceError(
-                    "WorldApplier returned an invalid OperationResult"
+                    "WorldService returned an invalid OperationResult"
                 )
-
-            operation_results.append(
-                result
-            )
 
         # ========================================================
         # 4. CONTEXTO
@@ -246,6 +281,7 @@ class TurnResolutionService:
                         normalized_input,
                     )
                 )
+
             except Exception:
                 context_result = None
 
@@ -277,11 +313,10 @@ class TurnResolutionService:
                 operations
             ),
             operation_results=tuple(
-                operation_results
+                results
             ),
             context=context,
         )
-    
 
     # ============================================================
     # VALIDATION
