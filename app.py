@@ -66,34 +66,66 @@ def create_world_service() -> WorldService:
 
     return service
 
+def create_context_builder(
+    memory_search_service: MemorySearchService,
+) -> ContextBuilder:
+    """
+    Construye el único ContextBuilder compartido por la aplicación.
+
+    ContextBuilder es responsable de transformar candidatos de
+    memoria en contexto relevante para el LLM.
+    """
+
+    if not isinstance(
+        memory_search_service,
+        MemorySearchService,
+    ):
+        raise TypeError(
+            "memory_search_service must be a MemorySearchService"
+        )
+
+    return ContextBuilder(
+        memory_search_service=memory_search_service,
+    )
+
 
 def create_campaign_turn_service(
     world_service: WorldService,
-    memory_search_service: MemorySearchService,
+    context_builder: ContextBuilder,
 ) -> CampaignTurnService:
     """
     Construye el pipeline completo de resolución de turnos.
 
-    Flujo:
+    Dependencias compartidas:
+
+        MemorySearchService
+                ↓
+        ContextBuilder
+                ↓
+            DMService
+
+    Flujo del turno:
 
         jugador
-          ↓
+        ↓
         CampaignTurnService
-          ↓
+        ↓
         TurnResolutionService
-          ↓
+        ↓
         DMService
-          ↓
+        ↓
+        ContextBuilder
+        ↓
         Ollama
-          ↓
+        ↓
         narrativa
-          ↓
+        ↓
         LLMWorldExtractor
-          ↓
+        ↓
         operaciones
-          ↓
+        ↓
         WorldService
-          ↓
+        ↓
         SQLite
     """
 
@@ -106,20 +138,16 @@ def create_campaign_turn_service(
         )
 
     if not isinstance(
-        memory_search_service,
-        MemorySearchService,
+        context_builder,
+        ContextBuilder,
     ):
         raise TypeError(
-            "memory_search_service must be a MemorySearchService"
+            "context_builder must be a ContextBuilder"
         )
 
     provider = OllamaProvider()
 
     operation_parser = OperationParser()
-
-    context_builder = ContextBuilder(
-        memory_search_service=memory_search_service,
-    )
 
     dm_service = DMService(
         provider=provider,
@@ -154,9 +182,13 @@ campaign_repository = CampaignRepository()
 
 memory_search_service = MemorySearchService()
 
+context_builder = create_context_builder(
+    memory_search_service=memory_search_service,
+)
+
 campaign_turn_service = create_campaign_turn_service(
     world_service=world_service,
-    memory_search_service=memory_search_service,
+    context_builder=context_builder,
 )
 
 
@@ -312,10 +344,6 @@ def search_memory(
 def memory_context(q: str):
 
     world = world_service.get_world()
-
-    context_builder = ContextBuilder(
-        memory_search_service=memory_search_service,
-    )
 
     return context_builder.build(
         world,
