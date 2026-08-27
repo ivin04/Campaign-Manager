@@ -21,3 +21,6 @@ class SessionIn(BaseModel):
     start_location: str = ""
     end_location: str = ""
     notes: str = ""
+
+class TurnIn(BaseModel):
+    player_input: str
