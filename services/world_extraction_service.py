@@ -97,13 +97,17 @@ class WorldExtractionService:
                 ignored=True,
             )
 
-        operations = self.extractor(text, world)
+        operations = self.extractor(
+            text,
+            world,
+        )
 
-        if operations is None:
-            operations = []
+        operations = self._validate_operations(
+            operations
+        )
 
         return ExtractionResult(
-            operations=list(operations),
+            operations=operations,
             ignored=len(operations) == 0,
         )
 
@@ -155,3 +159,41 @@ class WorldExtractionService:
         )
 
         return result
+
+    @staticmethod
+    def _validate_operations(
+        operations,
+    ) -> list[WorldOperation]:
+        """
+        Valida que el extractor haya producido únicamente
+        WorldOperation válidas.
+        """
+
+        if operations is None:
+            return []
+
+        if not isinstance(
+            operations,
+            (list, tuple),
+        ):
+            raise TypeError(
+                "Extractor must return a list or tuple "
+                "of WorldOperation."
+            )
+
+        validated = []
+
+        for operation in operations:
+
+            if not isinstance(
+                operation,
+                WorldOperation,
+            ):
+                raise TypeError(
+                    "Extractor returned an invalid operation: "
+                    f"{type(operation).__name__}"
+                )
+
+            validated.append(operation)
+
+        return validated
