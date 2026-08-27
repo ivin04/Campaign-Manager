@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from models.operation_result import OperationResult
 from operations.world_operations import WorldOperation
@@ -14,32 +13,50 @@ class TurnResolutionResult:
 
     Contiene:
 
-    - entrada original del jugador
+    - entrada del jugador
     - narrativa generada por el DM
     - operaciones detectadas por el extractor
-    - resultado de aplicar cada operación
-    - contexto utilizado para generar la narrativa
+    - resultado de aplicar las operaciones
 
-    El modelo es inmutable.
+    El resultado es inmutable.
 
-    La mutación del WorldState ocurre exclusivamente a través de
-    WorldApplier.
+    La aplicación de operaciones es atómica:
+
+        - si todas las operaciones tienen éxito,
+          el cambio del mundo se considera confirmado.
+
+        - si una operación falla,
+          el WorldState original se conserva.
     """
 
     player_input: str
     narrative: str
     operations: tuple[WorldOperation, ...] = ()
     operation_results: tuple[OperationResult, ...] = ()
-    context: str = ""
 
     @property
     def world_changed(self) -> bool:
         """
-        Indica si al menos una operación modificó correctamente
-        el estado del mundo.
+        Indica si el turno produjo un cambio confirmado
+        en el WorldState.
+
+        La aplicación de operaciones es atómica, por lo que
+        una sola operación fallida implica rollback completo.
+
+        Por tanto:
+
+            todas las operaciones OK -> True
+            alguna operación falla   -> False
+            cero operaciones          -> False
         """
 
-        return any(
+        if not self.operations:
+            return False
+
+        if len(self.operation_results) != len(self.operations):
+            return False
+
+        return all(
             result.success
             for result in self.operation_results
         )
@@ -50,7 +67,8 @@ class TurnResolutionResult:
         Indica si todas las operaciones fueron aplicadas
         correctamente.
 
-        Un turno sin operaciones se considera exitoso.
+        Un turno sin operaciones se considera exitoso
+        respecto a la aplicación.
         """
 
         return all(

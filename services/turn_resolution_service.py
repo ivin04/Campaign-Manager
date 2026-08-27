@@ -39,7 +39,7 @@ class TurnResolutionService:
         WorldService.apply_operations()
            |
            v
-        WorldState actualizado
+        resultado atómico
 
     Responsabilidades:
 
@@ -60,6 +60,7 @@ class TurnResolutionService:
     - construir prompts
     - interpretar JSON
     - implementar reglas de dominio
+    - reconstruir el contexto después de resolver el turno
     """
 
     def __init__(
@@ -125,10 +126,8 @@ class TurnResolutionService:
 
         self._validate_world(world)
 
-        normalized_input = (
-            self._validate_player_input(
-                player_input
-            )
+        normalized_input = self._validate_player_input(
+            player_input
         )
 
         if not normalized_input:
@@ -205,10 +204,8 @@ class TurnResolutionService:
         # ========================================================
 
         try:
-            application = (
-                self.world_service.apply_operations(
-                    operations
-                )
+            application = self.world_service.apply_operations(
+                operations
             )
 
         except Exception as exc:
@@ -261,61 +258,14 @@ class TurnResolutionService:
                 )
 
         # ========================================================
-        # 4. CONTEXTO
-        # ========================================================
-
-        context = ""
-
-        context_builder = getattr(
-            self.dm_service,
-            "context_builder",
-            None,
-        )
-
-        if context_builder is not None:
-
-            try:
-                context_result = (
-                    context_builder.build(
-                        world,
-                        normalized_input,
-                    )
-                )
-
-            except Exception:
-                context_result = None
-
-            if isinstance(
-                context_result,
-                dict,
-            ):
-                candidate_context = (
-                    context_result.get(
-                        "context",
-                        "",
-                    )
-                )
-
-                if isinstance(
-                    candidate_context,
-                    str,
-                ):
-                    context = candidate_context
-
-        # ========================================================
-        # 5. RESULTADO
+        # 4. RESULTADO
         # ========================================================
 
         return TurnResolutionResult(
             player_input=normalized_input,
             narrative=narrative,
-            operations=tuple(
-                operations
-            ),
-            operation_results=tuple(
-                results
-            ),
-            context=context,
+            operations=tuple(operations),
+            operation_results=tuple(results),
         )
 
     # ============================================================
