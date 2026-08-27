@@ -41,6 +41,44 @@ class ContextBuilder:
     DIRECT_ENTITY_RELEVANCE = 1.0
     RELATED_ENTITY_RELEVANCE = 0.7
 
+    # ============================================================
+    # RELATION RELEVANCE
+    # ============================================================
+
+    DEFAULT_RELATION_RELEVANCE = 0.70
+
+    RELATION_RELEVANCE_WEIGHTS = {
+        # Relaciones sociales / narrativas fuertes
+        "friend": 1.00,
+        "friendship": 1.00,
+        "ally": 1.00,
+        "alliance": 1.00,
+        "family": 1.00,
+        "parent": 1.00,
+        "child": 1.00,
+
+        # Relaciones hostiles
+        "enemy": 0.95,
+        "rival": 0.90,
+        "hostile": 0.90,
+
+        # Relaciones de pertenencia / proximidad
+        "owner": 0.90,
+        "owns": 0.90,
+        "member": 0.85,
+        "member_of": 0.85,
+
+        # Relaciones espaciales
+        "lives_in": 0.75,
+        "located_in": 0.75,
+        "resident_of": 0.75,
+
+        # Relaciones débiles
+        "knows": 0.65,
+        "met": 0.60,
+        "works_with": 0.80,
+    }
+
     def __init__(
         self,
         memory_search_service: MemorySearchService | None = None,
@@ -162,18 +200,22 @@ class ContextBuilder:
         """
         Amplía las entidades encontradas siguiendo relaciones activas.
 
-        Cada entidad recibe internamente:
+        La relevancia se propaga por el grafo.
 
-            _relevance
-            _depth
+        Una entidad directa empieza con:
 
-        Relevancia:
+            1.0
 
-            depth 0 -> 1.0
-            depth 1 -> 0.7
+        Una entidad relacionada recibe:
 
-        Los campos internos se eliminan antes de devolver
-        el resultado público.
+            relevancia_origen
+            * peso_relacion
+            * factor_profundidad
+
+        De esta forma una relación fuerte conserva más relevancia
+        que una relación débil.
+
+        La función no modifica WorldState.
         """
 
         if max_depth < 0:
@@ -184,6 +226,10 @@ class ContextBuilder:
         entity_depths: dict[int, int] = {}
         entity_relevance: dict[int, float] = {}
 
+        # --------------------------------------------------------
+        # ENTIDADES DIRECTAMENTE ENCONTRADAS
+        # --------------------------------------------------------
+
         for entity in matched_entities:
             entity_id = entity.get("id")
 
@@ -191,9 +237,14 @@ class ContextBuilder:
                 continue
 
             entity_depths[entity_id] = 0
+
             entity_relevance[entity_id] = (
                 self.DIRECT_ENTITY_RELEVANCE
             )
+
+        # --------------------------------------------------------
+        # EXPANSIÓN DEL GRAFO
+        # --------------------------------------------------------
 
         for depth in range(max_depth):
 
@@ -228,33 +279,89 @@ class ContextBuilder:
                     None,
                 )
 
+                relation_type = getattr(
+                    relation,
+                    "relation_type",
+                    "",
+                )
+
+                relation_weight = (
+                    self._get_relation_relevance(
+                        relation_type
+                    )
+                )
+
+                # ------------------------------------------------
+                # FACTOR DE PROFUNDIDAD
+                # ------------------------------------------------
+
+                depth_factor = (
+                    self.RELATED_ENTITY_RELEVANCE
+                    ** (depth + 1)
+                )
+
+                propagation_factor = (
+                    relation_weight
+                    * depth_factor
+                )
+
+                # ------------------------------------------------
+                # SUBJECT -> TARGET
+                # ------------------------------------------------
+
                 if subject_id in current_ids:
 
                     if (
                         target_id in world.entities
-                        and target_id not in entity_depths
+                        and getattr(
+                            world.entities[target_id],
+                            "active",
+                            True,
+                        )
                     ):
-                        entity_depths[target_id] = (
-                            depth + 1
+                        candidate_relevance = (
+                            entity_relevance[subject_id]
+                            * propagation_factor
                         )
 
-                        entity_relevance[target_id] = (
-                            self.RELATED_ENTITY_RELEVANCE
+                        self._register_related_entity(
+                            entity_depths,
+                            entity_relevance,
+                            target_id,
+                            depth + 1,
+                            candidate_relevance,
                         )
+
+                # ------------------------------------------------
+                # TARGET -> SUBJECT
+                # ------------------------------------------------
 
                 if target_id in current_ids:
 
                     if (
                         subject_id in world.entities
-                        and subject_id not in entity_depths
+                        and getattr(
+                            world.entities[subject_id],
+                            "active",
+                            True,
+                        )
                     ):
-                        entity_depths[subject_id] = (
-                            depth + 1
+                        candidate_relevance = (
+                            entity_relevance[target_id]
+                            * propagation_factor
                         )
 
-                        entity_relevance[subject_id] = (
-                            self.RELATED_ENTITY_RELEVANCE
+                        self._register_related_entity(
+                            entity_depths,
+                            entity_relevance,
+                            subject_id,
+                            depth + 1,
+                            candidate_relevance,
                         )
+
+        # --------------------------------------------------------
+        # CONSTRUIR RESULTADO
+        # --------------------------------------------------------
 
         result: list[dict[str, Any]] = []
 
@@ -294,7 +401,13 @@ class ContextBuilder:
                 )
             )
 
-            result.append(entity_data)
+            result.append(
+                entity_data
+            )
+
+        # --------------------------------------------------------
+        # ORDENAR
+        # --------------------------------------------------------
 
         result.sort(
             key=lambda entity: (
@@ -313,17 +426,86 @@ class ContextBuilder:
             )
         )
 
+        # --------------------------------------------------------
+        # LIMPIAR CAMPOS INTERNOS
+        # --------------------------------------------------------
+
         for entity in result:
             entity.pop(
                 "_relevance",
                 None,
             )
+
             entity.pop(
                 "_depth",
                 None,
             )
 
         return result
+
+    @classmethod
+    def _get_relation_relevance(
+        cls,
+        relation_type: Any,
+    ) -> float:
+        """
+        Devuelve el peso de propagación de una relación.
+
+        La comparación es case-insensitive y tolera valores
+        no string.
+        """
+
+        if relation_type is None:
+            return cls.DEFAULT_RELATION_RELEVANCE
+
+        normalized = str(
+            relation_type
+        ).strip().casefold()
+
+        if not normalized:
+            return cls.DEFAULT_RELATION_RELEVANCE
+
+        return cls.RELATION_RELEVANCE_WEIGHTS.get(
+            normalized,
+            cls.DEFAULT_RELATION_RELEVANCE,
+        )
+
+    @staticmethod
+    def _register_related_entity(
+        entity_depths: dict[int, int],
+        entity_relevance: dict[int, float],
+        entity_id: int,
+        depth: int,
+        relevance: float,
+    ) -> None:
+        """
+        Registra una entidad relacionada.
+
+        Si ya existe por otro camino del grafo, conserva
+        la mayor relevancia encontrada.
+
+        Esto evita que un camino débil sobrescriba uno fuerte.
+        """
+
+        existing_depth = entity_depths.get(
+            entity_id
+        )
+
+        existing_relevance = entity_relevance.get(
+            entity_id,
+            0.0,
+        )
+
+        if existing_depth is None:
+            entity_depths[entity_id] = depth
+            entity_relevance[entity_id] = relevance
+            return
+
+        if relevance > existing_relevance:
+            entity_relevance[entity_id] = relevance
+
+        if depth < existing_depth:
+            entity_depths[entity_id] = depth
 
     # ============================================================
     # RELATIONS
