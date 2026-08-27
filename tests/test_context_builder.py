@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from models.entity import Entity
 from models.event import Event
+from models.item import Item, ItemInstance
 from models.relation import Relation
+from models.resource import Resource, ResourceBalance
 from models.world_state import WorldState
 from services.context_builder import ContextBuilder
 
@@ -88,6 +90,97 @@ def build_world() -> WorldState:
         },
     )
 
+def build_world_with_related_data() -> WorldState:
+    fungoso = Entity(
+        id=1,
+        name="Fungoso",
+        entity_type="character",
+        description="Un aventurero peculiar.",
+        active=True,
+    )
+
+    unrelated = Entity(
+        id=2,
+        name="Aldric",
+        entity_type="npc",
+        description="Un minero viejo.",
+        active=True,
+    )
+
+    sword = Item(
+        id=10,
+        name="Espada de hierro",
+        description="Una espada sencilla.",
+        significance="Arma fiable.",
+        unique=False,
+        notes="",
+    )
+
+    sword_instance = ItemInstance(
+        id=100,
+        item_id=10,
+        instance_number=1,
+        owner_id=1,
+        location_id=None,
+        condition="Bueno",
+        notes="Pertenece a Fungoso.",
+        active=True,
+    )
+
+    unrelated_instance = ItemInstance(
+        id=101,
+        item_id=10,
+        instance_number=2,
+        owner_id=2,
+        location_id=None,
+        condition="Malo",
+        notes="Pertenece a Aldric.",
+        active=True,
+    )
+
+    gold = Resource(
+        id=20,
+        name="Oro",
+        unit="mo",
+        notes="Monedas de oro.",
+    )
+
+    gold_balance = ResourceBalance(
+        id=200,
+        resource_id=20,
+        owner_id=1,
+        amount=150,
+        notes="Ahorros de Fungoso.",
+    )
+
+    unrelated_balance = ResourceBalance(
+        id=201,
+        resource_id=20,
+        owner_id=2,
+        amount=999,
+        notes="Ahorros de Aldric.",
+    )
+
+    return WorldState(
+        entities={
+            1: fungoso,
+            2: unrelated,
+        },
+        items={
+            10: sword,
+        },
+        item_instances={
+            100: sword_instance,
+            101: unrelated_instance,
+        },
+        resources={
+            20: gold,
+        },
+        resource_balances={
+            200: gold_balance,
+            201: unrelated_balance,
+        },
+    )
 
 def test_context_builder_finds_primary_entity():
     builder = ContextBuilder()
@@ -211,3 +304,90 @@ def test_context_builder_empty_query_returns_empty_context():
         "events": [],
         "context": "Sin información relevante.",
     }
+
+def test_context_builder_includes_owned_item_instance():
+    builder = ContextBuilder()
+
+    result = builder.build(
+        build_world_with_related_data(),
+        "Fungoso",
+    )
+
+    instance_ids = {
+        instance["id"]
+        for instance in result["item_instances"]
+    }
+
+    assert 100 in instance_ids
+    assert 101 not in instance_ids
+
+def test_context_builder_resolves_parent_item():
+    builder = ContextBuilder()
+
+    result = builder.build(
+        build_world_with_related_data(),
+        "Fungoso",
+    )
+
+    item_ids = {
+        item["id"]
+        for item in result["items"]
+    }
+
+    assert 10 in item_ids
+
+def test_context_builder_includes_owned_resource_balance():
+    builder = ContextBuilder()
+
+    result = builder.build(
+        build_world_with_related_data(),
+        "Fungoso",
+    )
+
+    balance_ids = {
+        balance["id"]
+        for balance in result["resource_balances"]
+    }
+
+    assert 200 in balance_ids
+    assert 201 not in balance_ids
+
+def test_context_builder_resolves_parent_resource():
+    builder = ContextBuilder()
+
+    result = builder.build(
+        build_world_with_related_data(),
+        "Fungoso",
+    )
+
+    resource_ids = {
+        resource["id"]
+        for resource in result["resources"]
+    }
+
+    assert 20 in resource_ids
+
+def test_context_builder_does_not_modify_world():
+    world = build_world_with_related_data()
+
+    original_items = dict(world.items)
+    original_instances = dict(world.item_instances)
+    original_resources = dict(world.resources)
+    original_balances = dict(
+        world.resource_balances
+    )
+
+    builder = ContextBuilder()
+
+    builder.build(
+        world,
+        "Fungoso",
+    )
+
+    assert world.items == original_items
+    assert world.item_instances == original_instances
+    assert world.resources == original_resources
+    assert (
+        world.resource_balances
+        == original_balances
+    )
