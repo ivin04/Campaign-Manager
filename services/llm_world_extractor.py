@@ -13,8 +13,6 @@ class LLMExtractionError(ValueError):
 
 class LLMWorldExtractor:
     """
-    Adaptador entre un LLM y WorldExtractionService.
-
     Responsabilidades:
 
     - Enviar texto + estado relevante al proveedor.

@@ -1,7 +1,6 @@
 from dataclasses import asdict
 
 from fastapi import FastAPI, HTTPException, Query
-from starlette.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_db
@@ -12,8 +11,6 @@ from models.schemas import (
     SessionIn,
     TurnIn,
 )
-
-from models.world_operations_in import WorldOperationsIn
 
 from repositories.campaign_repository import CampaignRepository
 
@@ -28,7 +25,6 @@ from services.memory_search_service import MemorySearchService
 from services.ollama_provider import OllamaProvider
 from services.operation_parser import (
     OperationParser,
-    OperationParseError,
 )
 from services.turn_resolution_service import (
     TurnResolutionService,
@@ -354,83 +350,6 @@ def get_world():
             world.events.values()
         ),
     }
-
-
-# ============================================================
-# LEGACY / DIRECT OPERATIONS
-# ============================================================
-
-
-@app.post("/world/operations")
-def apply_world_operations(
-    data: WorldOperationsIn,
-):
-    """
-    Endpoint de compatibilidad para aplicar operaciones
-    estructuradas directamente.
-
-    El flujo normal del juego debe utilizar /turn.
-    """
-
-    try:
-
-        operations = operation_parser.parse(
-            {
-                "operations": data.operations
-            }
-        )
-
-    except OperationParseError as exc:
-
-        raise HTTPException(
-            status_code=400,
-            detail=str(exc),
-        ) from exc
-
-    result = world_service.apply_operations_and_save(
-        operations
-    )
-
-    serialized_results = [
-        _serialize_operation_result(
-            operation_result
-        )
-        for operation_result
-        in result["results"]
-    ]
-
-    if not result["success"]:
-
-        return JSONResponse(
-            status_code=400,
-            content={
-                "ok": False,
-                "received": len(
-                    data.operations
-                ),
-                "applied": 0,
-                "message": (
-                    "One or more operations "
-                    "could not be applied."
-                ),
-                "results": serialized_results,
-            },
-        )
-
-    return JSONResponse(
-        status_code=200,
-        content={
-            "ok": True,
-            "received": len(
-                data.operations
-            ),
-            "applied": len(
-                operations
-            ),
-            "results": serialized_results,
-        },
-    )
-
 
 # ============================================================
 # EXPORT
