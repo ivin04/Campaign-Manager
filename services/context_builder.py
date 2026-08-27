@@ -27,6 +27,8 @@ class ContextBuilder:
     - No acceder directamente a SQLite.
     """
 
+    DEFAULT_MAX_DEPTH = 1
+    
     def __init__(
         self,
         memory_search_service: MemorySearchService | None = None,
@@ -60,6 +62,7 @@ class ContextBuilder:
         entities = self._expand_entities(
             world,
             search_result["entities"],
+            max_depth=self.DEFAULT_MAX_DEPTH,
         )
 
         relations = self._related_relations(
@@ -119,26 +122,50 @@ class ContextBuilder:
         self,
         world: WorldState,
         matched_entities: list[dict[str, Any]],
+        max_depth: int = 1,
     ) -> list[dict[str, Any]]:
         """
-        Amplía las entidades encontradas incluyendo entidades
-        conectadas mediante relaciones activas.
+        Amplía las entidades encontradas siguiendo relaciones activas
+        hasta una profundidad máxima.
+
+        depth 0:
+            entidades encontradas directamente por la búsqueda.
+
+        depth 1:
+            entidades relacionadas directamente.
+
+        depth 2:
+            entidades relacionadas con las anteriores.
+
+        Esto evita recorrer indefinidamente todo el grafo del mundo.
         """
 
-        entity_ids: set[int] = set()
+        if max_depth < 0:
+            raise ValueError(
+                "max_depth must be >= 0"
+            )
+
+        entity_depths: dict[int, int] = {}
 
         for entity in matched_entities:
             entity_id = entity.get("id")
 
             if isinstance(entity_id, int):
-                entity_ids.add(entity_id)
+                entity_depths[entity_id] = 0
 
-        changed = True
+        for depth in range(max_depth):
+            current_ids = {
+                entity_id
+                for entity_id, entity_depth
+                in entity_depths.items()
+                if entity_depth == depth
+            }
 
-        while changed:
-            changed = False
+            if not current_ids:
+                break
 
             for relation in world.relations.values():
+
                 if not getattr(
                     relation,
                     "active",
@@ -158,24 +185,27 @@ class ContextBuilder:
                     None,
                 )
 
-                if (
-                    subject_id in entity_ids
-                    and target_id not in entity_ids
-                ):
-                    entity_ids.add(target_id)
-                    changed = True
+                if subject_id in current_ids:
+                    if (
+                        target_id in world.entities
+                        and target_id not in entity_depths
+                    ):
+                        entity_depths[target_id] = depth + 1
 
-                elif (
-                    target_id in entity_ids
-                    and subject_id not in entity_ids
-                ):
-                    entity_ids.add(subject_id)
-                    changed = True
+                if target_id in current_ids:
+                    if (
+                        subject_id in world.entities
+                        and subject_id not in entity_depths
+                    ):
+                        entity_depths[subject_id] = depth + 1
 
         result: list[dict[str, Any]] = []
 
-        for entity_id in entity_ids:
-            entity = world.entities.get(entity_id)
+        for entity_id in entity_depths:
+
+            entity = world.entities.get(
+                entity_id
+            )
 
             if entity is None:
                 continue
@@ -194,9 +224,12 @@ class ContextBuilder:
             )
 
         result.sort(
-            key=lambda entity: entity.get(
-                "id",
-                0,
+            key=lambda entity: (
+                entity_depths.get(
+                    entity.get("id"),
+                    max_depth + 1,
+                ),
+                entity.get("id", 0),
             )
         )
 
