@@ -1412,6 +1412,37 @@ class ContextBuilder:
         return lines
 
     # ============================================================
+    # CATEGORY HELPERS
+    # ============================================================
+
+    @staticmethod
+    def _category_header(
+        category: str,
+    ) -> str:
+        """
+        Devuelve el encabezado público de una categoría
+        de contexto.
+
+        Las categorías internas no deben filtrarse directamente
+        al formato narrativo.
+        """
+
+        headers = {
+            "entities": "[ENTIDADES]",
+            "relations": "[RELACIONES]",
+            "events": "[EVENTOS]",
+            "items": "[ITEMS]",
+            "item_instances": "[ITEM_INSTANCES]",
+            "resources": "[RESOURCES]",
+            "resource_balances": "[RESOURCE_BALANCES]",
+        }
+
+        return headers.get(
+            category,
+            f"[{category.upper()}]",
+        )
+
+    # ============================================================
     # CONTEXT RENDERING
     # ============================================================
 
@@ -1440,11 +1471,8 @@ class ContextBuilder:
             category = candidate["category"]
 
             if category != current_category:
-
                 sections.append(
-                    cls._category_header(
-                        category
-                    )
+                    cls._category_header(category)
                 )
 
                 current_category = category
