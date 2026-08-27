@@ -62,6 +62,98 @@ class WorldService:
             operation,
         )
 
+    def apply_operations(
+        self,
+        operations,
+    ):
+        """
+        Aplica varias operaciones de forma atómica a nivel de WorldState.
+
+        Comportamiento:
+
+        - Las operaciones se aplican sobre una copia.
+        - Si una operación devuelve success=False, se aborta todo.
+        - Si una operación lanza una excepción, se aborta todo.
+        - El WorldState original no se modifica si algo falla.
+        - NO persiste el estado en SQLite.
+
+        Devuelve:
+
+            {
+                "success": True/False,
+                "results": [...]
+            }
+
+        Si todas las operaciones tienen éxito, el nuevo WorldState
+        queda establecido en memoria.
+        """
+
+        # =========================================================
+        # 1. Guardar el estado original
+        # =========================================================
+
+        original_state = self.world
+
+        # =========================================================
+        # 2. Crear estado de trabajo independiente
+        # =========================================================
+
+        working_state = copy.deepcopy(
+            original_state
+        )
+
+        self.world = working_state
+
+        results = []
+
+        try:
+
+            # =====================================================
+            # 3. Aplicar TODAS las operaciones sobre la copia
+            # =====================================================
+
+            for operation in operations:
+
+                result = self.apply(
+                    operation
+                )
+
+                results.append(result)
+
+                # -------------------------------------------------
+                # Si una operación falla lógicamente:
+                # abortamos TODO.
+                # -------------------------------------------------
+
+                if not result.success:
+
+                    self.world = original_state
+
+                    return {
+                        "success": False,
+                        "results": results,
+                    }
+
+            # =====================================================
+            # 4. Todas las operaciones han tenido éxito
+            # =====================================================
+
+            return {
+                "success": True,
+                "results": results,
+                "world": self.world,
+            }
+
+        except Exception:
+
+            # =====================================================
+            # 5. Error inesperado
+            # =====================================================
+
+            self.world = original_state
+
+            raise
+
     def apply_operations_and_save(
         self,
         operations,
