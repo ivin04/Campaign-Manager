@@ -341,3 +341,32 @@ def test_apply_and_save_restores_original_world_object_when_save_fails(
 
     # Y tampoco debe haber sido modificado.
     assert service.world.entities == {}
+
+def test_apply_returns_success_result_for_successful_operation():
+
+    service = WorldService()
+
+    operation = CreateEntityOperation(
+        name="Fungoso",
+        entity_type="character",
+    )
+
+    result = service.apply(operation)
+
+    assert result.success is True
+    assert result.status == OperationStatus.SUCCESS
+    assert result.operation == operation
+
+def test_apply_returns_failure_result_for_invalid_operation():
+
+    service = WorldService()
+
+    operation = CreateEntityOperation(
+        name="",
+        entity_type="character",
+    )
+
+    result = service.apply(operation)
+
+    assert result.success is False
+    assert result.status != OperationStatus.SUCCESS
