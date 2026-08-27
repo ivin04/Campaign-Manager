@@ -1,9 +1,12 @@
 import copy
+import database
 
 from models.entity import Entity
 from models.world_state import WorldState
 
 from services.world_service import WorldService
+
+from repositories.world_repository import WorldRepository
 
 from models.operation_result import (
     OperationResult,
@@ -11,6 +14,8 @@ from models.operation_result import (
 )
 
 from operations.world_operations import CreateEntityOperation
+
+from database import init_db
 
 class FakeRepository:
 
@@ -237,3 +242,73 @@ def test_apply_and_save_does_not_save_when_apply_fails(
     assert result.success is False
     assert save_called is False
     assert service.world == original_world
+
+def test_load_replaces_current_world_completely(tmp_path):
+
+    original_db_path = database.DB_PATH
+    database.DB_PATH = tmp_path / "test_campaign.db"
+
+    try:
+        init_db()
+
+        repository = WorldRepository()
+
+        # --------------------------------------------------------
+        # Estado que realmente existe en SQLite
+        # --------------------------------------------------------
+
+        persisted_entity = Entity(
+            id=1,
+            name="Goblin",
+            entity_type="creature",
+        )
+
+        persisted_world = WorldState(
+            entities={
+                1: persisted_entity,
+            }
+        )
+
+        repository.save_world(persisted_world)
+
+        # --------------------------------------------------------
+        # Servicio con estado diferente en memoria
+        # --------------------------------------------------------
+
+        service = WorldService(
+            repository=repository,
+        )
+
+        stale_entity = Entity(
+            id=99,
+            name="Entidad vieja",
+            entity_type="character",
+        )
+
+        service.world = WorldState(
+            entities={
+                99: stale_entity,
+            }
+        )
+
+        # --------------------------------------------------------
+        # LOAD
+        # --------------------------------------------------------
+
+        loaded = service.load()
+
+        # --------------------------------------------------------
+        # Debe coincidir exactamente con SQLite
+        # --------------------------------------------------------
+
+        assert loaded == persisted_world
+        assert service.world == persisted_world
+
+        # La entidad antigua NO puede sobrevivir.
+        assert 99 not in service.world.entities
+
+        # La persistida sí.
+        assert 1 in service.world.entities
+
+    finally:
+        database.DB_PATH = original_db_path
