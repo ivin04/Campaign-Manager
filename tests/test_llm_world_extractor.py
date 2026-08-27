@@ -4,28 +4,48 @@ import pytest
 
 from models.world_state import WorldState
 from models.operation_result import OperationResult
-from operations.world_operations import WorldOperation
+from operations.world_operations import CreateEntityOperation, WorldOperation
 from services.llm_world_extractor import (
     LLMExtractionError,
     LLMWorldExtractor,
-)
-
-from services.fake_llm_provider import (
-    FakeLLMProvider,
 )
 
 class FakeOperation(WorldOperation):
     pass
 
 
-class FakeParser:
-    def __init__(self, operation):
-        self.operation = operation
+class FakeProvider:
+    def __init__(self, response):
+        self.response = response
         self.calls = []
 
-    def parse(self, data):
-        self.calls.append(data)
-        return self.operation
+    def __call__(self, prompt):
+        self.calls.append(prompt)
+        return self.response
+
+
+class FakeParser:
+    def __init__(
+        self,
+        operations=None,
+        exception=None,
+    ):
+        self.operations = (
+            []
+            if operations is None
+            else operations
+        )
+
+        self.exception = exception
+        self.calls = []
+
+    def parse(self, payload):
+        self.calls.append(payload)
+
+        if self.exception is not None:
+            raise self.exception
+
+        return self.operations
 
 
 def make_extractor(response, operation):
@@ -35,7 +55,9 @@ def make_extractor(response, operation):
         provider_calls.append(prompt)
         return response
 
-    parser = FakeParser(operation)
+    parser = FakeParser(
+        operations=[operation]
+    )
 
     extractor = LLMWorldExtractor(
         provider=provider,
@@ -81,8 +103,12 @@ def test_valid_response_returns_operations():
 
     assert parser.calls == [
         {
-            "type": "create_entity",
-            "name": "Aldric",
+            "operations": [
+                {
+                    "type": "create_entity",
+                    "name": "Aldric",
+                }
+            ]
         }
     ]
 
@@ -245,7 +271,13 @@ def test_operations_must_be_list():
         )
 
 
-def test_operation_must_be_object():
+def test_parser_rejects_invalid_operation():
+    class FailingParser:
+        def parse(self, data):
+            raise ValueError(
+                "Operation must be an object"
+            )
+
     def provider(prompt):
         return json.dumps(
             {
@@ -257,14 +289,12 @@ def test_operation_must_be_object():
 
     extractor = LLMWorldExtractor(
         provider=provider,
-        operation_parser=FakeParser(
-            FakeOperation()
-        ),
+        operation_parser=FailingParser(),
     )
 
     with pytest.raises(
         LLMExtractionError,
-        match="must be an object",
+        match="Failed to parse operations",
     ):
         extractor.extract(
             "algo ocurrió",
@@ -297,7 +327,7 @@ def test_parser_failure_becomes_extraction_error():
 
     with pytest.raises(
         LLMExtractionError,
-        match="Invalid operation",
+        match="Failed to parse operations",
     ):
         extractor.extract(
             "algo ocurrió",
@@ -328,7 +358,7 @@ def test_parser_result_must_be_world_operation():
 
     with pytest.raises(
         LLMExtractionError,
-        match="invalid WorldOperation",
+        match="invalid result",
     ):
         extractor.extract(
             "algo ocurrió",
@@ -392,3 +422,127 @@ def test_callable_interface_matches_extractor():
     )
 
     assert result == [operation]
+
+def test_parser_receives_complete_payload():
+    operation = CreateEntityOperation(
+        name="Aldric",
+        entity_type="npc",
+        description="Un guerrero.",
+        notes="",
+        active=True,
+    )
+
+    parser = FakeParser(
+        operations=[operation]
+    )
+
+    provider = FakeProvider(
+        json.dumps(
+            {
+                "operations": [
+                    {
+                        "type": "create_entity",
+                        "name": "Aldric",
+                        "entity_type": "npc",
+                        "description": "Un guerrero.",
+                        "notes": "",
+                        "active": True,
+                    }
+                ]
+            }
+        )
+    )
+
+    extractor = LLMWorldExtractor(
+        provider=provider,
+        operation_parser=parser,
+    )
+
+    extractor.extract(
+        "Aldric aparece en la taberna.",
+        WorldState(),
+    )
+
+    assert len(parser.calls) == 1
+
+    assert parser.calls[0] == {
+        "operations": [
+            {
+                "type": "create_entity",
+                "name": "Aldric",
+                "entity_type": "npc",
+                "description": "Un guerrero.",
+                "notes": "",
+                "active": True,
+            }
+        ]
+    }
+
+def test_parser_failure_is_wrapped():
+    parser = FakeParser(
+        exception=ValueError("invalid operation")
+    )
+
+    provider = FakeProvider(
+        '{"operations": []}'
+    )
+
+    extractor = LLMWorldExtractor(
+        provider=provider,
+        operation_parser=parser,
+    )
+
+    with pytest.raises(
+        LLMExtractionError,
+        match="Failed to parse operations",
+    ):
+        extractor.extract(
+            "Algo ocurre.",
+            WorldState(),
+        )
+
+def test_multiple_operations_are_returned():
+    operation_1 = CreateEntityOperation(
+        name="Aldric",
+        entity_type="npc",
+        description="Guerrero.",
+        notes="",
+        active=True,
+    )
+
+    operation_2 = CreateEntityOperation(
+        name="Mara",
+        entity_type="npc",
+        description="Mercader.",
+        notes="",
+        active=True,
+    )
+
+    parser = FakeParser(
+        operations=[
+            operation_1,
+            operation_2,
+        ]
+    )
+
+    provider = FakeProvider(
+        '{"operations": ['
+        '{"type": "create_entity"},'
+        '{"type": "create_entity"}'
+        ']}'
+    )
+
+    extractor = LLMWorldExtractor(
+        provider=provider,
+        operation_parser=parser,
+    )
+
+    result = extractor.extract(
+        "Aldric y Mara aparecen.",
+        WorldState(),
+    )
+
+    assert result == [
+        operation_1,
+        operation_2,
+    ]

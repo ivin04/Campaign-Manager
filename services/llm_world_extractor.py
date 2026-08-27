@@ -194,47 +194,35 @@ class LLMWorldExtractor:
         self,
         payload: dict[str, Any],
     ) -> list[WorldOperation]:
-        operations_payload = payload[
-            "operations"
-        ]
+        try:
+            operations = self.operation_parser.parse(
+                payload
+            )
 
-        operations: list[WorldOperation] = []
+        except Exception as exc:
+            raise LLMExtractionError(
+                "Failed to parse operations"
+            ) from exc
 
-        for index, operation_data in enumerate(
-            operations_payload
+        if not isinstance(
+            operations,
+            list,
         ):
-            if not isinstance(
-                operation_data,
-                dict,
-            ):
-                raise LLMExtractionError(
-                    "Operation "
-                    f"{index} must be an object"
-                )
+            raise LLMExtractionError(
+                "Operation parser returned "
+                "an invalid result"
+            )
 
-            try:
-                operation = (
-                    self.operation_parser.parse(
-                        operation_data
-                    )
-                )
-            except Exception as exc:
-                raise LLMExtractionError(
-                    "Invalid operation "
-                    f"at index {index}"
-                ) from exc
-
+        for index, operation in enumerate(
+            operations
+        ):
             if not isinstance(
                 operation,
                 WorldOperation,
             ):
                 raise LLMExtractionError(
                     "Operation parser returned "
-                    "an invalid WorldOperation"
+                    f"an invalid WorldOperation at index {index}"
                 )
-
-            operations.append(
-                operation
-            )
 
         return operations
