@@ -1,7 +1,6 @@
 from models.entity import Entity
 from models.resource import Resource, ResourceBalance
 from models.world_state import WorldState
-from models.resource import Resource
 
 from operations.world_operations import GainResourceOperation
 

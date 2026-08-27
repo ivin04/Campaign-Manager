@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Query
+from starlette.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from models.world_operations_in import WorldOperationsIn
@@ -172,14 +173,53 @@ def apply_world_operations(data: WorldOperationsIn):
             status_code=400,
             detail=str(exc),
         )
-
+    
     result = world_service.apply_operations_and_save(operations)
 
-    return {
-        "ok": True,
-        "received": len(data.operations),
-        "applied": len(operations),
-    }
+    if not result["success"]:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "ok": False,
+                "received": len(data.operations),
+                "applied": 0,
+                "message": "One or more operations could not be applied.",
+                "results": [
+                    {
+                        "status": operation_result.status.value,
+                        "message": operation_result.message,
+                        "operation": (
+                            type(operation_result.operation).__name__
+                            if operation_result.operation is not None
+                            else None
+                        ),
+                    }
+                    for operation_result in result["results"]
+                ],
+            },
+        )
+
+    return JSONResponse(
+        status_code=400,
+        content={
+            "ok": False,
+            "received": len(data.operations),
+            "applied": 0,
+            "message": "One or more operations could not be applied.",
+            "results": [
+                {
+                    "status": operation_result.status.value,
+                    "message": operation_result.message,
+                    "operation": (
+                        type(operation_result.operation).__name__
+                        if operation_result.operation is not None
+                        else None
+                    ),
+                }
+                for operation_result in result["results"]
+            ],
+        },
+    )
 
 @app.get("/world")
 def get_world():
@@ -197,4 +237,15 @@ def get_world():
         "resource_balances": list(world.resource_balances.values()),
         "relations": list(world.relations.values()),
         "events": list(world.events.values()),
+    }
+
+def _serialize_operation_result(result):
+    return {
+        "status": result.status.value,
+        "message": result.message,
+        "operation": (
+            type(result.operation).__name__
+            if result.operation is not None
+            else None
+        ),
     }

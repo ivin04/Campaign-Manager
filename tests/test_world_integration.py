@@ -14,7 +14,6 @@ from operations.world_operations import (
     UpdateEntityOperation,
 )
 
-from services.world_service import WorldService
 from services.world_applier import WorldApplier
 from services.world_service import WorldService
 
