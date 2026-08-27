@@ -242,39 +242,6 @@ class WorldService:
 
             raise
 
-    def apply_and_save(
-        self,
-        operation,
-    ) -> OperationResult:
-        """
-        Aplica una operación y persiste el mundo únicamente
-        si la operación ha tenido éxito.
-        """
-
-        original_state = self.world
-
-        working_state = copy.deepcopy(
-            original_state
-        )
-
-        self.world = working_state
-
-        try:
-
-            result = self.apply(operation)
-
-            if not result.success:
-                self.world = original_state
-                return result
-
-            self.save()
-
-        except Exception:
-            self.world = original_state
-            raise
-
-        return result
-
     def get_world(self) -> WorldState:
         """
         Devuelve el estado actual del mundo.

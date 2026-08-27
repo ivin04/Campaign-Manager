@@ -214,9 +214,9 @@ def test_sillytavern_create_relation_and_persist():
 
         JSON
         -> Parser
-        -> WorldService.apply_and_save()
+        -> WorldService.apply()
+        -> WorldService.save()
         -> Repository
-
     """
 
     service, repository = build_service()
@@ -239,7 +239,13 @@ def test_sillytavern_create_relation_and_persist():
 
     assert len(operations) == 1
 
-    service.apply_and_save(operations[0])
+    result = service.apply(
+        operations[0]
+    )
+
+    assert result.success
+
+    service.save()
 
     # La operación modificó el mundo.
     assert "fungoso-goblin" in service.world.relations

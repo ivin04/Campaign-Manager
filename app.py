@@ -29,7 +29,6 @@ from services.operation_parser import (
 from services.turn_resolution_service import (
     TurnResolutionService,
 )
-from services.world_applier import WorldApplier
 from services.world_service import WorldService
 
 
@@ -118,8 +117,6 @@ def create_campaign_turn_service(
         provider=provider,
         operation_parser=operation_parser,
     )
-
-    world_applier = WorldApplier()
     
     turn_resolution_service = TurnResolutionService(
         dm_service=dm_service,
