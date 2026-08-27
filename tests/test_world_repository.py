@@ -602,3 +602,273 @@ def test_save_world_is_atomic_when_persistence_fails(tmp_path, monkeypatch):
 
     finally:
         database.DB_PATH = original_db_path
+
+def test_save_world_normalizes_dependencies_before_persisting(tmp_path):
+
+    original_db_path = database.DB_PATH
+    database.DB_PATH = tmp_path / "test_campaign.db"
+
+    try:
+        init_db()
+        repository = WorldRepository()
+
+        entity = Entity(
+            id=1,
+            name="Fungoso",
+            entity_type="character",
+        )
+
+        item = Item(
+            id=1,
+            name="Espada",
+        )
+
+        item_instance = ItemInstance(
+            id=1,
+            item_id=1,
+            instance_number=1,
+            owner_id=1,
+        )
+
+        world = WorldState(
+            entities={1: entity},
+            items={1: item},
+            item_instances={1: item_instance},
+        )
+
+        repository.save_world(world)
+
+        # Eliminamos el item del snapshot.
+        del world.items[1]
+
+        # La instancia queda temporalmente huérfana
+        # dentro del WorldState.
+        assert 1 in world.item_instances
+
+        repository.save_world(world)
+
+        # La normalización debe haber eliminado
+        # la instancia antes de persistir.
+        assert 1 not in world.item_instances
+
+        loaded = repository.load_world()
+
+        assert loaded.items == {}
+        assert loaded.item_instances == {}
+        assert loaded.entities == {
+            1: entity,
+        }
+
+    finally:
+        database.DB_PATH = original_db_path
+
+def test_save_world_removes_balance_when_resource_is_missing(tmp_path):
+
+    original_db_path = database.DB_PATH
+    database.DB_PATH = tmp_path / "test_campaign.db"
+
+    try:
+        init_db()
+        repository = WorldRepository()
+
+        entity = Entity(
+            id=1,
+            name="Fungoso",
+            entity_type="character",
+        )
+
+        resource = Resource(
+            id=1,
+            name="Oro",
+            resource_type="currency",
+        )
+
+        balance = ResourceBalance(
+            id=1,
+            resource_id=1,
+            owner_id=1,
+            amount=100,
+        )
+
+        world = WorldState(
+            entities={1: entity},
+            resources={1: resource},
+            resource_balances={1: balance},
+        )
+
+        repository.save_world(world)
+
+        del world.resources[1]
+
+        assert 1 in world.resource_balances
+
+        repository.save_world(world)
+
+        assert 1 not in world.resource_balances
+
+        loaded = repository.load_world()
+
+        assert loaded.resources == {}
+        assert loaded.resource_balances == {}
+        assert loaded.entities == {
+            1: entity,
+        }
+
+    finally:
+        database.DB_PATH = original_db_path
+
+def test_save_world_removes_relation_when_entity_is_missing(tmp_path):
+
+    original_db_path = database.DB_PATH
+    database.DB_PATH = tmp_path / "test_campaign.db"
+
+    try:
+        init_db()
+        repository = WorldRepository()
+
+        entity_a = Entity(
+            id=1,
+            name="Fungoso",
+            entity_type="character",
+        )
+
+        entity_b = Entity(
+            id=2,
+            name="Goblin",
+            entity_type="creature",
+        )
+
+        relation = Relation(
+            id="relation-001",
+            subject_id=1,
+            relation_type="enemy_of",
+            target_id=2,
+        )
+
+        world = WorldState(
+            entities={
+                1: entity_a,
+                2: entity_b,
+            },
+            relations={
+                "relation-001": relation,
+            },
+        )
+
+        repository.save_world(world)
+
+        del world.entities[1]
+
+        assert "relation-001" in world.relations
+
+        repository.save_world(world)
+
+        assert "relation-001" not in world.relations
+
+        loaded = repository.load_world()
+
+        assert loaded.entities == {
+            2: entity_b,
+        }
+
+        assert loaded.relations == {}
+
+    finally:
+        database.DB_PATH = original_db_path
+
+def test_save_world_empty_snapshot_clears_persisted_world(tmp_path):
+
+    original_db_path = database.DB_PATH
+    database.DB_PATH = tmp_path / "test_campaign.db"
+
+    try:
+        init_db()
+        repository = WorldRepository()
+
+        entity = Entity(
+            id=1,
+            name="Fungoso",
+            entity_type="character",
+        )
+
+        item = Item(
+            id=1,
+            name="Espada",
+        )
+
+        resource = Resource(
+            id=1,
+            name="Oro",
+            resource_type="currency",
+        )
+
+        world = WorldState(
+            entities={1: entity},
+            items={1: item},
+            resources={1: resource},
+        )
+
+        repository.save_world(world)
+
+        empty_world = WorldState()
+
+        repository.save_world(empty_world)
+
+        loaded = repository.load_world()
+
+        assert loaded.entities == {}
+        assert loaded.items == {}
+        assert loaded.item_instances == {}
+        assert loaded.resources == {}
+        assert loaded.resource_balances == {}
+        assert loaded.relations == {}
+        assert loaded.events == {}
+
+    finally:
+        database.DB_PATH = original_db_path
+
+def test_save_world_is_idempotent(tmp_path):
+
+    original_db_path = database.DB_PATH
+    database.DB_PATH = tmp_path / "test_campaign.db"
+
+    try:
+        init_db()
+        repository = WorldRepository()
+
+        entity = Entity(
+            id=1,
+            name="Fungoso",
+            entity_type="character",
+        )
+
+        item = Item(
+            id=1,
+            name="Espada",
+        )
+
+        instance = ItemInstance(
+            id=1,
+            item_id=1,
+            instance_number=1,
+            owner_id=1,
+        )
+
+        world = WorldState(
+            entities={1: entity},
+            items={1: item},
+            item_instances={1: instance},
+        )
+
+        repository.save_world(world)
+
+        first = repository.load_world()
+
+        repository.save_world(world)
+
+        second = repository.load_world()
+
+        assert second == first
+
+    finally:
+        database.DB_PATH = original_db_path

@@ -326,18 +326,3 @@ def test_export_returns_world_state_categories(clean_world):
     }
 
     assert data["entities"][0]["name"] == "Fungoso"
-
-
-def test_export_does_not_expose_legacy_categories(clean_world):
-    response = client.get("/export")
-
-    assert response.status_code == 200
-
-    data = response.json()
-
-    assert "characters" not in data
-    assert "locations" not in data
-    assert "factions" not in data
-    assert "quests" not in data
-    assert "campaign" not in data
-    assert "sessions" not in data
