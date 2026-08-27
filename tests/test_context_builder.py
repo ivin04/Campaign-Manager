@@ -391,3 +391,79 @@ def test_context_builder_does_not_modify_world():
         world.resource_balances
         == original_balances
     )
+
+def test_context_builder_orders_direct_entities_before_related():
+    builder = ContextBuilder()
+
+    result = builder.build(
+        build_world(),
+        "Fungoso",
+    )
+
+    assert result["entities"][0]["name"] == "Fungoso"
+    assert result["entities"][1]["name"] == "Goblin"
+
+
+def test_context_builder_respects_context_budget():
+    builder = ContextBuilder(
+        max_context_chars=60,
+    )
+
+    result = builder.build(
+        build_world(),
+        "Fungoso",
+    )
+
+    assert len(result["context"]) <= 60
+
+
+def test_context_builder_rejects_invalid_context_budget():
+    try:
+        ContextBuilder(
+            max_context_chars=0,
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(
+            "Expected ValueError"
+        )
+
+
+def test_context_builder_rejects_non_integer_context_budget():
+    try:
+        ContextBuilder(
+            max_context_chars="6000",
+        )
+    except TypeError:
+        pass
+    else:
+        raise AssertionError(
+            "Expected TypeError"
+        )
+
+
+def test_context_builder_does_not_modify_entities():
+    world = build_world()
+
+    builder = ContextBuilder()
+
+    before = {
+        entity_id: entity.name
+        for entity_id, entity
+        in world.entities.items()
+    }
+
+    builder.build(
+        world,
+        "Fungoso",
+    )
+
+    after = {
+        entity_id: entity.name
+        for entity_id, entity
+        in world.entities.items()
+    }
+
+    assert before == after
+

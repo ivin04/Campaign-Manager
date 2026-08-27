@@ -17,9 +17,11 @@ class ContextBuilder:
     Responsabilidades:
 
     - Identificar entidades principales.
+    - Calcular relevancia.
     - Incluir entidades relacionadas.
     - Incluir relaciones conectadas.
     - Incluir eventos relacionados.
+    - Aplicar un presupuesto máximo de contexto.
     - Excluir entidades inactivas.
     - Excluir relaciones inactivas.
     - Excluir eventos secretos.
@@ -29,14 +31,38 @@ class ContextBuilder:
 
     DEFAULT_MAX_DEPTH = 1
 
+    # Presupuesto inicial conservador.
+    #
+    # Se mide en caracteres, no tokens.
+    # Más adelante podremos sustituirlo por un tokenizer real
+    # cuando sepamos qué modelo utilizará el DM.
+    DEFAULT_MAX_CONTEXT_CHARS = 6000
+
+    DIRECT_ENTITY_RELEVANCE = 1.0
+    RELATED_ENTITY_RELEVANCE = 0.7
+
     def __init__(
         self,
         memory_search_service: MemorySearchService | None = None,
+        max_context_chars: int = DEFAULT_MAX_CONTEXT_CHARS,
     ) -> None:
+
+        if not isinstance(max_context_chars, int):
+            raise TypeError(
+                "max_context_chars must be an integer"
+            )
+
+        if max_context_chars <= 0:
+            raise ValueError(
+                "max_context_chars must be > 0"
+            )
+
         self.memory_search_service = (
             memory_search_service
             or MemorySearchService()
         )
+
+        self.max_context_chars = max_context_chars
 
     def build(
         self,
@@ -45,6 +71,10 @@ class ContextBuilder:
     ) -> dict[str, Any]:
         """
         Construye contexto relacionado a partir de una consulta.
+
+        El resultado mantiene las categorías públicas existentes,
+        pero las entidades se ordenan por relevancia y el texto
+        final respeta el presupuesto máximo configurado.
         """
 
         self._validate_world(world)
@@ -59,16 +89,15 @@ class ContextBuilder:
             normalized_query,
         )
 
+        search_result = self._resolve_parent_objects(
+            world,
+            search_result,
+        )
+
         entities = self._expand_entities(
             world,
             search_result["entities"],
             max_depth=self.DEFAULT_MAX_DEPTH,
-        )
-
-        related_data = self._resolve_related_data(
-            world,
-            entities,
-            search_result,
         )
 
         relations = self._related_relations(
@@ -84,12 +113,10 @@ class ContextBuilder:
         result = {
             "query": normalized_query,
             "entities": entities,
-            "items": related_data["items"],
-            "item_instances": related_data[
-                "item_instances"
-            ],
-            "resources": related_data["resources"],
-            "resource_balances": related_data[
+            "items": search_result["items"],
+            "item_instances": search_result["item_instances"],
+            "resources": search_result["resources"],
+            "resource_balances": search_result[
                 "resource_balances"
             ],
             "relations": relations,
@@ -123,7 +150,7 @@ class ContextBuilder:
         return query.strip()
 
     # ============================================================
-    # ENTITY EXPANSION
+    # ENTITY EXPANSION + RELEVANCE
     # ============================================================
 
     def _expand_entities(
@@ -133,19 +160,20 @@ class ContextBuilder:
         max_depth: int = 1,
     ) -> list[dict[str, Any]]:
         """
-        Amplía las entidades encontradas siguiendo relaciones activas
-        hasta una profundidad máxima.
+        Amplía las entidades encontradas siguiendo relaciones activas.
 
-        depth 0:
-            entidades encontradas directamente por la búsqueda.
+        Cada entidad recibe internamente:
 
-        depth 1:
-            entidades relacionadas directamente.
+            _relevance
+            _depth
 
-        depth 2:
-            entidades relacionadas con las anteriores.
+        Relevancia:
 
-        Esto evita recorrer indefinidamente todo el grafo del mundo.
+            depth 0 -> 1.0
+            depth 1 -> 0.7
+
+        Los campos internos se eliminan antes de devolver
+        el resultado público.
         """
 
         if max_depth < 0:
@@ -154,14 +182,21 @@ class ContextBuilder:
             )
 
         entity_depths: dict[int, int] = {}
+        entity_relevance: dict[int, float] = {}
 
         for entity in matched_entities:
             entity_id = entity.get("id")
 
-            if isinstance(entity_id, int):
-                entity_depths[entity_id] = 0
+            if not isinstance(entity_id, int):
+                continue
+
+            entity_depths[entity_id] = 0
+            entity_relevance[entity_id] = (
+                self.DIRECT_ENTITY_RELEVANCE
+            )
 
         for depth in range(max_depth):
+
             current_ids = {
                 entity_id
                 for entity_id, entity_depth
@@ -194,18 +229,32 @@ class ContextBuilder:
                 )
 
                 if subject_id in current_ids:
+
                     if (
                         target_id in world.entities
                         and target_id not in entity_depths
                     ):
-                        entity_depths[target_id] = depth + 1
+                        entity_depths[target_id] = (
+                            depth + 1
+                        )
+
+                        entity_relevance[target_id] = (
+                            self.RELATED_ENTITY_RELEVANCE
+                        )
 
                 if target_id in current_ids:
+
                     if (
                         subject_id in world.entities
                         and subject_id not in entity_depths
                     ):
-                        entity_depths[subject_id] = depth + 1
+                        entity_depths[subject_id] = (
+                            depth + 1
+                        )
+
+                        entity_relevance[subject_id] = (
+                            self.RELATED_ENTITY_RELEVANCE
+                        )
 
         result: list[dict[str, Any]] = []
 
@@ -225,255 +274,56 @@ class ContextBuilder:
             ):
                 continue
 
-            result.append(
+            entity_data = (
                 self.memory_search_service._entity_to_dict(
                     entity
                 )
             )
 
+            entity_data["_relevance"] = (
+                entity_relevance.get(
+                    entity_id,
+                    0.0,
+                )
+            )
+
+            entity_data["_depth"] = (
+                entity_depths.get(
+                    entity_id,
+                    max_depth + 1,
+                )
+            )
+
+            result.append(entity_data)
+
         result.sort(
             key=lambda entity: (
-                entity_depths.get(
-                    entity.get("id"),
+                -entity.get(
+                    "_relevance",
+                    0.0,
+                ),
+                entity.get(
+                    "_depth",
                     max_depth + 1,
                 ),
-                entity.get("id", 0),
+                entity.get(
+                    "id",
+                    0,
+                ),
             )
         )
 
+        for entity in result:
+            entity.pop(
+                "_relevance",
+                None,
+            )
+            entity.pop(
+                "_depth",
+                None,
+            )
+
         return result
-
-    # ============================================================
-    # RELATED DATA
-    # ============================================================
-
-    def _resolve_related_data(
-        self,
-        world: WorldState,
-        entities: list[dict[str, Any]],
-        search_result: dict[str, Any],
-    ) -> dict[str, list[dict[str, Any]]]:
-        """
-        Resuelve datos relacionados con las entidades seleccionadas.
-
-        Amplía el resultado de búsqueda para mantener coherencia
-        entre:
-
-            Entity
-                ↓
-            ItemInstance
-                ↓
-            Item
-
-        y:
-
-            Entity
-                ↓
-            ResourceBalance
-                ↓
-            Resource
-
-        También incluye las instancias cuya localización pertenece
-        a una entidad seleccionada.
-
-        No modifica WorldState.
-        """
-
-        entity_ids = {
-            entity.get("id")
-            for entity in entities
-            if isinstance(entity.get("id"), int)
-        }
-
-        items_by_id = {
-            item.get("id"): item
-            for item in search_result.get("items", [])
-            if isinstance(item.get("id"), int)
-        }
-
-        item_instances_by_id = {
-            instance.get("id"): instance
-            for instance in search_result.get(
-                "item_instances",
-                [],
-            )
-            if isinstance(instance.get("id"), int)
-        }
-
-        resources_by_id = {
-            resource.get("id"): resource
-            for resource in search_result.get(
-                "resources",
-                [],
-            )
-            if isinstance(resource.get("id"), int)
-        }
-
-        resource_balances_by_id = {
-            balance.get("id"): balance
-            for balance in search_result.get(
-                "resource_balances",
-                [],
-            )
-            if isinstance(balance.get("id"), int)
-        }
-
-        # --------------------------------------------------------
-        # ITEM INSTANCES
-        # --------------------------------------------------------
-
-        for instance in world.item_instances.values():
-
-            if not getattr(
-                instance,
-                "active",
-                True,
-            ):
-                continue
-
-            owner_id = getattr(
-                instance,
-                "owner_id",
-                None,
-            )
-
-            location_id = getattr(
-                instance,
-                "location_id",
-                None,
-            )
-
-            if (
-                owner_id not in entity_ids
-                and location_id not in entity_ids
-            ):
-                continue
-
-            instance_id = getattr(
-                instance,
-                "id",
-                None,
-            )
-
-            if instance_id is None:
-                continue
-
-            instance_dict = (
-                self.memory_search_service
-                ._item_instance_to_dict(
-                    instance
-                )
-            )
-
-            item_instances_by_id[
-                instance_id
-            ] = instance_dict
-
-            # Resolver Item padre
-            item_id = getattr(
-                instance,
-                "item_id",
-                None,
-            )
-
-            item = world.items.get(
-                item_id
-            )
-
-            if item is not None:
-                item_id = getattr(
-                    item,
-                    "id",
-                    None,
-                )
-
-                if item_id is not None:
-                    items_by_id[item_id] = (
-                        self.memory_search_service
-                        ._item_to_dict(item)
-                    )
-
-        # --------------------------------------------------------
-        # RESOURCE BALANCES
-        # --------------------------------------------------------
-
-        for balance in world.resource_balances.values():
-
-            owner_id = getattr(
-                balance,
-                "owner_id",
-                None,
-            )
-
-            if owner_id not in entity_ids:
-                continue
-
-            balance_id = getattr(
-                balance,
-                "id",
-                None,
-            )
-
-            if balance_id is None:
-                continue
-
-            balance_dict = (
-                self.memory_search_service
-                ._resource_balance_to_dict(
-                    balance
-                )
-            )
-
-            resource_balances_by_id[
-                balance_id
-            ] = balance_dict
-
-            # Resolver Resource padre
-            resource_id = getattr(
-                balance,
-                "resource_id",
-                None,
-            )
-
-            resource = world.resources.get(
-                resource_id
-            )
-
-            if resource is not None:
-                resource_id = getattr(
-                    resource,
-                    "id",
-                    None,
-                )
-
-                if resource_id is not None:
-                    resources_by_id[
-                        resource_id
-                    ] = (
-                        self.memory_search_service
-                        ._resource_to_dict(
-                            resource
-                        )
-                    )
-
-        # --------------------------------------------------------
-        # RESULTADO
-        # --------------------------------------------------------
-
-        return {
-            "items": list(
-                items_by_id.values()
-            ),
-            "item_instances": list(
-                item_instances_by_id.values()
-            ),
-            "resources": list(
-                resources_by_id.values()
-            ),
-            "resource_balances": list(
-                resource_balances_by_id.values()
-            ),
-        }
 
     # ============================================================
     # RELATIONS
@@ -492,6 +342,7 @@ class ContextBuilder:
         result: list[dict[str, Any]] = []
 
         for relation in world.relations.values():
+
             if not getattr(
                 relation,
                 "active",
@@ -525,7 +376,10 @@ class ContextBuilder:
 
         result.sort(
             key=lambda relation: str(
-                relation.get("id", "")
+                relation.get(
+                    "id",
+                    "",
+                )
             )
         )
 
@@ -548,6 +402,7 @@ class ContextBuilder:
         result: list[dict[str, Any]] = []
 
         for event in world.events.values():
+
             if getattr(
                 event,
                 "secret",
@@ -561,7 +416,10 @@ class ContextBuilder:
                 None,
             )
 
-            if not isinstance(metadata, dict):
+            if not isinstance(
+                metadata,
+                dict,
+            ):
                 continue
 
             related_ids = metadata.get(
@@ -588,7 +446,10 @@ class ContextBuilder:
 
         result.sort(
             key=lambda event: str(
-                event.get("id", "")
+                event.get(
+                    "id",
+                    "",
+                )
             )
         )
 
@@ -598,152 +459,523 @@ class ContextBuilder:
     # TEXT CONTEXT
     # ============================================================
 
-    @staticmethod
     def _build_text_context(
+        self,
         result: dict[str, Any],
     ) -> str:
+        """
+        Construye el contexto textual respetando
+        max_context_chars.
+
+        La información se añade por prioridad:
+
+            1. Entidades
+            2. Relaciones
+            3. Eventos
+            4. Otros datos directos
+
+        Si se alcanza el presupuesto, se detiene la
+        incorporación de bloques adicionales.
+        """
+
         sections: list[str] = []
 
-        entities = result.get(
-            "entities",
-            [],
+        self._append_entities(
+            sections,
+            result.get(
+                "entities",
+                [],
+            ),
         )
 
-        if entities:
-            sections.append(
-                "[ENTIDADES]"
-            )
-
-            for entity in entities:
-                name = entity.get(
-                    "name",
-                    "Sin nombre",
-                )
-
-                entity_type = entity.get(
-                    "entity_type",
-                    "unknown",
-                )
-
-                description = entity.get(
-                    "description",
-                    "",
-                )
-
-                notes = entity.get(
-                    "notes",
-                    "",
-                )
-
-                line = (
-                    f"- {name} "
-                    f"({entity_type})"
-                )
-
-                if description:
-                    line += f": {description}"
-
-                if notes:
-                    line += (
-                        f" Notas: {notes}"
-                    )
-
-                sections.append(line)
-
-        relations = result.get(
-            "relations",
-            [],
+        self._append_relations(
+            sections,
+            result.get(
+                "relations",
+                [],
+            ),
         )
 
-        if relations:
-            sections.append(
-                "[RELACIONES]"
-            )
-
-            for relation in relations:
-                relation_type = relation.get(
-                    "relation_type",
-                    "unknown",
-                )
-
-                subject_id = relation.get(
-                    "subject_id"
-                )
-
-                target_id = relation.get(
-                    "target_id"
-                )
-
-                line = (
-                    f"- {relation_type}: "
-                    f"{subject_id} -> "
-                    f"{target_id}"
-                )
-
-                metadata = relation.get(
-                    "metadata"
-                )
-
-                if isinstance(
-                    metadata,
-                    dict,
-                ):
-                    reason = metadata.get(
-                        "reason"
-                    )
-
-                    if reason:
-                        line += (
-                            f" Motivo: {reason}"
-                        )
-
-                sections.append(line)
-
-        events = result.get(
-            "events",
-            [],
+        self._append_events(
+            sections,
+            result.get(
+                "events",
+                [],
+            ),
         )
 
-        if events:
-            sections.append(
-                "[EVENTOS]"
-            )
+        self._append_items(
+            sections,
+            result.get(
+                "items",
+                [],
+            ),
+        )
 
-            for event in events:
-                title = event.get(
-                    "title",
-                    "Sin título",
-                )
+        self._append_item_instances(
+            sections,
+            result.get(
+                "item_instances",
+                [],
+            ),
+        )
 
-                description = event.get(
-                    "description",
-                    "",
-                )
+        self._append_resources(
+            sections,
+            result.get(
+                "resources",
+                [],
+            ),
+        )
 
-                consequences = event.get(
-                    "consequences",
-                    "",
-                )
+        self._append_resource_balances(
+            sections,
+            result.get(
+                "resource_balances",
+                [],
+            ),
+        )
 
-                line = f"- {title}"
+        return self._apply_context_budget(
+            sections
+        )
 
-                if description:
-                    line += (
-                        f": {description}"
-                    )
+    # ============================================================
+    # CONTEXT BUDGET
+    # ============================================================
 
-                if consequences:
-                    line += (
-                        f" Consecuencias: "
-                        f"{consequences}"
-                    )
+    def _apply_context_budget(
+        self,
+        sections: list[str],
+    ) -> str:
+        """
+        Convierte las líneas generadas en texto y limita
+        el resultado al presupuesto configurado.
 
-                sections.append(line)
+        Nunca corta una línea por la mitad.
+
+        Si una línea individual supera el presupuesto,
+        se omite.
+        """
 
         if not sections:
             return "Sin información relevante."
 
-        return "\n".join(sections)
+        result: list[str] = []
+        current_length = 0
+
+        for section in sections:
+
+            section_length = len(section)
+
+            separator_length = (
+                1
+                if result
+                else 0
+            )
+
+            projected_length = (
+                current_length
+                + separator_length
+                + section_length
+            )
+
+            if projected_length > self.max_context_chars:
+
+                if (
+                    not result
+                    and section_length
+                    <= self.max_context_chars
+                ):
+                    result.append(section)
+
+                break
+
+            result.append(section)
+
+            current_length = projected_length
+
+        if not result:
+            return "Sin información relevante."
+
+        return "\n".join(result)
+
+    # ============================================================
+    # TEXT SECTIONS
+    # ============================================================
+
+    @staticmethod
+    def _append_entities(
+        sections: list[str],
+        entities: list[dict[str, Any]],
+    ) -> None:
+
+        if not entities:
+            return
+
+        sections.append(
+            "[ENTIDADES]"
+        )
+
+        for entity in entities:
+
+            name = entity.get(
+                "name",
+                "Sin nombre",
+            )
+
+            entity_type = entity.get(
+                "entity_type",
+                "unknown",
+            )
+
+            description = entity.get(
+                "description",
+                "",
+            )
+
+            notes = entity.get(
+                "notes",
+                "",
+            )
+
+            line = (
+                f"- {name} "
+                f"({entity_type})"
+            )
+
+            if description:
+                line += (
+                    f": {description}"
+                )
+
+            if notes:
+                line += (
+                    f" Notas: {notes}"
+                )
+
+            sections.append(line)
+
+    @staticmethod
+    def _append_items(
+        sections: list[str],
+        items: list[dict[str, Any]],
+    ) -> None:
+
+        if not items:
+            return
+
+        sections.append(
+            "[ITEMS]"
+        )
+
+        for item in items:
+
+            name = item.get(
+                "name",
+                "Sin nombre",
+            )
+
+            description = item.get(
+                "description",
+                "",
+            )
+
+            significance = item.get(
+                "significance",
+                "",
+            )
+
+            notes = item.get(
+                "notes",
+                "",
+            )
+
+            line = f"- {name}"
+
+            if description:
+                line += (
+                    f": {description}"
+                )
+
+            if significance:
+                line += (
+                    f" Importancia: "
+                    f"{significance}"
+                )
+
+            if notes:
+                line += (
+                    f" Notas: {notes}"
+                )
+
+            sections.append(line)
+
+    @staticmethod
+    def _append_item_instances(
+        sections: list[str],
+        instances: list[dict[str, Any]],
+    ) -> None:
+
+        if not instances:
+            return
+
+        sections.append(
+            "[ITEM_INSTANCES]"
+        )
+
+        for instance in instances:
+
+            instance_id = instance.get(
+                "id",
+                "unknown",
+            )
+
+            item_id = instance.get(
+                "item_id"
+            )
+
+            owner_id = instance.get(
+                "owner_id"
+            )
+
+            location_id = instance.get(
+                "location_id"
+            )
+
+            line = (
+                f"- Instancia "
+                f"{instance_id}"
+            )
+
+            if item_id is not None:
+                line += (
+                    f" item={item_id}"
+                )
+
+            if owner_id is not None:
+                line += (
+                    f" propietario="
+                    f"{owner_id}"
+                )
+
+            if location_id is not None:
+                line += (
+                    f" ubicación="
+                    f"{location_id}"
+                )
+
+            sections.append(line)
+
+    @staticmethod
+    def _append_resources(
+        sections: list[str],
+        resources: list[dict[str, Any]],
+    ) -> None:
+
+        if not resources:
+            return
+
+        sections.append(
+            "[RESOURCES]"
+        )
+
+        for resource in resources:
+
+            name = resource.get(
+                "name",
+                "Sin nombre",
+            )
+
+            resource_type = resource.get(
+                "resource_type",
+                "",
+            )
+
+            unit = resource.get(
+                "unit",
+                "",
+            )
+
+            notes = resource.get(
+                "notes",
+                "",
+            )
+
+            line = f"- {name}"
+
+            if resource_type:
+                line += (
+                    f" ({resource_type})"
+                )
+
+            if unit:
+                line += (
+                    f" Unidad: {unit}"
+                )
+
+            if notes:
+                line += (
+                    f" Notas: {notes}"
+                )
+
+            sections.append(line)
+
+    @staticmethod
+    def _append_resource_balances(
+        sections: list[str],
+        balances: list[dict[str, Any]],
+    ) -> None:
+
+        if not balances:
+            return
+
+        sections.append(
+            "[RESOURCE_BALANCES]"
+        )
+
+        for balance in balances:
+
+            balance_id = balance.get(
+                "id",
+                "unknown",
+            )
+
+            resource_id = balance.get(
+                "resource_id"
+            )
+
+            owner_id = balance.get(
+                "owner_id"
+            )
+
+            amount = balance.get(
+                "amount"
+            )
+
+            line = (
+                f"- Balance "
+                f"{balance_id}"
+            )
+
+            if resource_id is not None:
+                line += (
+                    f" recurso="
+                    f"{resource_id}"
+                )
+
+            if owner_id is not None:
+                line += (
+                    f" propietario="
+                    f"{owner_id}"
+                )
+
+            if amount is not None:
+                line += (
+                    f" cantidad="
+                    f"{amount}"
+                )
+
+            sections.append(line)
+
+    @staticmethod
+    def _append_relations(
+        sections: list[str],
+        relations: list[dict[str, Any]],
+    ) -> None:
+
+        if not relations:
+            return
+
+        sections.append(
+            "[RELACIONES]"
+        )
+
+        for relation in relations:
+
+            relation_type = relation.get(
+                "relation_type",
+                "unknown",
+            )
+
+            subject_id = relation.get(
+                "subject_id"
+            )
+
+            target_id = relation.get(
+                "target_id"
+            )
+
+            line = (
+                f"- {relation_type}: "
+                f"{subject_id} -> "
+                f"{target_id}"
+            )
+
+            metadata = relation.get(
+                "metadata"
+            )
+
+            if isinstance(
+                metadata,
+                dict,
+            ):
+                reason = metadata.get(
+                    "reason"
+                )
+
+                if reason:
+                    line += (
+                        f" Motivo: "
+                        f"{reason}"
+                    )
+
+            sections.append(line)
+
+    @staticmethod
+    def _append_events(
+        sections: list[str],
+        events: list[dict[str, Any]],
+    ) -> None:
+
+        if not events:
+            return
+
+        sections.append(
+            "[EVENTOS]"
+        )
+
+        for event in events:
+
+            title = event.get(
+                "title",
+                "Sin título",
+            )
+
+            description = event.get(
+                "description",
+                "",
+            )
+
+            consequences = event.get(
+                "consequences",
+                "",
+            )
+
+            line = f"- {title}"
+
+            if description:
+                line += (
+                    f": {description}"
+                )
+
+            if consequences:
+                line += (
+                    f" Consecuencias: "
+                    f"{consequences}"
+                )
+
+            sections.append(line)
 
     # ============================================================
     # EMPTY RESULT
@@ -764,3 +996,110 @@ class ContextBuilder:
                 "Sin información relevante."
             ),
         }
+
+    def _resolve_parent_objects(
+        self,
+        world: WorldState,
+        search_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Completa los resultados con los objetos padre de:
+
+        ItemInstance -> Item
+        ResourceBalance -> Resource
+
+        Esto permite que el contexto sea interpretable incluso
+        cuando la búsqueda encuentra solamente la instancia o balance.
+        """
+
+        result = {
+            key: list(value) if isinstance(value, list) else value
+            for key, value in search_result.items()
+        }
+
+        # =========================================================
+        # ITEM INSTANCES -> ITEMS
+        # =========================================================
+
+        existing_item_ids = {
+            item.get("id")
+            for item in result.get("items", [])
+            if isinstance(item, dict)
+        }
+
+        for instance in result.get(
+            "item_instances",
+            [],
+        ):
+            if not isinstance(instance, dict):
+                continue
+
+            item_id = instance.get("item_id")
+
+            if item_id is None:
+                continue
+
+            if item_id in existing_item_ids:
+                continue
+
+            item = world.items.get(item_id)
+
+            if item is None:
+                continue
+
+            result["items"].append(
+                self.memory_search_service._item_to_dict(
+                    item
+                )
+            )
+
+            existing_item_ids.add(item_id)
+
+        # =========================================================
+        # RESOURCE BALANCES -> RESOURCES
+        # =========================================================
+
+        existing_resource_ids = {
+            resource.get("id")
+            for resource in result.get(
+                "resources",
+                [],
+            )
+            if isinstance(resource, dict)
+        }
+
+        for balance in result.get(
+            "resource_balances",
+            [],
+        ):
+            if not isinstance(balance, dict):
+                continue
+
+            resource_id = balance.get(
+                "resource_id"
+            )
+
+            if resource_id is None:
+                continue
+
+            if resource_id in existing_resource_ids:
+                continue
+
+            resource = world.resources.get(
+                resource_id
+            )
+
+            if resource is None:
+                continue
+
+            result["resources"].append(
+                self.memory_search_service._resource_to_dict(
+                    resource
+                )
+            )
+
+            existing_resource_ids.add(
+                resource_id
+            )
+
+        return result

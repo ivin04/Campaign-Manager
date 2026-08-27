@@ -188,9 +188,6 @@ def apply_world_operations(data: WorldOperationsIn):
 
     result = world_service.apply_operations_and_save(operations)
 
-    print("DEBUG success:", result["success"])
-    print("DEBUG results:", result["results"])
-
     serialized_results = [
         _serialize_operation_result(operation_result)
         for operation_result in result["results"]
