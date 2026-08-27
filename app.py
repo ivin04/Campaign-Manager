@@ -32,10 +32,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-init_db()
+def create_world_service():
+    init_db()
 
-world_service = WorldService()
-world_service.load()
+    service = WorldService()
+    service.load()
+
+    return service
+
+
+world_service = create_world_service()
 
 campaign_repository = CampaignRepository()
 
@@ -159,6 +165,12 @@ def apply_world_operations(data: WorldOperationsIn):
     """
     Recibe operaciones estructuradas desde SillyTavern,
     las parsea y las aplica al mundo persistente.
+
+    Contrato:
+
+    - 422: payload HTTP inválido según Pydantic.
+    - 400: error al parsear operaciones o al aplicarlas.
+    - 200: todas las operaciones se aplicaron correctamente.
     """
 
     try:
@@ -173,8 +185,16 @@ def apply_world_operations(data: WorldOperationsIn):
             status_code=400,
             detail=str(exc),
         )
-    
+
     result = world_service.apply_operations_and_save(operations)
+
+    print("DEBUG success:", result["success"])
+    print("DEBUG results:", result["results"])
+
+    serialized_results = [
+        _serialize_operation_result(operation_result)
+        for operation_result in result["results"]
+    ]
 
     if not result["success"]:
         return JSONResponse(
@@ -184,40 +204,17 @@ def apply_world_operations(data: WorldOperationsIn):
                 "received": len(data.operations),
                 "applied": 0,
                 "message": "One or more operations could not be applied.",
-                "results": [
-                    {
-                        "status": operation_result.status.value,
-                        "message": operation_result.message,
-                        "operation": (
-                            type(operation_result.operation).__name__
-                            if operation_result.operation is not None
-                            else None
-                        ),
-                    }
-                    for operation_result in result["results"]
-                ],
+                "results": serialized_results,
             },
         )
 
     return JSONResponse(
-        status_code=400,
+        status_code=200,
         content={
-            "ok": False,
+            "ok": True,
             "received": len(data.operations),
-            "applied": 0,
-            "message": "One or more operations could not be applied.",
-            "results": [
-                {
-                    "status": operation_result.status.value,
-                    "message": operation_result.message,
-                    "operation": (
-                        type(operation_result.operation).__name__
-                        if operation_result.operation is not None
-                        else None
-                    ),
-                }
-                for operation_result in result["results"]
-            ],
+            "applied": len(operations),
+            "results": serialized_results,
         },
     )
 
