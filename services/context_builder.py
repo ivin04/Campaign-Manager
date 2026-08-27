@@ -28,7 +28,7 @@ class ContextBuilder:
     """
 
     DEFAULT_MAX_DEPTH = 1
-    
+
     def __init__(
         self,
         memory_search_service: MemorySearchService | None = None,
@@ -65,6 +65,12 @@ class ContextBuilder:
             max_depth=self.DEFAULT_MAX_DEPTH,
         )
 
+        related_data = self._resolve_related_data(
+            world,
+            entities,
+            search_result,
+        )
+
         relations = self._related_relations(
             world,
             entities,
@@ -78,10 +84,12 @@ class ContextBuilder:
         result = {
             "query": normalized_query,
             "entities": entities,
-            "items": search_result["items"],
-            "item_instances": search_result["item_instances"],
-            "resources": search_result["resources"],
-            "resource_balances": search_result[
+            "items": related_data["items"],
+            "item_instances": related_data[
+                "item_instances"
+            ],
+            "resources": related_data["resources"],
+            "resource_balances": related_data[
                 "resource_balances"
             ],
             "relations": relations,
@@ -234,6 +242,238 @@ class ContextBuilder:
         )
 
         return result
+
+    # ============================================================
+    # RELATED DATA
+    # ============================================================
+
+    def _resolve_related_data(
+        self,
+        world: WorldState,
+        entities: list[dict[str, Any]],
+        search_result: dict[str, Any],
+    ) -> dict[str, list[dict[str, Any]]]:
+        """
+        Resuelve datos relacionados con las entidades seleccionadas.
+
+        Amplía el resultado de búsqueda para mantener coherencia
+        entre:
+
+            Entity
+                ↓
+            ItemInstance
+                ↓
+            Item
+
+        y:
+
+            Entity
+                ↓
+            ResourceBalance
+                ↓
+            Resource
+
+        También incluye las instancias cuya localización pertenece
+        a una entidad seleccionada.
+
+        No modifica WorldState.
+        """
+
+        entity_ids = {
+            entity.get("id")
+            for entity in entities
+            if isinstance(entity.get("id"), int)
+        }
+
+        items_by_id = {
+            item.get("id"): item
+            for item in search_result.get("items", [])
+            if isinstance(item.get("id"), int)
+        }
+
+        item_instances_by_id = {
+            instance.get("id"): instance
+            for instance in search_result.get(
+                "item_instances",
+                [],
+            )
+            if isinstance(instance.get("id"), int)
+        }
+
+        resources_by_id = {
+            resource.get("id"): resource
+            for resource in search_result.get(
+                "resources",
+                [],
+            )
+            if isinstance(resource.get("id"), int)
+        }
+
+        resource_balances_by_id = {
+            balance.get("id"): balance
+            for balance in search_result.get(
+                "resource_balances",
+                [],
+            )
+            if isinstance(balance.get("id"), int)
+        }
+
+        # --------------------------------------------------------
+        # ITEM INSTANCES
+        # --------------------------------------------------------
+
+        for instance in world.item_instances.values():
+
+            if not getattr(
+                instance,
+                "active",
+                True,
+            ):
+                continue
+
+            owner_id = getattr(
+                instance,
+                "owner_id",
+                None,
+            )
+
+            location_id = getattr(
+                instance,
+                "location_id",
+                None,
+            )
+
+            if (
+                owner_id not in entity_ids
+                and location_id not in entity_ids
+            ):
+                continue
+
+            instance_id = getattr(
+                instance,
+                "id",
+                None,
+            )
+
+            if instance_id is None:
+                continue
+
+            instance_dict = (
+                self.memory_search_service
+                ._item_instance_to_dict(
+                    instance
+                )
+            )
+
+            item_instances_by_id[
+                instance_id
+            ] = instance_dict
+
+            # Resolver Item padre
+            item_id = getattr(
+                instance,
+                "item_id",
+                None,
+            )
+
+            item = world.items.get(
+                item_id
+            )
+
+            if item is not None:
+                item_id = getattr(
+                    item,
+                    "id",
+                    None,
+                )
+
+                if item_id is not None:
+                    items_by_id[item_id] = (
+                        self.memory_search_service
+                        ._item_to_dict(item)
+                    )
+
+        # --------------------------------------------------------
+        # RESOURCE BALANCES
+        # --------------------------------------------------------
+
+        for balance in world.resource_balances.values():
+
+            owner_id = getattr(
+                balance,
+                "owner_id",
+                None,
+            )
+
+            if owner_id not in entity_ids:
+                continue
+
+            balance_id = getattr(
+                balance,
+                "id",
+                None,
+            )
+
+            if balance_id is None:
+                continue
+
+            balance_dict = (
+                self.memory_search_service
+                ._resource_balance_to_dict(
+                    balance
+                )
+            )
+
+            resource_balances_by_id[
+                balance_id
+            ] = balance_dict
+
+            # Resolver Resource padre
+            resource_id = getattr(
+                balance,
+                "resource_id",
+                None,
+            )
+
+            resource = world.resources.get(
+                resource_id
+            )
+
+            if resource is not None:
+                resource_id = getattr(
+                    resource,
+                    "id",
+                    None,
+                )
+
+                if resource_id is not None:
+                    resources_by_id[
+                        resource_id
+                    ] = (
+                        self.memory_search_service
+                        ._resource_to_dict(
+                            resource
+                        )
+                    )
+
+        # --------------------------------------------------------
+        # RESULTADO
+        # --------------------------------------------------------
+
+        return {
+            "items": list(
+                items_by_id.values()
+            ),
+            "item_instances": list(
+                item_instances_by_id.values()
+            ),
+            "resources": list(
+                resources_by_id.values()
+            ),
+            "resource_balances": list(
+                resource_balances_by_id.values()
+            ),
+        }
 
     # ============================================================
     # RELATIONS
