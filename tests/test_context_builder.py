@@ -467,3 +467,86 @@ def test_context_builder_does_not_modify_entities():
 
     assert before == after
 
+def test_context_builder_strong_relation_has_higher_relevance():
+    builder = ContextBuilder()
+
+    assert (
+        builder._get_relation_relevance("friend")
+        >
+        builder._get_relation_relevance("knows")
+    )
+
+
+def test_context_builder_unknown_relation_uses_default_weight():
+    builder = ContextBuilder()
+
+    assert (
+        builder._get_relation_relevance(
+            "relation_that_does_not_exist"
+        )
+        == builder.DEFAULT_RELATION_RELEVANCE
+    )
+
+
+def test_context_builder_relation_relevance_is_case_insensitive():
+    builder = ContextBuilder()
+
+    assert (
+        builder._get_relation_relevance("FRIEND")
+        ==
+        builder._get_relation_relevance("friend")
+    )
+
+
+def test_context_builder_relation_relevance_propagates():
+    builder = ContextBuilder()
+
+    world = WorldState()
+
+    fungoso = Entity(
+        id=1,
+        name="Fungoso",
+        entity_type="character",
+        description="Aventurero.",
+        active=True,
+    )
+
+    aldric = Entity(
+        id=2,
+        name="Aldric",
+        entity_type="npc",
+        description="Aliado.",
+        active=True,
+    )
+
+    world.entities[1] = fungoso
+    world.entities[2] = aldric
+
+    relation = Relation(
+        id=1,
+        subject_id=1,
+        target_id=2,
+        relation_type="friend",
+        active=True,
+    )
+
+    world.relations[1] = relation
+
+    result = builder._expand_entities(
+        world,
+        [
+            {
+                "id": 1,
+                "name": "Fungoso",
+            }
+        ],
+        max_depth=1,
+    )
+
+    ids = {
+        entity["id"]
+        for entity in result
+    }
+
+    assert 1 in ids
+    assert 2 in ids
