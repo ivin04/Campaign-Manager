@@ -10,6 +10,9 @@ from services.llm_world_extractor import (
     LLMWorldExtractor,
 )
 
+from services.fake_llm_provider import (
+    FakeLLMProvider,
+)
 
 class FakeOperation(WorldOperation):
     pass
