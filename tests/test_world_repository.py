@@ -872,3 +872,57 @@ def test_save_world_is_idempotent(tmp_path):
 
     finally:
         database.DB_PATH = original_db_path
+
+def test_save_world_is_atomic_when_persistence_fails(monkeypatch, tmp_path):
+
+    original_db_path = database.DB_PATH
+    database.DB_PATH = tmp_path / "test_campaign.db"
+
+    try:
+        init_db()
+        repository = WorldRepository()
+
+        entity = Entity(
+            id=1,
+            name="Fungoso",
+            entity_type="character",
+        )
+
+        world = WorldState(
+            entities={
+                1: entity,
+            }
+        )
+
+        # Estado inicial vacío.
+        repository.save_world(WorldState())
+
+        # Forzamos un fallo DESPUÉS de haber empezado a guardar.
+        original_save_items = repository._save_items
+
+        def failing_save_items(conn, world):
+            original_save_items(conn, world)
+            raise RuntimeError("Database failure")
+
+        monkeypatch.setattr(
+            repository,
+            "_save_items",
+            failing_save_items,
+        )
+
+        try:
+            repository.save_world(world)
+        except RuntimeError:
+            pass
+
+        # --------------------------------------------------------
+        # La transacción debe haber hecho rollback.
+        # --------------------------------------------------------
+
+        loaded = repository.load_world()
+
+        assert loaded.entities == {}
+        assert loaded.items == {}
+
+    finally:
+        database.DB_PATH = original_db_path
