@@ -71,6 +71,7 @@ def create_world_service() -> WorldService:
 
 def create_campaign_turn_service(
     world_service: WorldService,
+    memory_search_service: MemorySearchService,
 ) -> CampaignTurnService:
     """
     Construye el pipeline completo de resolución de turnos.
@@ -93,12 +94,26 @@ def create_campaign_turn_service(
           ↓
         operaciones
           ↓
-        WorldApplier
-          ↓
         WorldService
           ↓
         SQLite
     """
+
+    if not isinstance(
+        world_service,
+        WorldService,
+    ):
+        raise TypeError(
+            "world_service must be a WorldService"
+        )
+
+    if not isinstance(
+        memory_search_service,
+        MemorySearchService,
+    ):
+        raise TypeError(
+            "memory_search_service must be a MemorySearchService"
+        )
 
     provider = OllamaProvider()
 
@@ -117,7 +132,7 @@ def create_campaign_turn_service(
         provider=provider,
         operation_parser=operation_parser,
     )
-    
+
     turn_resolution_service = TurnResolutionService(
         dm_service=dm_service,
         extractor=extractor,
@@ -142,7 +157,8 @@ campaign_repository = CampaignRepository()
 memory_search_service = MemorySearchService()
 
 campaign_turn_service = create_campaign_turn_service(
-    world_service
+    world_service=world_service,
+    memory_search_service=memory_search_service,
 )
 
 
