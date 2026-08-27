@@ -1,0 +1,742 @@
+from __future__ import annotations
+
+import pytest
+
+from models.world_state import WorldState
+from services.context_builder import ContextBuilder
+from services.dm_service import (
+    DMService,
+    DMServiceError,
+)
+from services.fake_llm_provider import FakeLLMProvider
+from services.llm_provider import LLMProvider
+
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+
+class RecordingContextBuilder(ContextBuilder):
+    """
+    ContextBuilder mínimo para comprobar que DMService
+    realmente utiliza el servicio de contexto.
+    """
+
+    def __init__(
+        self,
+        context: str = "[ENTIDADES]\n- Fungoso",
+    ) -> None:
+        super().__init__()
+        self.context = context
+        self.calls: list[tuple[WorldState, str]] = []
+
+    def build(
+        self,
+        world: WorldState,
+        query: str,
+    ) -> dict:
+        self.calls.append(
+            (
+                world,
+                query,
+            )
+        )
+
+        return {
+            "query": query,
+            "entities": [],
+            "items": [],
+            "item_instances": [],
+            "resources": [],
+            "resource_balances": [],
+            "relations": [],
+            "events": [],
+            "context": self.context,
+        }
+
+
+class NonStringProvider(LLMProvider):
+    def generate(
+        self,
+        prompt: str,
+    ):
+        return 123
+
+
+class EmptyProvider(LLMProvider):
+    def generate(
+        self,
+        prompt: str,
+    ) -> str:
+        return "   "
+
+
+class FailingProvider(LLMProvider):
+    def generate(
+        self,
+        prompt: str,
+    ) -> str:
+        raise RuntimeError(
+            "boom"
+        )
+
+
+# ============================================================
+# BASIC GENERATION
+# ============================================================
+
+
+def test_generate_returns_provider_response():
+    provider = FakeLLMProvider(
+        response="El viento golpea las ventanas."
+    )
+
+    service = DMService(
+        provider
+    )
+
+    world = WorldState()
+
+    result = service.generate(
+        world,
+        "Miro por la ventana.",
+    )
+
+    assert result == (
+        "El viento golpea las ventanas."
+    )
+
+
+def test_generate_strips_provider_response():
+    provider = FakeLLMProvider(
+        response="  Hay una figura en la niebla.  "
+    )
+
+    service = DMService(
+        provider
+    )
+
+    result = service.generate(
+        WorldState(),
+        "Observo la niebla.",
+    )
+
+    assert result == (
+        "Hay una figura en la niebla."
+    )
+
+
+def test_service_is_callable():
+    provider = FakeLLMProvider(
+        response="La puerta se abre lentamente."
+    )
+
+    service = DMService(
+        provider
+    )
+
+    result = service(
+        WorldState(),
+        "Abro la puerta.",
+    )
+
+    assert result == (
+        "La puerta se abre lentamente."
+    )
+
+
+# ============================================================
+# CONTEXT BUILDER
+# ============================================================
+
+
+def test_generate_uses_context_builder():
+    provider = FakeLLMProvider(
+        response="Respuesta narrativa."
+    )
+
+    context_builder = RecordingContextBuilder(
+        context=(
+            "[ENTIDADES]\n"
+            "- Aldric (npc): viejo mercader"
+        )
+    )
+
+    service = DMService(
+        provider,
+        context_builder,
+    )
+
+    world = WorldState()
+
+    service.generate(
+        world,
+        "Busco a Aldric.",
+    )
+
+    assert len(
+        context_builder.calls
+    ) == 1
+
+    called_world, called_query = (
+        context_builder.calls[0]
+    )
+
+    assert called_world is world
+    assert called_query == (
+        "Busco a Aldric."
+    )
+
+
+def test_context_is_included_in_prompt():
+    provider = FakeLLMProvider(
+        response="Respuesta."
+    )
+
+    context_builder = RecordingContextBuilder(
+        context=(
+            "[ENTIDADES]\n"
+            "- Aldric (npc): mercader y viejo amigo"
+        )
+    )
+
+    service = DMService(
+        provider,
+        context_builder,
+    )
+
+    service.generate(
+        WorldState(),
+        "Busco a Aldric.",
+    )
+
+    prompt = provider.last_prompt
+
+    assert prompt is not None
+
+    assert (
+        "[ENTIDADES]\n"
+        "- Aldric (npc): mercader y viejo amigo"
+        in prompt
+    )
+
+
+def test_player_input_is_included_in_prompt():
+    provider = FakeLLMProvider(
+        response="Respuesta."
+    )
+
+    service = DMService(
+        provider
+    )
+
+    service.generate(
+        WorldState(),
+        "Saco mi espada y avanzo hacia la puerta.",
+    )
+
+    prompt = provider.last_prompt
+
+    assert prompt is not None
+
+    assert (
+        "Saco mi espada y avanzo hacia la puerta."
+        in prompt
+    )
+
+
+# ============================================================
+# PROMPT STRUCTURE
+# ============================================================
+
+
+def test_prompt_contains_system_instructions():
+    provider = FakeLLMProvider(
+        response="Respuesta."
+    )
+
+    service = DMService(
+        provider
+    )
+
+    service.generate(
+        WorldState(),
+        "Observo la habitación.",
+    )
+
+    prompt = provider.last_prompt
+
+    assert prompt is not None
+
+    assert (
+        "Dungeon Master experto"
+        in prompt
+    )
+
+    assert (
+        "D&D 5e"
+        in prompt
+    )
+
+    assert (
+        "No controles las decisiones del jugador."
+        in prompt
+    )
+
+
+def test_prompt_contains_expected_sections():
+    provider = FakeLLMProvider(
+        response="Respuesta."
+    )
+
+    service = DMService(
+        provider
+    )
+
+    service.generate(
+        WorldState(),
+        "Abro el cofre.",
+    )
+
+    prompt = provider.last_prompt
+
+    assert prompt is not None
+
+    assert (
+        "=== CONTEXTO DEL MUNDO ==="
+        in prompt
+    )
+
+    assert (
+        "=== ACCIÓN DEL JUGADOR ==="
+        in prompt
+    )
+
+    assert (
+        "=== RESPUESTA DEL DUNGEON MASTER ==="
+        in prompt
+    )
+
+
+def test_custom_system_prompt_is_used():
+    provider = FakeLLMProvider(
+        response="Respuesta."
+    )
+
+    service = DMService(
+        provider,
+        system_prompt=(
+            "Eres un DM personalizado."
+        ),
+    )
+
+    service.generate(
+        WorldState(),
+        "Hago algo.",
+    )
+
+    prompt = provider.last_prompt
+
+    assert prompt is not None
+
+    assert (
+        "Eres un DM personalizado."
+        in prompt
+    )
+
+    assert (
+        "Dungeon Master experto"
+        not in prompt
+    )
+
+
+# ============================================================
+# EMPTY INPUT
+# ============================================================
+
+
+def test_empty_player_input_returns_empty_response():
+    provider = FakeLLMProvider(
+        response="No debería llamarse."
+    )
+
+    service = DMService(
+        provider
+    )
+
+    result = service.generate(
+        WorldState(),
+        "   ",
+    )
+
+    assert result == ""
+
+    assert provider.call_count == 0
+
+
+def test_empty_player_input_does_not_call_context_builder():
+    provider = FakeLLMProvider(
+        response="No debería llamarse."
+    )
+
+    context_builder = RecordingContextBuilder()
+
+    service = DMService(
+        provider,
+        context_builder,
+    )
+
+    result = service.generate(
+        WorldState(),
+        "",
+    )
+
+    assert result == ""
+
+    assert (
+        context_builder.calls == []
+    )
+
+
+# ============================================================
+# VALIDATION
+# ============================================================
+
+
+def test_world_must_be_world_state():
+    provider = FakeLLMProvider(
+        response="Respuesta."
+    )
+
+    service = DMService(
+        provider
+    )
+
+    with pytest.raises(
+        TypeError,
+        match="world must be a WorldState",
+    ):
+        service.generate(
+            None,
+            "Hola.",
+        )
+
+
+def test_player_input_must_be_string():
+    provider = FakeLLMProvider(
+        response="Respuesta."
+    )
+
+    service = DMService(
+        provider
+    )
+
+    with pytest.raises(
+        TypeError,
+        match="player_input must be a string",
+    ):
+        service.generate(
+            WorldState(),
+            None,
+        )
+
+
+def test_provider_must_be_llm_provider():
+    with pytest.raises(
+        TypeError,
+        match="provider must be an LLMProvider",
+    ):
+        DMService(
+            lambda prompt: "respuesta"
+        )
+
+
+def test_context_builder_must_be_context_builder():
+    provider = FakeLLMProvider(
+        response="Respuesta."
+    )
+
+    with pytest.raises(
+        TypeError,
+        match="context_builder must be a ContextBuilder",
+    ):
+        DMService(
+            provider,
+            object(),
+        )
+
+
+def test_system_prompt_must_be_string():
+    provider = FakeLLMProvider(
+        response="Respuesta."
+    )
+
+    with pytest.raises(
+        TypeError,
+        match="system_prompt must be a string",
+    ):
+        DMService(
+            provider,
+            system_prompt=123,
+        )
+
+
+def test_system_prompt_must_not_be_empty():
+    provider = FakeLLMProvider(
+        response="Respuesta."
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="system_prompt must not be empty",
+    ):
+        DMService(
+            provider,
+            system_prompt="   ",
+        )
+
+
+# ============================================================
+# PROVIDER ERRORS
+# ============================================================
+
+
+def test_provider_error_is_wrapped():
+    provider = FailingProvider()
+
+    service = DMService(
+        provider
+    )
+
+    with pytest.raises(
+        DMServiceError,
+        match="LLM provider failed",
+    ):
+        service.generate(
+            WorldState(),
+            "Intento algo.",
+        )
+
+
+def test_non_string_provider_response_is_rejected():
+    provider = NonStringProvider()
+
+    service = DMService(
+        provider
+    )
+
+    with pytest.raises(
+        DMServiceError,
+        match="non-string response",
+    ):
+        service.generate(
+            WorldState(),
+            "Intento algo.",
+        )
+
+
+def test_empty_provider_response_is_rejected():
+    provider = EmptyProvider()
+
+    service = DMService(
+        provider
+    )
+
+    with pytest.raises(
+        DMServiceError,
+        match="empty response",
+    ):
+        service.generate(
+            WorldState(),
+            "Intento algo.",
+        )
+
+
+# ============================================================
+# CONTEXT ERRORS
+# ============================================================
+
+
+def test_invalid_context_from_context_builder_is_rejected():
+    class InvalidContextBuilder(
+        ContextBuilder
+    ):
+        def build(
+            self,
+            world,
+            query,
+        ):
+            return {
+                "context": None,
+            }
+
+    provider = FakeLLMProvider(
+        response="Respuesta."
+    )
+
+    service = DMService(
+        provider,
+        InvalidContextBuilder(),
+    )
+
+    with pytest.raises(
+        DMServiceError,
+        match="invalid context",
+    ):
+        service.generate(
+            WorldState(),
+            "Algo.",
+        )
+
+
+# ============================================================
+# WORLD IMMUTABILITY
+# ============================================================
+
+
+def test_generate_does_not_modify_world():
+    provider = FakeLLMProvider(
+        response="La puerta se abre."
+    )
+
+    context_builder = RecordingContextBuilder()
+
+    service = DMService(
+        provider,
+        context_builder,
+    )
+
+    world = WorldState()
+
+    entities_before = dict(
+        world.entities
+    )
+
+    items_before = dict(
+        world.items
+    )
+
+    relations_before = dict(
+        world.relations
+    )
+
+    events_before = dict(
+        world.events
+    )
+
+    service.generate(
+        world,
+        "Abro la puerta.",
+    )
+
+    assert world.entities == (
+        entities_before
+    )
+
+    assert world.items == (
+        items_before
+    )
+
+    assert world.relations == (
+        relations_before
+    )
+
+    assert world.events == (
+        events_before
+    )
+
+
+# ============================================================
+# CALL COUNT / PROVIDER CONTRACT
+# ============================================================
+
+
+def test_generate_calls_provider_exactly_once():
+    provider = FakeLLMProvider(
+        response="Respuesta."
+    )
+
+    service = DMService(
+        provider
+    )
+
+    service.generate(
+        WorldState(),
+        "Exploro.",
+    )
+
+    assert provider.call_count == 1
+
+
+def test_each_generation_creates_one_provider_call():
+    provider = FakeLLMProvider(
+        response="Respuesta."
+    )
+
+    service = DMService(
+        provider
+    )
+
+    world = WorldState()
+
+    service.generate(
+        world,
+        "Primera acción.",
+    )
+
+    service.generate(
+        world,
+        "Segunda acción.",
+    )
+
+    assert provider.call_count == 2
+
+
+# ============================================================
+# END-TO-END WITH FAKE PROVIDER
+# ============================================================
+
+
+def test_end_to_end_fake_provider():
+    provider = FakeLLMProvider(
+        response=(
+            "La lluvia golpea el tejado mientras "
+            "una silueta aparece al otro lado de la calle."
+        )
+    )
+
+    context_builder = RecordingContextBuilder(
+        context=(
+            "[ENTIDADES]\n"
+            "- Vorder's Hold (location): "
+            "puesto minero bajo la lluvia"
+        )
+    )
+
+    service = DMService(
+        provider,
+        context_builder,
+    )
+
+    result = service.generate(
+        WorldState(),
+        "Salgo a la calle.",
+    )
+
+    assert result == (
+        "La lluvia golpea el tejado mientras "
+        "una silueta aparece al otro lado de la calle."
+    )
+
+    assert provider.call_count == 1
+
+    assert (
+        "Vorder's Hold"
+        in provider.last_prompt
+    )
+
+    assert (
+        "Salgo a la calle."
+        in provider.last_prompt
+    )
