@@ -1071,3 +1071,44 @@ def test_context_builder_strong_relation_beats_weak_relation():
 
     assert relevance[1] == 1.0
     assert relevance[2] > relevance[3]
+
+def test_context_builder_builds_structured_context_data():
+    builder = ContextBuilder()
+
+    result = builder._build_context_data(
+        build_world(),
+        "Fungoso",
+    )
+
+    assert result["query"] == "Fungoso"
+
+    assert "context" not in result
+
+    names = {
+        entity["name"]
+        for entity in result["entities"]
+    }
+
+    assert "Fungoso" in names
+    assert "Goblin" in names
+
+    assert len(result["relations"]) == 1
+    assert len(result["events"]) == 1
+
+def test_context_builder_structured_data_is_not_limited_by_text_budget():
+    builder = ContextBuilder(
+        max_context_chars=1,
+    )
+
+    result = builder._build_context_data(
+        build_world(),
+        "Fungoso",
+    )
+
+    names = {
+        entity["name"]
+        for entity in result["entities"]
+    }
+
+    assert "Fungoso" in names
+    assert "Goblin" in names

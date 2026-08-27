@@ -7,20 +7,27 @@ from services.memory_search_service import MemorySearchService
 
 class ContextBuilder:
     """
-    Construye contexto narrativo relacionado para el LLM.
+    Construye el contexto narrativo para el LLM.
 
-    MemorySearchService se encarga de encontrar coincidencias.
-    ContextBuilder amplía esas coincidencias siguiendo relaciones
-    existentes en el WorldState.
+    El proceso se divide en dos fases:
+
+    1. Reunir y enriquecer información estructurada relevante.
+    2. Convertir esa información en contexto textual limitado
+       por un presupuesto.
+
+    MemorySearchService encuentra candidatos.
+    ContextBuilder decide cómo ampliar, priorizar y representar
+    esos candidatos dentro del contexto.
 
     Responsabilidades:
-
     - Identificar entidades principales.
     - Calcular relevancia.
     - Incluir entidades relacionadas.
     - Incluir relaciones conectadas.
     - Incluir eventos relacionados.
+    - Resolver objetos padre necesarios para interpretar resultados.
     - Aplicar un presupuesto máximo de contexto.
+    - Construir la representación textual para el LLM.
     - Excluir entidades inactivas.
     - Excluir relaciones inactivas.
     - Excluir eventos secretos.
@@ -133,11 +140,11 @@ class ContextBuilder:
         query: str,
     ) -> dict[str, Any]:
         """
-        Construye contexto relacionado a partir de una consulta.
+        Construye el contexto completo para el LLM.
 
-        El resultado mantiene las categorías públicas existentes,
-        pero las entidades se ordenan por relevancia y el texto
-        final respeta el presupuesto máximo configurado.
+        Primero reúne los datos estructurados relevantes y después
+        genera una representación textual respetando el presupuesto
+        configurado.
         """
 
         self._validate_world(world)
@@ -147,44 +154,10 @@ class ContextBuilder:
         if not normalized_query:
             return self._empty_result()
 
-        search_result = self.memory_search_service.search(
+        result = self._build_context_data(
             world,
             normalized_query,
         )
-
-        search_result = self._resolve_parent_objects(
-            world,
-            search_result,
-        )
-
-        entities = self._expand_entities(
-            world,
-            search_result["entities"],
-            max_depth=self.DEFAULT_MAX_DEPTH,
-        )
-
-        relations = self._related_relations(
-            world,
-            entities,
-        )
-
-        events = self._related_events(
-            world,
-            entities,
-        )
-
-        result = {
-            "query": normalized_query,
-            "entities": entities,
-            "items": search_result["items"],
-            "item_instances": search_result["item_instances"],
-            "resources": search_result["resources"],
-            "resource_balances": search_result[
-                "resource_balances"
-            ],
-            "relations": relations,
-            "events": events,
-        }
 
         result["context"] = self._build_text_context(
             result
@@ -1654,3 +1627,57 @@ class ContextBuilder:
             category,
             f"[{category.upper()}]",
         )
+
+    def _build_context_data(
+        self,
+        world: WorldState,
+        normalized_query: str,
+    ) -> dict[str, Any]:
+        """
+        Construye los datos estructurados relevantes para una consulta.
+
+        Esta fase no genera texto para el LLM ni aplica el presupuesto
+        de contexto. Su responsabilidad es reunir y enriquecer la
+        información relevante del WorldState.
+        """
+
+        search_result = self.memory_search_service.search(
+            world,
+            normalized_query,
+        )
+
+        search_result = self._resolve_parent_objects(
+            world,
+            search_result,
+        )
+
+        entities = self._expand_entities(
+            world,
+            search_result["entities"],
+            max_depth=self.DEFAULT_MAX_DEPTH,
+        )
+
+        relations = self._related_relations(
+            world,
+            entities,
+        )
+
+        events = self._related_events(
+            world,
+            entities,
+        )
+
+        return {
+            "query": normalized_query,
+            "entities": entities,
+            "items": search_result["items"],
+            "item_instances": search_result[
+                "item_instances"
+            ],
+            "resources": search_result["resources"],
+            "resource_balances": search_result[
+                "resource_balances"
+            ],
+            "relations": relations,
+            "events": events,
+        }
