@@ -281,34 +281,7 @@ class TurnResolutionService:
             ),
             context=context,
         )
-
-    def run_turn(
-        self,
-        world: WorldState,
-        player_input: str,
-    ) -> TurnResolutionResult:
-        """
-        Alias semántico para resolve_turn.
-        """
-
-        return self.resolve_turn(
-            world,
-            player_input,
-        )
-
-    def __call__(
-        self,
-        world: WorldState,
-        player_input: str,
-    ) -> TurnResolutionResult:
-        """
-        Permite utilizar el servicio como callable.
-        """
-
-        return self.resolve_turn(
-            world,
-            player_input,
-        )
+    
 
     # ============================================================
     # VALIDATION

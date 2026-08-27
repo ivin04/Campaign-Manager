@@ -560,68 +560,6 @@ def test_turn_resolution_happens_before_persistence():
 
 
 # ============================================================
-# ALIASES
-# ============================================================
-
-
-def test_run_turn_is_alias_for_play_turn():
-
-    result = make_result()
-
-    service, resolver, _ = make_service(
-        result=result
-    )
-
-    returned = service.run_turn(
-        "Exploro."
-    )
-
-    assert returned is result
-
-    assert resolver.calls[0][1] == (
-        "Exploro."
-    )
-
-
-def test_resolve_turn_is_alias_for_play_turn():
-
-    result = make_result()
-
-    service, resolver, _ = make_service(
-        result=result
-    )
-
-    returned = service.resolve_turn(
-        "Exploro."
-    )
-
-    assert returned is result
-
-    assert resolver.calls[0][1] == (
-        "Exploro."
-    )
-
-
-def test_service_is_callable():
-
-    result = make_result()
-
-    service, resolver, _ = make_service(
-        result=result
-    )
-
-    returned = service(
-        "Exploro."
-    )
-
-    assert returned is result
-
-    assert resolver.calls[0][1] == (
-        "Exploro."
-    )
-
-
-# ============================================================
 # LOAD
 # ============================================================
 

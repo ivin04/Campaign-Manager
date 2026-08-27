@@ -144,8 +144,6 @@ campaign_repository = CampaignRepository()
 
 memory_search_service = MemorySearchService()
 
-operation_parser = OperationParser()
-
 campaign_turn_service = create_campaign_turn_service(
     world_service
 )

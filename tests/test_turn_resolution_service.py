@@ -634,35 +634,6 @@ def test_turn_resolution_order():
 
 
 # ============================================================
-# CALLABLE / ALIASES
-# ============================================================
-
-
-def test_run_turn_is_alias_for_resolve_turn():
-
-    service, *_ = make_service()
-
-    result = service.run_turn(
-        make_world(),
-        "Exploro.",
-    )
-
-    assert result.narrative
-
-
-def test_service_is_callable():
-
-    service, *_ = make_service()
-
-    result = service(
-        make_world(),
-        "Exploro.",
-    )
-
-    assert result.narrative
-
-
-# ============================================================
 # WORLD STATE
 # ============================================================
 

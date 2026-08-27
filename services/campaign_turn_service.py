@@ -180,43 +180,6 @@ class CampaignTurnService:
 
         return result
 
-    def run_turn(
-        self,
-        player_input: str,
-    ) -> TurnResolutionResult:
-        """
-        Alias semántico de play_turn().
-        """
-
-        return self.play_turn(
-            player_input
-        )
-
-    def resolve_turn(
-        self,
-        player_input: str,
-    ) -> TurnResolutionResult:
-        """
-        Alias de compatibilidad.
-
-        La API pública recomendada es play_turn().
-        """
-
-        return self.play_turn(
-            player_input
-        )
-
-    def __call__(
-        self,
-        player_input: str,
-    ) -> TurnResolutionResult:
-        """
-        Permite utilizar el servicio como callable.
-        """
-
-        return self.play_turn(
-            player_input
-        )
 
     # ============================================================
     # CAMPAIGN STATE
