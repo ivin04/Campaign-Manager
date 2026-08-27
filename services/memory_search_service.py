@@ -8,12 +8,11 @@ from models.world_state import WorldState
 
 class MemorySearchService:
     """
-    Servicio único de memoria del Campaign Manager.
+    Servicio de acceso estructurado a la memoria del Campaign Manager.
 
     Responsabilidades:
-    - Buscar información relevante dentro del WorldState.
-    - Generar contexto textual para SillyTavern.
-    - Exportar memoria pública.
+    - Buscar información candidata dentro del WorldState.
+    - Exportar una representación pública estructurada.
     - No modificar el WorldState.
     - No acceder directamente a SQLite.
     - No conocer tablas legacy.
@@ -21,6 +20,9 @@ class MemorySearchService:
     - No exponer eventos secretos.
 
     WorldState es la única fuente de verdad.
+
+    La selección, priorización y construcción del contexto textual
+    para el LLM pertenecen a ContextBuilder.
     """
 
     # ============================================================
@@ -33,8 +35,9 @@ class MemorySearchService:
         query: str,
     ) -> dict[str, list[dict[str, Any]]]:
         """
-        Busca información relevante dentro del WorldState.
+        Busca candidatos que coinciden con una consulta dentro del WorldState.
 
+        No decide la prioridad final ni construye contexto para el LLM.
         La respuesta utiliza exclusivamente las categorías actuales
         del WorldState.
         """
@@ -290,206 +293,6 @@ class MemorySearchService:
                 return True
 
         return False
-
-    @staticmethod
-    def _append_entities(
-        sections: list[str],
-        entities: list[dict[str, Any]],
-    ) -> None:
-        if not entities:
-            return
-
-        sections.append("[ENTITIES]")
-
-        for entity in entities:
-            name = entity.get("name", "Sin nombre")
-            entity_type = entity.get("entity_type", "unknown")
-            description = entity.get("description", "")
-            notes = entity.get("notes", "")
-
-            line = f"- {name} ({entity_type})"
-
-            if description:
-                line += f": {description}"
-
-            if notes:
-                line += f" Notas: {notes}"
-
-            sections.append(line)
-
-    @staticmethod
-    def _append_items(
-        sections: list[str],
-        items: list[dict[str, Any]],
-    ) -> None:
-        if not items:
-            return
-
-        sections.append("[ITEMS]")
-
-        for item in items:
-            name = item.get("name", "Sin nombre")
-            description = item.get("description", "")
-            significance = item.get("significance", "")
-            notes = item.get("notes", "")
-
-            line = f"- {name}"
-
-            if description:
-                line += f": {description}"
-
-            if significance:
-                line += f" Importancia: {significance}"
-
-            if notes:
-                line += f" Notas: {notes}"
-
-            sections.append(line)
-
-    @staticmethod
-    def _append_item_instances(
-        sections: list[str],
-        instances: list[dict[str, Any]],
-    ) -> None:
-        if not instances:
-            return
-
-        sections.append("[ITEM_INSTANCES]")
-
-        for instance in instances:
-            instance_id = instance.get("id", "unknown")
-            item_id = instance.get("item_id")
-            owner_id = instance.get("owner_id")
-            location_id = instance.get("location_id")
-
-            line = f"- Instancia {instance_id}"
-
-            if item_id is not None:
-                line += f" item={item_id}"
-
-            if owner_id is not None:
-                line += f" propietario={owner_id}"
-
-            if location_id is not None:
-                line += f" ubicación={location_id}"
-
-            sections.append(line)
-
-    @staticmethod
-    def _append_resources(
-        sections: list[str],
-        resources: list[dict[str, Any]],
-    ) -> None:
-        if not resources:
-            return
-
-        sections.append("[RESOURCES]")
-
-        for resource in resources:
-            name = resource.get("name", "Sin nombre")
-            resource_type = resource.get("resource_type", "")
-            unit = resource.get("unit", "")
-            notes = resource.get("notes", "")
-
-            line = f"- {name}"
-
-            if resource_type:
-                line += f" ({resource_type})"
-
-            if unit:
-                line += f" Unidad: {unit}"
-
-            if notes:
-                line += f" Notas: {notes}"
-
-            sections.append(line)
-
-    @staticmethod
-    def _append_resource_balances(
-        sections: list[str],
-        balances: list[dict[str, Any]],
-    ) -> None:
-        if not balances:
-            return
-
-        sections.append("[RESOURCE_BALANCES]")
-
-        for balance in balances:
-            balance_id = balance.get("id", "unknown")
-            resource_id = balance.get("resource_id")
-            owner_id = balance.get("owner_id")
-            amount = balance.get("amount")
-
-            line = f"- Balance {balance_id}"
-
-            if resource_id is not None:
-                line += f" recurso={resource_id}"
-
-            if owner_id is not None:
-                line += f" propietario={owner_id}"
-
-            if amount is not None:
-                line += f" cantidad={amount}"
-
-            sections.append(line)
-
-    @staticmethod
-    def _append_relations(
-        sections: list[str],
-        relations: list[dict[str, Any]],
-    ) -> None:
-        if not relations:
-            return
-
-        sections.append("[RELATIONS]")
-
-        for relation in relations:
-            relation_type = relation.get(
-                "relation_type",
-                "unknown",
-            )
-
-            subject_id = relation.get("subject_id")
-            target_id = relation.get("target_id")
-
-            line = f"- {relation_type}"
-
-            if subject_id is not None:
-                line += f": {subject_id}"
-
-            if target_id is not None:
-                line += f" -> {target_id}"
-
-            description = relation.get("description")
-            if description:
-                line += f" {description}"
-
-            sections.append(line)
-
-    @staticmethod
-    def _append_events(
-        sections: list[str],
-        events: list[dict[str, Any]],
-    ) -> None:
-        if not events:
-            return
-
-        sections.append("[EVENTS]")
-
-        for event in events:
-            title = event.get("title", "Sin título")
-            description = event.get("description", "")
-            consequences = event.get("consequences", "")
-
-            line = f"- {title}"
-
-            if description:
-                line += f": {description}"
-
-            if consequences:
-                line += f" Consecuencias: {consequences}"
-
-            sections.append(line)
 
     # ============================================================
     # SERIALIZATION
