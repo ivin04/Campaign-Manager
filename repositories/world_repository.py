@@ -1,4 +1,5 @@
 import json
+import copy
 
 from database import get_conn, rows
 from models.world_state import WorldState
@@ -225,19 +226,21 @@ class WorldRepository:
 
     def save_world(self, world: WorldState):
 
+        world_to_save = copy.deepcopy(world)
+
         with get_conn() as conn:
 
-            self._delete_missing_records(conn, world)
+            self._normalize_world_dependencies(world_to_save)
 
-            self._normalize_world_dependencies(world)
+            self._delete_missing_records(conn, world_to_save)
 
-            self._save_entities(conn, world)
-            self._save_items(conn, world)
-            self._save_item_instances(conn, world)
-            self._save_resources(conn, world)
-            self._save_resource_balances(conn, world)
-            self._save_relations(conn, world)
-            self._save_events(conn, world)
+            self._save_entities(conn, world_to_save)
+            self._save_items(conn, world_to_save)
+            self._save_item_instances(conn, world_to_save)
+            self._save_resources(conn, world_to_save)
+            self._save_resource_balances(conn, world_to_save)
+            self._save_relations(conn, world_to_save)
+            self._save_events(conn, world_to_save)
 
     # ============================================================
     # SAVE ENTITIES

@@ -447,9 +447,8 @@ def test_world_repository_can_delete_entity_with_dependencies(tmp_path):
 
         assert 1 not in loaded.entities
 
-        # La instancia sigue existiendo, pero ya no tiene propietario.
-        assert 1 in loaded.item_instances
-        assert loaded.item_instances[1].owner_id is None
+        # La instancia queda huérfana y no debe persistirse.
+        assert 1 not in loaded.item_instances
 
         # El balance pertenecía a Fungoso.
         assert 1 not in loaded.resource_balances
@@ -647,9 +646,13 @@ def test_save_world_normalizes_dependencies_before_persisting(tmp_path):
 
         repository.save_world(world)
 
-        # La normalización debe haber eliminado
-        # la instancia antes de persistir.
-        assert 1 not in world.item_instances
+        # El WorldState original NO debe ser mutado por el repository.
+        assert 1 in world.item_instances
+
+        # Pero la instancia huérfana NO debe haberse persistido.
+        loaded = repository.load_world()
+
+        assert 1 not in loaded.item_instances
 
         loaded = repository.load_world()
 
@@ -704,7 +707,13 @@ def test_save_world_removes_balance_when_resource_is_missing(tmp_path):
 
         repository.save_world(world)
 
-        assert 1 not in world.resource_balances
+        # El WorldState original no debe ser mutado.
+        assert 1 in world.resource_balances
+
+        # Pero el balance huérfano no debe persistirse.
+        loaded = repository.load_world()
+
+        assert 1 not in loaded.resource_balances
 
         loaded = repository.load_world()
 
@@ -763,7 +772,13 @@ def test_save_world_removes_relation_when_entity_is_missing(tmp_path):
 
         repository.save_world(world)
 
-        assert "relation-001" not in world.relations
+        # El WorldState original no debe ser mutado.
+        assert "relation-001" in world.relations
+
+        # Pero la relación huérfana no debe persistirse.
+        loaded = repository.load_world()
+
+        assert "relation-001" not in loaded.relations
 
         loaded = repository.load_world()
 
@@ -1067,3 +1082,165 @@ def test_save_world_removes_missing_relations_and_events(tmp_path):
 
     finally:
         database.DB_PATH = original_db_path
+
+def test_save_world_rolls_back_deletes_when_later_save_fails(monkeypatch):
+    from database import get_conn
+    from repositories.world_repository import WorldRepository
+    from models.world_state import WorldState
+    from models.entity import Entity
+
+    repository = WorldRepository()
+
+    # Estado inicial persistido.
+    original_world = WorldState()
+
+    original_world.entities[1] = Entity(
+        id=1,
+        name="Entity To Be Deleted",
+        entity_type="character",
+        description="original",
+        notes="",
+        active=True,
+    )
+
+    original_world.entities[2] = Entity(
+        id=2,
+        name="Entity To Keep",
+        entity_type="character",
+        description="original",
+        notes="",
+        active=True,
+    )
+
+    repository.save_world(original_world)
+
+    # Nuevo estado:
+    # - entity 1 desaparece → el repository tendrá que hacer DELETE.
+    # - entity 2 permanece.
+    new_world = WorldState()
+
+    new_world.entities[2] = Entity(
+        id=2,
+        name="Entity To Keep",
+        entity_type="character",
+        description="modified",
+        notes="",
+        active=True,
+    )
+
+    # Provocamos un fallo después de que save_world()
+    # haya empezado a modificar la base de datos.
+    def failing_save_items(conn, world):
+        raise RuntimeError("forced persistence failure")
+
+    monkeypatch.setattr(
+        repository,
+        "_save_items",
+        failing_save_items,
+    )
+
+    try:
+        repository.save_world(new_world)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError(
+            "save_world() should have raised RuntimeError"
+        )
+
+    # La transacción debe haber hecho rollback.
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, name, description "
+            "FROM entities "
+            "ORDER BY id"
+        ).fetchall()
+
+    assert len(rows) == 2
+
+    assert rows[0]["id"] == 1
+    assert rows[0]["name"] == "Entity To Be Deleted"
+    assert rows[0]["description"] == "original"
+
+    assert rows[1]["id"] == 2
+    assert rows[1]["name"] == "Entity To Keep"
+    assert rows[1]["description"] == "original"
+
+def test_save_world_does_not_mutate_world_when_persistence_fails(monkeypatch):
+    from repositories.world_repository import WorldRepository
+    from models.world_state import WorldState
+    from models.entity import Entity
+    from models.relation import Relation
+
+    repository = WorldRepository()
+
+    world = WorldState()
+
+    world.entities[1] = Entity(
+        id=1,
+        name="Entity To Keep",
+        entity_type="character",
+        description="original",
+        notes="",
+        active=True,
+    )
+
+    world.relations["relation-1"] = Relation(
+        id="relation-1",
+        subject_id=1,
+        target_id=999,
+        relation_type="enemy_of",
+        metadata={},
+    )
+
+    original_relations = dict(world.relations)
+
+    def failing_save_events(conn, world_to_save):
+        raise RuntimeError("forced persistence failure")
+
+    monkeypatch.setattr(
+        repository,
+        "_save_events",
+        failing_save_events,
+    )
+
+    try:
+        repository.save_world(world)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError(
+            "save_world() should have raised RuntimeError"
+        )
+
+    assert world.relations == original_relations
+    assert "relation-1" in world.relations
+
+def test_next_entity_id_does_not_reuse_deleted_ids():
+    from models.world_state import WorldState
+    from models.entity import Entity
+    from services.world_applier import WorldApplier
+
+    world = WorldState(
+        entities={
+            1: Entity(
+                id=1,
+                name="One",
+                entity_type="character",
+            ),
+            2: Entity(
+                id=2,
+                name="Two",
+                entity_type="character",
+            ),
+            3: Entity(
+                id=3,
+                name="Three",
+                entity_type="character",
+            ),
+        }
+    )
+
+    del world.entities[3]
+
+    assert WorldApplier._next_entity_id(world) == 3
