@@ -326,3 +326,115 @@ def test_export_returns_world_state_categories(clean_world):
     }
 
     assert data["entities"][0]["name"] == "Fungoso"
+
+def test_export_does_not_expose_inactive_entity(
+    clean_world,
+):
+    clean_world.entities[1] = Entity(
+        id=1,
+        name="Fungoso",
+        entity_type="character",
+        description="Activo.",
+        notes="",
+        active=True,
+    )
+
+    clean_world.entities[2] = Entity(
+        id=2,
+        name="Goblin olvidado",
+        entity_type="character",
+        description="Inactivo.",
+        notes="",
+        active=False,
+    )
+
+    response = client.get("/export")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    names = {
+        entity["name"]
+        for entity in data["entities"]
+    }
+
+    assert names == {
+        "Fungoso",
+    }
+
+def test_export_does_not_expose_secret_events(
+    clean_world,
+):
+    clean_world.events["public-001"] = Event(
+        id="public-001",
+        event_type="discovery",
+        title="La mina",
+        description="Se descubre una mina.",
+        consequences="Nueva zona disponible.",
+        session_id=1,
+        secret=False,
+        metadata={},
+    )
+
+    clean_world.events["secret-001"] = Event(
+        id="secret-001",
+        event_type="secret",
+        title="La conspiración",
+        description="Un secreto importante.",
+        consequences="El jugador no lo sabe.",
+        session_id=1,
+        secret=True,
+        metadata={},
+    )
+
+    response = client.get("/export")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    event_ids = {
+        event["id"]
+        for event in data["events"]
+    }
+
+    assert event_ids == {
+        "public-001",
+    }
+
+def test_export_does_not_expose_inactive_relations(
+    clean_world,
+):
+    clean_world.relations["active-001"] = Relation(
+        id="active-001",
+        subject_id=1,
+        relation_type="ally_of",
+        target_id=2,
+        metadata={},
+        active=True,
+    )
+
+    clean_world.relations["inactive-001"] = Relation(
+        id="inactive-001",
+        subject_id=1,
+        relation_type="enemy_of",
+        target_id=3,
+        metadata={},
+        active=False,
+    )
+
+    response = client.get("/export")
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    relation_ids = {
+        relation["id"]
+        for relation in data["relations"]
+    }
+
+    assert relation_ids == {
+        "active-001",
+    }

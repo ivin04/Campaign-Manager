@@ -1,5 +1,3 @@
-from dataclasses import asdict
-
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -370,50 +368,16 @@ def get_world():
 @app.get("/export")
 def export_memory():
     """
-    Exporta el estado actual de la campaña.
+    Exporta la representación pública actual de la campaña.
 
-    WorldState es la única fuente de verdad.
+    WorldState es la fuente de verdad y MemorySearchService
+    es responsable de aplicar las reglas de visibilidad y
+    construir la representación estructurada exportable.
     """
 
     world = world_service.get_world()
 
-    return {
-        "entities": [
-            asdict(entity)
-            for entity
-            in world.entities.values()
-        ],
-        "items": [
-            asdict(item)
-            for item
-            in world.items.values()
-        ],
-        "item_instances": [
-            asdict(item_instance)
-            for item_instance
-            in world.item_instances.values()
-        ],
-        "resources": [
-            asdict(resource)
-            for resource
-            in world.resources.values()
-        ],
-        "resource_balances": [
-            asdict(balance)
-            for balance
-            in world.resource_balances.values()
-        ],
-        "relations": [
-            asdict(relation)
-            for relation
-            in world.relations.values()
-        ],
-        "events": [
-            asdict(event)
-            for event
-            in world.events.values()
-        ],
-    }
+    return memory_search_service.export(world)
 
 
 # ============================================================
