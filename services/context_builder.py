@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from models.world_state import WorldState
+from models.turn_record import TurnRecord
 from services.memory_search_service import MemorySearchService
-from services.world_serializer import WorldSerializer
 from services.context_ranker import ContextRanker
 from services.context_expander import ContextExpander
 
@@ -120,6 +120,7 @@ class ContextBuilder:
         self,
         world: WorldState,
         query: str,
+        recent_turns: list[TurnRecord] | None = None,
     ) -> dict[str, Any]:
         """
         Construye el contexto completo para el LLM.
@@ -133,6 +134,10 @@ class ContextBuilder:
 
         normalized_query = self._validate_query(query)
 
+        normalized_recent_turns = self._validate_recent_turns(
+            recent_turns
+        )
+
         if not normalized_query:
             return self._empty_result()
 
@@ -140,6 +145,8 @@ class ContextBuilder:
             world,
             normalized_query,
         )
+
+        result["recent_turns"] = normalized_recent_turns
 
         result["context"] = self._build_text_context(
             result
@@ -154,6 +161,33 @@ class ContextBuilder:
     # ============================================================
     # VALIDATION
     # ============================================================
+
+    @staticmethod
+    def _validate_recent_turns(
+        recent_turns: list[TurnRecord] | None,
+    ) -> list[TurnRecord]:
+        if recent_turns is None:
+            return []
+
+        if not isinstance(
+            recent_turns,
+            list,
+        ):
+            raise TypeError(
+                "recent_turns must be a list or None"
+            )
+
+        for turn in recent_turns:
+            if not isinstance(
+                turn,
+                TurnRecord,
+            ):
+                raise TypeError(
+                    "recent_turns must contain only TurnRecord objects"
+                )
+
+        return list(recent_turns)
+
 
     @staticmethod
     def _validate_world(
@@ -245,6 +279,21 @@ class ContextBuilder:
         )
 
         if not candidates:
+            if history_text:
+                return history_text
+
+            return "Sin información relevante."
+
+        recent_turns = result.get(
+            "recent_turns",
+            [],
+        )
+
+        history_text = self._build_recent_turns_context(
+            recent_turns
+        )
+
+        if not candidates:
             return "Sin información relevante."
 
         candidates.sort(
@@ -309,9 +358,17 @@ class ContextBuilder:
             )
         )
 
-        return self._render_selected_candidates(
+        rendered_context = self._render_selected_candidates(
             selected
         )
+
+        if history_text:
+            return (
+                f"{history_text}\n\n"
+                f"{rendered_context}"
+            )
+
+        return rendered_context
 
     # ============================================================
     # CONTEXT CANDIDATES
@@ -915,3 +972,36 @@ class ContextBuilder:
                 "_depth",
                 None,
             )
+
+    @staticmethod
+    def _build_recent_turns_context(
+        recent_turns: list[TurnRecord],
+    ) -> str:
+        if not recent_turns:
+            return ""
+
+        lines = [
+            "=== HISTORIAL RECIENTE ==="
+        ]
+
+        for turn in recent_turns:
+            player_input = turn.player_input.strip()
+            narrative = turn.narrative.strip()
+
+            if not player_input and not narrative:
+                continue
+
+            if player_input:
+                lines.append(
+                    f"Jugador: {player_input}"
+                )
+
+            if narrative:
+                lines.append(
+                    f"DM: {narrative}"
+                )
+
+        if len(lines) == 1:
+            return ""
+
+        return "\n".join(lines)

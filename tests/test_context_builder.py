@@ -8,6 +8,7 @@ from models.item import Item, ItemInstance
 from models.relation import Relation
 from models.resource import Resource, ResourceBalance
 from models.world_state import WorldState
+from models.turn_record import TurnRecord
 from services.context_builder import ContextBuilder
 from services.context_ranker import ContextRanker
 from services.memory_search_service import MemorySearchService
@@ -862,4 +863,69 @@ def test_context_builder_rejects_invalid_context_ranker():
         ContextBuilder(
             memory_search_service=MemorySearchService(),
             ranker=object(),
+        )
+
+def test_context_builder_includes_recent_turns(
+    empty_world,
+):
+    builder = ContextBuilder()
+
+    recent_turns = [
+        TurnRecord(
+            id=1,
+            session_id=1,
+            player_input="Entro en la taberna.",
+            narrative="La taberna está casi vacía.",
+        ),
+        TurnRecord(
+            id=2,
+            session_id=1,
+            player_input="Pregunto por el posadero.",
+            narrative="El posadero te observa con desconfianza.",
+        ),
+    ]
+
+    result = builder.build(
+        empty_world,
+        "posadero",
+        recent_turns=recent_turns,
+    )
+
+    assert "HISTORIAL RECIENTE" in result["context"]
+    assert "Entro en la taberna." in result["context"]
+    assert "La taberna está casi vacía." in result["context"]
+    assert "Pregunto por el posadero." in result["context"]
+    assert "El posadero te observa con desconfianza." in result["context"]
+
+def test_context_builder_accepts_no_recent_turns(
+    empty_world,
+):
+    builder = ContextBuilder()
+
+    result = builder.build(
+        empty_world,
+        "taberna",
+    )
+
+    assert "HISTORIAL RECIENTE" not in result["context"]
+
+def test_context_builder_rejects_invalid_recent_turns(
+    empty_world,
+):
+    builder = ContextBuilder()
+
+    try:
+        builder.build(
+            empty_world,
+            "taberna",
+            recent_turns=["invalid"],
+        )
+    except TypeError as exc:
+        assert str(exc) == (
+            "recent_turns must contain only "
+            "TurnRecord objects"
+        )
+    else:
+        raise AssertionError(
+            "Expected TypeError"
         )

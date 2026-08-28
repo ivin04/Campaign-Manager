@@ -120,3 +120,146 @@ def test_list_turns_filters_by_session(
     assert turns[0].player_input == (
         "Sesión uno"
     )
+
+def test_list_recent_turns_returns_latest_turns_in_chronological_order(
+    isolated_database,
+):
+    repository = TurnRepository()
+
+    for index in range(1, 6):
+        repository.save_turn(
+            TurnRecord(
+                player_input=f"Acción {index}",
+                narrative=f"Narrativa {index}",
+            )
+        )
+
+    turns = repository.list_recent_turns(
+        limit=3,
+    )
+
+    assert len(turns) == 3
+
+    assert [
+        turn.player_input
+        for turn in turns
+    ] == [
+        "Acción 3",
+        "Acción 4",
+        "Acción 5",
+    ]
+
+
+def test_list_recent_turns_filters_by_session(
+    isolated_database,
+):
+    from repositories.campaign_repository import CampaignRepository
+
+    repository = TurnRepository()
+    campaign_repository = CampaignRepository()
+
+    session_one = campaign_repository.create_session(
+        number=1,
+        title="Session One",
+        summary="",
+        start_location="",
+        end_location="",
+        notes="",
+    )
+
+    session_two = campaign_repository.create_session(
+        number=2,
+        title="Session Two",
+        summary="",
+        start_location="",
+        end_location="",
+        notes="",
+    )
+
+    repository.save_turn(
+        TurnRecord(
+            session_id=session_one["id"],
+            player_input="Uno",
+            narrative="Narrativa uno",
+        )
+    )
+
+    repository.save_turn(
+        TurnRecord(
+            session_id=session_two["id"],
+            player_input="Dos",
+            narrative="Narrativa dos",
+        )
+    )
+
+    repository.save_turn(
+        TurnRecord(
+            session_id=session_one["id"],
+            player_input="Tres",
+            narrative="Narrativa tres",
+        )
+    )
+
+    turns = repository.list_recent_turns(
+        session_id=session_one["id"],
+        limit=10,
+    )
+
+    assert [
+        turn.player_input
+        for turn in turns
+    ] == [
+        "Uno",
+        "Tres",
+    ]
+
+
+def test_list_recent_turns_rejects_invalid_limit(
+    isolated_database,
+):
+    repository = TurnRepository()
+
+    try:
+        repository.list_recent_turns(
+            limit=0,
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(
+            "Expected ValueError"
+        )
+
+
+def test_list_recent_turns_rejects_limit_above_maximum(
+    isolated_database,
+):
+    repository = TurnRepository()
+
+    try:
+        repository.list_recent_turns(
+            limit=101,
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(
+            "Expected ValueError"
+        )
+
+
+def test_list_recent_turns_rejects_non_integer_limit(
+    isolated_database,
+):
+    repository = TurnRepository()
+
+    try:
+        repository.list_recent_turns(
+            limit="10",
+        )
+    except TypeError:
+        pass
+    else:
+        raise AssertionError(
+            "Expected TypeError"
+        )
