@@ -219,6 +219,9 @@ class OperationParser:
         """
 
         entity_id_fields = {
+            "update_entity": {
+                "entity_id",
+            },
             "transfer_item": {
                 "new_owner_id",
             },
@@ -314,6 +317,9 @@ class OperationParser:
 
         # These fields must ultimately be integers.
         integer_fields = {
+            "update_entity": {
+                "entity_id",
+            },
             "transfer_item": {
                 "instance_id",
                 "new_owner_id",
