@@ -185,6 +185,13 @@ class CampaignTurnService:
                     "WorldService returned an invalid WorldState"
                 )
 
+            turn_context = TurnContext(
+                campaign=CampaignState(),
+                current_session=None,
+                active_character=None,
+                world=world,
+            )
+
         # --------------------------------------------------------
         # Resolver turno
         # --------------------------------------------------------
@@ -362,9 +369,4 @@ class CampaignTurnService:
                     "WorldService returned an invalid WorldState"
                 )
 
-            turn_context = TurnContext(
-                campaign=CampaignState(),
-                current_session=None,
-                active_character=None,
-                world=world,
-            )
+        return world
