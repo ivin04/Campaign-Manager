@@ -20,27 +20,24 @@ class ContextBuilder:
        por un presupuesto.
 
     MemorySearchService encuentra candidatos.
-    ContextBuilder decide cómo ampliar, priorizar y representar
-    esos candidatos dentro del contexto.
+    ContextExpander amplía los resultados siguiendo las
+    relaciones del WorldState.
+    ContextRanker calcula la relevancia de los candidatos.
+    ContextBuilder coordina el pipeline y construye la
+    representación textual final.
 
     Responsabilidades:
 
-    - Identificar entidades principales.
-    - Calcular relevancia.
-    - Incluir entidades relacionadas.
-    - Incluir relaciones conectadas.
-    - Incluir eventos relacionados.
-    - Resolver objetos padre necesarios para interpretar resultados.
+    - Validar la entrada.
+    - Coordinar la búsqueda de memoria.
+    - Delegar la expansión de contexto.
+    - Crear candidatos de contexto.
+    - Aplicar relevancia y prioridad.
     - Aplicar un presupuesto máximo de contexto.
     - Construir la representación textual para el LLM.
-    - Excluir entidades inactivas.
-    - Excluir relaciones inactivas.
-    - Excluir eventos secretos.
     - No modificar WorldState.
     - No acceder directamente a SQLite.
     """
-
-    DEFAULT_MAX_DEPTH = 1
 
     # Se mide en caracteres, no tokens.
     DEFAULT_MAX_CONTEXT_CHARS = 6000
@@ -68,19 +65,6 @@ class ContextBuilder:
         "resources": 5,
         "resource_balances": 6,
     }
-
-    # Compatibilidad con el contrato histórico de ContextBuilder.
-    # La implementación real del scoring vive en ContextRanker.
-
-    DIRECT_ENTITY_RELEVANCE = ContextRanker.DIRECT_ENTITY_RELEVANCE
-    RELATED_ENTITY_RELEVANCE = ContextRanker.RELATED_ENTITY_RELEVANCE
-    DIRECT_MATCH_BONUS = ContextRanker.DIRECT_MATCH_BONUS
-    DEFAULT_RELATION_RELEVANCE = (
-        ContextRanker.DEFAULT_RELATION_RELEVANCE
-    )
-    RELATION_RELEVANCE_WEIGHTS = (
-        ContextRanker.RELATION_RELEVANCE_WEIGHTS
-    )
 
     # ============================================================
     # INITIALIZATION
@@ -438,44 +422,10 @@ class ContextBuilder:
 
                 text = lines[0]
 
-                score = float(
-                    base_score
-                )
-
-                # ------------------------------------------------
-                # RELEVANCIA PROPIA DE ENTIDAD
-                # ------------------------------------------------
-
-                if category == "entities":
-
-                    relevance = value.get(
-                        "_relevance",
-                        self.DIRECT_ENTITY_RELEVANCE,
-                    )
-
-                    try:
-                        relevance = float(
-                            relevance
-                        )
-                    except (
-                        TypeError,
-                        ValueError,
-                    ):
-                        relevance = (
-                            self.DIRECT_ENTITY_RELEVANCE
-                        )
-
-                    score = relevance
-
-                # ------------------------------------------------
-                # COINCIDENCIA DIRECTA
-                # ------------------------------------------------
-
-                score += (
-                    self.ranker.direct_match_bonus(
-                        value,
-                        query,
-                    )
+                score = self.ranker.score_candidate(
+                    data=value,
+                    query=query,
+                    base_score=base_score,
                 )
 
                 candidates.append(

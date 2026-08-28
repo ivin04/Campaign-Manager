@@ -152,3 +152,42 @@ def test_no_matching_words_keep_base_score():
     )
 
     assert score == 1.0
+
+def test_context_ranker_unknown_relation_uses_default_weight():
+    ranker = ContextRanker()
+
+    assert (
+        ranker.get_relation_relevance(
+            "relation_that_does_not_exist"
+        )
+        == ranker.DEFAULT_RELATION_RELEVANCE
+    )
+
+def test_context_ranker_direct_query_match_gets_bonus():
+    ranker = ContextRanker()
+
+    data = {
+        "name": "Fungoso",
+        "description": "Un aventurero.",
+    }
+
+    score = ranker.direct_match_bonus(
+        data,
+        "fungoso",
+    )
+
+    assert score == ranker.DIRECT_MATCH_BONUS
+
+def test_context_ranker_query_matching_is_case_insensitive():
+    ranker = ContextRanker()
+
+    data = {
+        "name": "Fungoso",
+    }
+
+    score = ranker.direct_match_bonus(
+        data,
+        "fungoso",
+    )
+
+    assert score == ranker.DIRECT_MATCH_BONUS

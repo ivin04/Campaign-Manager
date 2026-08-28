@@ -153,6 +153,47 @@ class ContextRanker:
 
         return 0.0
 
+    def score_candidate(
+        self,
+        data: dict[str, Any],
+        query: str,
+        base_score: float,
+    ) -> float:
+        """
+        Calcula la puntuación final de un candidato estructurado.
+
+        La puntuación combina:
+
+        - relevancia relacional de la entidad, cuando existe;
+        - score base de la categoría;
+        - bonus por coincidencia directa.
+
+        Para entidades que contienen `_relevance`, esa relevancia
+        sustituye al score base de la categoría.
+        """
+
+        score = float(base_score)
+
+        if "_relevance" in data:
+            relevance = data.get(
+                "_relevance",
+                self.DIRECT_ENTITY_RELEVANCE,
+            )
+
+            try:
+                relevance = float(relevance)
+            except (TypeError, ValueError):
+                relevance = self.DIRECT_ENTITY_RELEVANCE
+
+            score = relevance
+
+        score += self.direct_match_bonus(
+            data,
+            query,
+        )
+
+        return score
+
     def score_context_candidate(
         self,
         text: str,

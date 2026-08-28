@@ -481,17 +481,6 @@ def test_context_builder_strong_relation_has_higher_relevance():
     )
 
 
-def test_context_builder_unknown_relation_uses_default_weight():
-    builder = ContextBuilder()
-
-    assert (
-        builder._get_relation_relevance(
-            "relation_that_does_not_exist"
-        )
-        == builder.DEFAULT_RELATION_RELEVANCE
-    )
-
-
 def test_context_builder_relation_relevance_is_case_insensitive():
     builder = ContextBuilder()
 
@@ -534,22 +523,6 @@ def test_context_builder_direct_entity_has_higher_score_than_related():
     assert direct_score > related_score
 
 
-def test_context_builder_direct_query_match_gets_bonus():
-    builder = ContextBuilder()
-
-    data = {
-        "name": "Fungoso",
-        "description": "Un aventurero.",
-    }
-
-    score = builder._direct_match_bonus(
-        data,
-        "fungoso",
-    )
-
-    assert score == builder.DIRECT_MATCH_BONUS
-
-
 def test_context_builder_non_matching_candidate_gets_no_bonus():
     builder = ContextBuilder()
 
@@ -564,21 +537,6 @@ def test_context_builder_non_matching_candidate_gets_no_bonus():
     )
 
     assert score == 0.0
-
-
-def test_context_builder_query_matching_is_case_insensitive():
-    builder = ContextBuilder()
-
-    data = {
-        "name": "Fungoso",
-    }
-
-    score = builder._direct_match_bonus(
-        data,
-        "fungoso",
-    )
-
-    assert score == builder.DIRECT_MATCH_BONUS
 
 
 def test_context_builder_word_matching_contributes_to_score():
