@@ -69,10 +69,11 @@ class TurnResolutionResult:
         ):
             return False
 
-        return all(
+        return any(
             self._result_changed(result)
             for result in self.operation_results
         )
+
 
     @staticmethod
     def _result_changed(result) -> bool:
