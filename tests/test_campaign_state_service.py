@@ -4,6 +4,8 @@ from repositories.entity_repository import EntityRepository
 from models.campaign_state import CampaignState
 from models.turn_context import TurnContext
 from models.world_state import WorldState
+from models.entity import Entity
+from models.character_state import CharacterState
 
 from services.campaign_state_service import (
     CampaignStateService,
@@ -18,17 +20,16 @@ def create_campaign(repository):
 
     execute(
         """
-        INSERT INTO campaign (
-            id,
-            name,
-            system,
-            tone,
-            summary
-        )
-        VALUES (?, ?, ?, ?, ?)
+        UPDATE campaign
+        SET
+            name=?,
+            system=?,
+            tone=?,
+            summary=?,
+            current_session_id=NULL
+        WHERE id=1
         """,
         (
-            1,
             "Test Campaign",
             "D&D 5e 2014",
             "",
@@ -246,3 +247,90 @@ def test_campaign_state_service_builds_typed_turn_context(
         context.world,
         WorldState,
     )
+
+def test_get_turn_context_works_from_persisted_campaign_state():
+    entity_repository = EntityRepository()
+    character_repository = CharacterRepository()
+
+    entity = entity_repository.save_entity(
+        Entity(
+            id=None,
+            name="Aldric",
+            entity_type="character",
+            description="Aldric, aventurero humano.",
+            notes="",
+            active=True,
+        )
+    )
+
+    character = character_repository.save_character(
+        CharacterState(
+            entity_id=entity.id,
+            level=1,
+            class_name="Fighter",
+            current_hp=12,
+            max_hp=12,
+            armor_class=16,
+            strength=16,
+            dexterity=12,
+            constitution=14,
+            intelligence=10,
+            wisdom=10,
+            charisma=10,
+            proficiency_bonus=2,
+            metadata={},
+        )
+    )
+
+    campaign_repository = CampaignRepository()
+
+    campaign_repository.update_active_character(
+        campaign_id=1,
+        character_id=character.entity_id,
+    )
+
+    service = CampaignStateService(
+        campaign_repository=campaign_repository,
+        character_repository=character_repository,
+        entity_repository=entity_repository,
+        world_service=WorldService(),
+    )
+
+    context = service.get_turn_context()
+
+    assert context.campaign is not None
+    assert context.active_character is not None
+    assert context.active_character.entity_id == entity.id
+    assert context.active_character_entity is not None
+    assert context.active_character_entity.id == entity.id
+    assert context.world is not None
+
+def test_get_turn_context_includes_current_session():
+    campaign_repository = CampaignRepository()
+
+    session = campaign_repository.create_session(
+        title="Primera sesión",
+        number=1,
+        summary="Comienza la aventura.",
+        start_location="Vorder's Hold",
+        end_location="",
+        notes="",
+    )
+
+    campaign_repository.update_current_session(
+        campaign_id=1,
+        session_id=session["id"],
+    )
+
+    service = CampaignStateService(
+        campaign_repository=campaign_repository,
+        character_repository=CharacterRepository(),
+        entity_repository=EntityRepository(),
+        world_service=WorldService(),
+    )
+
+    context = service.get_turn_context()
+
+    assert context.current_session is not None
+    assert context.current_session.session_id == session["id"]
+    assert context.current_session.title == "Primera sesión"

@@ -45,29 +45,6 @@ def test_get_current_session_returns_none_when_campaign_has_no_session(
 ):
     repository = CampaignRepository()
 
-    # Crear explícitamente la campaña necesaria para este test.
-    from database import execute
-
-    execute(
-        """
-        INSERT INTO campaign (
-            id,
-            name,
-            system,
-            tone,
-            summary
-        )
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (
-            1,
-            "Test Campaign",
-            "D&D 5e 2014",
-            "",
-            "",
-        ),
-    )
-
     campaign = repository.get_campaign(1)
 
     assert campaign is not None
@@ -76,54 +53,17 @@ def test_get_current_session_returns_none_when_campaign_has_no_session(
     assert repository.get_current_session(1) is None
 
 
-def test_update_current_session_and_get_current_session(
+def test_get_current_session_returns_none_when_campaign_has_no_session(
     isolated_database,
 ):
     repository = CampaignRepository()
 
-    from database import execute
+    campaign = repository.get_campaign(1)
 
-    execute(
-        """
-        INSERT INTO campaign (
-            id,
-            name,
-            system,
-            tone,
-            summary
-        )
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (
-            1,
-            "Test Campaign",
-            "D&D 5e 2014",
-            "",
-            "",
-        ),
-    )
+    assert campaign is not None
+    assert campaign["current_session_id"] is None
 
-    session = repository.create_session(
-        number=998,
-        title="Current Session",
-        summary="Sesión actual.",
-        start_location="Vorder's Hold",
-        end_location="La mina",
-        notes="",
-    )
-
-    session_id = session["id"]
-
-    repository.update_current_session(
-        campaign_id=1,
-        session_id=session_id,
-    )
-
-    current_session = repository.get_current_session(1)
-
-    assert current_session is not None
-    assert current_session["id"] == session_id
-    assert current_session["title"] == "Current Session"
+    assert repository.get_current_session(1) is None
 
 def test_fresh_database_creates_default_campaign():
     repository = CampaignRepository()
