@@ -13,6 +13,10 @@ from models.world_application_result import (
     WorldApplicationResult,
 )
 
+from operations.character_operations import (
+    CharacterOperation,
+)
+
 
 class TurnResolutionServiceError(RuntimeError):
     """
@@ -231,12 +235,33 @@ class TurnResolutionService:
 
             if not isinstance(
                 operation,
-                WorldOperation,
+                (
+                    WorldOperation,
+                    CharacterOperation,
+                ),
             ):
                 raise TurnResolutionServiceError(
                     "LLMWorldExtractor returned "
-                    "an invalid WorldOperation"
+                    "an invalid operation"
                 )
+
+        world_operations = [
+            operation
+            for operation in operations
+            if isinstance(
+                operation,
+                WorldOperation,
+            )
+        ]
+
+        character_operations = [
+            operation
+            for operation in operations
+            if isinstance(
+                operation,
+                CharacterOperation,
+            )
+        ]
 
         # ========================================================
         # 3. APLICAR OPERACIONES DE FORMA ATÓMICA
@@ -244,7 +269,7 @@ class TurnResolutionService:
 
         try:
             application = self.world_service.apply_operations_and_save(
-                operations
+                world_operations
             )
 
         except Exception as exc:
@@ -270,8 +295,15 @@ class TurnResolutionService:
         return TurnResolutionResult(
             player_input=normalized_input,
             narrative=narrative,
-            operations=tuple(operations),
-            operation_results=tuple(results),
+            operations=tuple(
+                world_operations
+            ),
+            character_operations=tuple(
+                character_operations
+            ),
+            operation_results=tuple(
+                results
+            ),
         )
 
     # ============================================================

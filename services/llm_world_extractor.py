@@ -6,6 +6,10 @@ from typing import Any, Callable
 from models.world_state import WorldState
 from operations.world_operations import WorldOperation
 
+from operations.turn_operations import (
+    TurnOperation,
+)
+
 
 class LLMExtractionError(ValueError):
     """Error al interpretar una respuesta del LLM."""
@@ -58,7 +62,7 @@ class LLMWorldExtractor:
         self,
         text: str,
         world: WorldState,
-    ) -> list[WorldOperation]:
+    ) -> list[TurnOperation]:
         if not isinstance(text, str):
             raise TypeError(
                 "text must be a string"

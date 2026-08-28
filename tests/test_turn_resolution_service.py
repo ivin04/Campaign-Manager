@@ -458,7 +458,7 @@ def test_invalid_extractor_result_is_rejected():
 
     with pytest.raises(
         TurnResolutionServiceError,
-        match="invalid WorldOperation",
+        match="LLMWorldExtractor returned an invalid operation"
     ):
 
         service.resolve_turn(
@@ -921,3 +921,65 @@ def test_world_state_compatibility_creates_typed_turn_context():
     assert context.active_character is None
     assert context.world is world
     assert player_input == "Exploro."
+
+
+def test_turn_resolution_separates_world_and_character_operations(
+    monkeypatch,
+):
+    from operations.character_operations import (
+        ChangeCharacterHpOperation,
+    )
+    from operations.world_operations import (
+        WorldOperation,
+    )
+    from services.llm_world_extractor import (
+        LLMWorldExtractor,
+    )
+
+    world_operation = WorldOperation()
+
+    character_operation = ChangeCharacterHpOperation(
+        entity_id=1,
+        amount=-4,
+    )
+
+    service, dm, _, _ = make_service()
+
+    extractor = LLMWorldExtractor.__new__(
+        LLMWorldExtractor
+    )
+
+    def fake_extract(*args, **kwargs):
+        return [
+            world_operation,
+            character_operation,
+        ]
+
+    monkeypatch.setattr(
+        extractor,
+        "extract",
+        fake_extract,
+    )
+
+    service = TurnResolutionService(
+        dm_service=dm,
+        extractor=extractor,
+        world_service=WorldService(
+            applier=RecordingApplier(),
+        ),
+    )
+
+    result = service.resolve_turn(
+        turn_context=make_turn_context(),
+        player_input="Ataco al enemigo.",
+    )
+
+    assert result.operations == (
+        world_operation,
+    )
+
+    assert result.character_operations == (
+        character_operation,
+    )
+
+    assert result.operation_count == 2
