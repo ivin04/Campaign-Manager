@@ -6,8 +6,12 @@ from models.character_state import CharacterState
 
 class CharacterRepository:
 
-    def get_character(self, entity_id: int) -> CharacterState | None:
-        row = rows(
+    def get_character(
+        self,
+        entity_id: int,
+    ) -> CharacterState | None:
+
+        row = one(
             """
             SELECT
                 entity_id,
@@ -39,6 +43,7 @@ class CharacterRepository:
         self,
         character: CharacterState,
     ) -> CharacterState:
+
         execute(
             """
             INSERT INTO character_states (
@@ -92,9 +97,21 @@ class CharacterRepository:
             ),
         )
 
-        return self.get_character(character.entity_id)
+        loaded = self.get_character(character.entity_id)
 
-    def delete_character(self, entity_id: int) -> None:
+        if loaded is None:
+            raise RuntimeError(
+                f"Character {character.entity_id} "
+                "could not be loaded after save"
+            )
+
+        return loaded
+
+    def delete_character(
+        self,
+        entity_id: int,
+    ) -> None:
+
         execute(
             """
             DELETE FROM character_states
@@ -104,7 +121,8 @@ class CharacterRepository:
         )
 
     def list_characters(self) -> list[CharacterState]:
-        rows = all(
+
+        rows_data = rows(
             """
             SELECT
                 entity_id,
@@ -128,11 +146,12 @@ class CharacterRepository:
 
         return [
             self._row_to_model(row)
-            for row in rows
+            for row in rows_data
         ]
 
     @staticmethod
     def _row_to_model(row) -> CharacterState:
+
         metadata = row["metadata"]
 
         if isinstance(metadata, str):
