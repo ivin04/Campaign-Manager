@@ -837,6 +837,11 @@ def test_campaign_context_is_included_in_prompt():
         in prompt
     )
 
+    assert (
+        "Aldric"
+        in prompt
+    )
+
 
 def test_world_context_and_campaign_context_are_both_in_prompt():
     provider = FakeLLMProvider(
@@ -874,6 +879,11 @@ def test_world_context_and_campaign_context_are_both_in_prompt():
 
     assert (
         "La llegada"
+        in prompt
+    )
+
+    assert (
+        "Aldric"
         in prompt
     )
 
