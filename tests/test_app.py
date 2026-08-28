@@ -4,10 +4,10 @@ from app import create_campaign_turn_service
 from models.world_state import WorldState
 from repositories.campaign_repository import CampaignRepository
 from repositories.character_repository import CharacterRepository
+from repositories.entity_repository import EntityRepository
 from services.campaign_state_service import CampaignStateService
 from services.context_builder import ContextBuilder
 from services.memory_search_service import MemorySearchService
-from services.turn_resolution_service import TurnResolutionService
 from services.world_service import WorldService
 
 
@@ -28,6 +28,7 @@ def test_create_campaign_turn_service_uses_provided_context_builder():
         campaign_repository=campaign_repository,
         character_repository=character_repository,
         world_service=world_service,
+        entity_repository=EntityRepository(),
     )
 
     service = create_campaign_turn_service(
@@ -55,6 +56,7 @@ def test_create_campaign_turn_service_rejects_invalid_context_builder():
         campaign_repository=campaign_repository,
         character_repository=character_repository,
         world_service=world_service,
+        entity_repository=EntityRepository(),
     )
 
     with pytest.raises(

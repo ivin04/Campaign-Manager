@@ -12,6 +12,7 @@ from models.schemas import (
 
 from repositories.campaign_repository import CampaignRepository
 from repositories.character_repository import CharacterRepository
+from repositories.entity_repository import EntityRepository
 
 from services.campaign_turn_service import (
     CampaignTurnService,
@@ -193,9 +194,12 @@ campaign_repository = CampaignRepository()
 
 character_repository = CharacterRepository()
 
+entity_repository = EntityRepository()
+
 campaign_state_service = CampaignStateService(
     campaign_repository=campaign_repository,
     character_repository=character_repository,
+    entity_repository=entity_repository,
     world_service=world_service,
 )
 

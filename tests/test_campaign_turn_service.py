@@ -17,6 +17,7 @@ from services.turn_resolution_service import (
 )
 from services.world_service import WorldService
 from models.operation_result import OperationResult, OperationStatus
+from repositories.entity_repository import EntityRepository
 
 from services.campaign_state_service import (
     CampaignState,

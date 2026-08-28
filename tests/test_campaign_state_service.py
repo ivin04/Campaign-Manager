@@ -1,5 +1,6 @@
 from repositories.campaign_repository import CampaignRepository
 from repositories.character_repository import CharacterRepository
+from repositories.entity_repository import EntityRepository
 from models.campaign_state import CampaignState
 from models.turn_context import TurnContext
 from models.world_state import WorldState
@@ -41,6 +42,7 @@ def make_service():
         campaign_repository=CampaignRepository(),
         character_repository=CharacterRepository(),
         world_service=WorldService(),
+        entity_repository=EntityRepository(),
     )
 
 
@@ -55,6 +57,7 @@ def test_campaign_state_service_returns_complete_state(
         campaign_repository=repository,
         character_repository=CharacterRepository(),
         world_service=WorldService(),
+        entity_repository=EntityRepository(),
     )
 
     state = service.get_state()
@@ -88,6 +91,7 @@ def test_campaign_state_service_sets_and_gets_current_session(
         campaign_repository=campaign_repository,
         character_repository=CharacterRepository(),
         world_service=WorldService(),
+        entity_repository=EntityRepository(),
     )
 
     state = service.set_current_session(
@@ -133,6 +137,7 @@ def test_campaign_state_service_can_clear_current_session(
         campaign_repository=campaign_repository,
         character_repository=CharacterRepository(),
         world_service=WorldService(),
+        entity_repository=EntityRepository(),
     )
 
     service.set_current_session(
@@ -162,6 +167,7 @@ def test_campaign_state_service_rejects_missing_session(
         campaign_repository=campaign_repository,
         character_repository=CharacterRepository(),
         world_service=WorldService(),
+        entity_repository=EntityRepository(),
     )
 
     try:
@@ -187,6 +193,7 @@ def test_campaign_state_service_rejects_missing_active_character(
         campaign_repository=campaign_repository,
         character_repository=CharacterRepository(),
         world_service=WorldService(),
+        entity_repository=EntityRepository(),
     )
 
     try:
@@ -213,6 +220,7 @@ def test_campaign_state_service_builds_typed_turn_context(
         campaign_repository=campaign_repository,
         character_repository=CharacterRepository(),
         world_service=WorldService(),
+        entity_repository=EntityRepository(),
     )
 
     context = service.get_turn_context()

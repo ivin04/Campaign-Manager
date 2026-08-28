@@ -341,6 +341,7 @@ class CampaignStateService:
         )
 
         active_character = None
+        active_character_entity = None
 
         if active_character_id is not None:
             active_character = (
@@ -362,19 +363,16 @@ class CampaignStateService:
                     "CharacterRepository returned an invalid CharacterState"
                 )
 
-            active_character_entity = None
-
-            if active_character is not None:
-                active_character_entity = (
-                    self.entity_repository.get_entity(
-                        active_character.entity_id
-                    )
+            active_character_entity = (
+                self.entity_repository.get_entity(
+                    active_character.entity_id
                 )
+            )
 
-                if active_character_entity is None:
-                    raise CampaignStateServiceError(
-                        "active character entity does not exist"
-                    )
+            if active_character_entity is None:
+                raise CampaignStateServiceError(
+                    "active character entity does not exist"
+                )
 
         world = self.world_service.get_world()
 
