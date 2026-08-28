@@ -6,6 +6,7 @@ from models.world_state import WorldState
 from services.memory_search_service import MemorySearchService
 from services.world_serializer import WorldSerializer
 from services.context_ranker import ContextRanker
+from services.context_expander import ContextExpander
 
 
 class ContextBuilder:
@@ -90,6 +91,7 @@ class ContextBuilder:
         memory_search_service: MemorySearchService | None = None,
         max_context_chars: int = DEFAULT_MAX_CONTEXT_CHARS,
         ranker: ContextRanker | None = None,
+        context_expander: ContextExpander | None = None,
     ) -> None:
 
         if not isinstance(max_context_chars, int):
@@ -118,6 +120,13 @@ class ContextBuilder:
             )
 
         self.ranker = ranker or ContextRanker()
+
+        self.context_expander = (
+            context_expander
+            or ContextExpander(
+                ranker=self.ranker,
+            )
+        )
 
     # ============================================================
     # PUBLIC API
@@ -610,6 +619,10 @@ class ContextBuilder:
         Construye los datos estructurados relevantes.
 
         Esta fase NO aplica el presupuesto textual.
+
+        La búsqueda inicial se delega en
+        MemorySearchService y la expansión de contexto
+        se delega en ContextExpander.
         """
 
         search_result = (
@@ -619,54 +632,14 @@ class ContextBuilder:
             )
         )
 
-        search_result = (
-            self._resolve_parent_objects(
-                world,
-                search_result,
-            )
-        )
-
-        entities = self._expand_entities(
+        result = self.context_expander.expand(
             world,
-            search_result.get(
-                "entities",
-                [],
-            ),
-            max_depth=self.DEFAULT_MAX_DEPTH,
+            search_result,
         )
 
-        relations = self._related_relations(
-            world,
-            entities,
-        )
+        result["query"] = normalized_query
 
-        events = self._related_events(
-            world,
-            entities,
-        )
-
-        return {
-            "query": normalized_query,
-            "entities": entities,
-            "items": search_result.get(
-                "items",
-                [],
-            ),
-            "item_instances": search_result.get(
-                "item_instances",
-                [],
-            ),
-            "resources": search_result.get(
-                "resources",
-                [],
-            ),
-            "resource_balances": search_result.get(
-                "resource_balances",
-                [],
-            ),
-            "relations": relations,
-            "events": events,
-        }
+        return result
 
     # ============================================================
     # PARENT OBJECT RESOLUTION
