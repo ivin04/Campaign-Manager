@@ -263,3 +263,29 @@ def test_list_recent_turns_rejects_non_integer_limit(
         raise AssertionError(
             "Expected TypeError"
         )
+
+def test_list_turns_with_session_id_returns_failed_operation_count(
+    turn_repository,
+):
+    turn = TurnRecord(
+        session_id=42,
+        player_input="attack",
+        narrative="The goblin attacks.",
+        operation_count=2,
+        successful_operation_count=1,
+        failed_operation_count=1,
+        all_operations_succeeded=False,
+        world_changed=False,
+    )
+
+    saved = turn_repository.save_turn(turn)
+
+    assert saved.failed_operation_count == 1
+
+    turns = turn_repository.list_turns(
+        session_id=42,
+    )
+
+    assert len(turns) == 1
+
+    assert turns[0].failed_operation_count == 1
