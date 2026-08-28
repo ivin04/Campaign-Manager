@@ -16,7 +16,12 @@ from services.turn_resolution_service import (
 )
 from services.world_service import WorldService
 from models.operation_result import OperationResult, OperationStatus
-from models.world_application_result import WorldApplicationResult
+
+from services.campaign_state_service import (
+    CampaignState,
+    CampaignStateService,
+    CampaignStateServiceError,
+)
 
 
 # ============================================================
@@ -56,6 +61,61 @@ class RecordingWorldService(WorldService):
             raise self.load_error
 
         return self.world
+
+class RecordingCampaignStateService(
+    CampaignStateService
+):
+
+    def __init__(
+        self,
+        world_service,
+    ):
+        self.world_service = world_service
+
+        self.get_state_calls = 0
+        self.get_world_calls = 0
+        self.load_world_calls = 0
+        self.save_world_calls = 0
+
+        self.state_error = None
+        self.world_error = None
+        self.load_error = None
+        self.save_error = None
+
+    def get_state(self):
+        self.get_state_calls += 1
+
+        if self.state_error is not None:
+            raise self.state_error
+
+        return CampaignState(
+            campaign={},
+            current_session=None,
+            active_character=None,
+            world=self.world_service.world,
+        )
+
+    def get_world(self):
+        self.get_world_calls += 1
+
+        if self.world_error is not None:
+            raise self.world_error
+
+        return self.world_service.world
+
+    def load_world(self):
+        self.load_world_calls += 1
+
+        if self.load_error is not None:
+            raise self.load_error
+
+        return self.world_service.world
+
+    def save_world(self):
+        self.save_world_calls += 1
+
+        if self.save_error is not None:
+            raise self.save_error
 
 
 class RecordingTurnResolutionService(
@@ -144,6 +204,7 @@ def make_service(
     *,
     result=None,
     world_service=None,
+    campaign_state_service=None,
 ):
     if result is None:
         result = make_result()
@@ -162,12 +223,16 @@ def make_service(
             turn_resolution_service
         ),
         world_service=world_service,
+        campaign_state_service=(
+            campaign_state_service
+        ),
     )
 
     return (
         service,
         turn_resolution_service,
         world_service,
+        campaign_state_service,
     )
 
 
@@ -215,7 +280,7 @@ def test_constructor_requires_world_service():
 
 def test_player_input_must_be_string():
 
-    service, _, _ = make_service()
+    service, _, _, _ = make_service()
 
     with pytest.raises(TypeError):
 
@@ -224,7 +289,7 @@ def test_player_input_must_be_string():
 
 def test_empty_player_input_is_rejected():
 
-    service, _, _ = make_service()
+    service, _, _, _ = make_service()
 
     with pytest.raises(
         CampaignTurnServiceError
@@ -239,7 +304,7 @@ def test_player_input_is_stripped():
         player_input="Exploro."
     )
 
-    service, resolver, _ = make_service(
+    service, resolver, _, _ = make_service(
         result=result
     )
 
@@ -261,11 +326,11 @@ def test_get_world_is_called_before_resolution():
 
     result = make_result()
 
-    service, resolver, world_service = (
+    service, resolver, world_service, campaign_state_service = (
         make_service(
-            result=result
+                result=result
+            )
         )
-    )
 
     service.play_turn(
         "Exploro."
@@ -294,7 +359,7 @@ def test_invalid_world_returned_by_world_service_is_rejected():
 
     world_service.world = object()
 
-    service, resolver, _ = make_service(
+    service, resolver, _, _ = make_service(
         result=result,
         world_service=world_service,
     )
@@ -324,7 +389,7 @@ def test_resolution_result_is_preserved():
         world_changed=False,
     )
 
-    service, _, _ = make_service(
+    service, _, _, _ = make_service(
         result=result
     )
 
@@ -349,7 +414,7 @@ def test_turn_resolution_service_error_is_wrapped():
 
     result = make_result()
 
-    service, resolver, _ = make_service(
+    service, resolver, _, _ = make_service(
         result=result
     )
 
@@ -378,7 +443,7 @@ def test_unexpected_resolution_error_is_wrapped():
 
     result = make_result()
 
-    service, resolver, _ = make_service(
+    service, resolver, _, _ = make_service(
         result=result
     )
 
@@ -403,7 +468,7 @@ def test_unexpected_resolution_error_is_wrapped():
 
 def test_invalid_resolution_result_is_rejected():
 
-    service, resolver, _ = make_service(
+    service, resolver, _, _ = make_service(
         result=object()
     )
 
@@ -428,7 +493,7 @@ def test_world_is_not_saved_when_world_did_not_change():
         world_changed=False
     )
 
-    service, _, world_service = (
+    service, _, world_service, _  = (
         make_service(
             result=result
         )
@@ -450,7 +515,7 @@ def test_play_turn_does_not_save_world_directly():
         world_changed=True
     )
 
-    service, _, world_service = (
+    service, _, world_service, _  = (
         make_service(
             result=result
         )
@@ -478,7 +543,7 @@ def test_save_failure_is_wrapped():
         "database unavailable"
     )
 
-    service, _, _ = make_service(
+    service, _, _, _ = make_service(
         result=result,
         world_service=world_service,
     )
@@ -505,7 +570,7 @@ def test_save_failure_is_wrapped():
 
 def test_load_returns_world():
 
-    service, _, world_service = (
+    service, _, world_service, _  = (
         make_service()
     )
 
@@ -523,7 +588,7 @@ def test_load_returns_world():
 
 def test_load_failure_is_wrapped():
 
-    service, _, world_service = (
+    service, _, world_service, _  = (
         make_service()
     )
 
@@ -546,7 +611,7 @@ def test_load_failure_is_wrapped():
 
 def test_load_rejects_invalid_world():
 
-    service, _, world_service = (
+    service, _, world_service, _  = (
         make_service()
     )
 
@@ -567,7 +632,7 @@ def test_load_rejects_invalid_world():
 
 def test_save_delegates_to_world_service():
 
-    service, _, world_service = (
+    service, _, world_service, _  = (
         make_service()
     )
 
@@ -581,7 +646,7 @@ def test_save_delegates_to_world_service():
 
 def test_save_failure_is_wrapped():
 
-    service, _, world_service = (
+    service, _, world_service, _  = (
         make_service()
     )
 
@@ -609,7 +674,7 @@ def test_save_failure_is_wrapped():
 
 def test_get_world_returns_current_world():
 
-    service, _, world_service = (
+    service, _, world_service, _  = (
         make_service()
     )
 
@@ -627,7 +692,7 @@ def test_get_world_returns_current_world():
 
 def test_get_world_rejects_invalid_world():
 
-    service, _, world_service = (
+    service, _, world_service, _  = (
         make_service()
     )
 
@@ -639,3 +704,198 @@ def test_get_world_rejects_invalid_world():
     ):
 
         service.get_world()
+
+# ============================================================
+# CAMPAIGN STATE INTEGRATION
+# ============================================================
+
+
+def test_play_turn_uses_campaign_state_service():
+    result = make_result()
+
+    world_service = RecordingWorldService()
+
+    campaign_state_service = (
+        RecordingCampaignStateService(
+            world_service
+        )
+    )
+
+    service, resolver, _, state_service = (
+        make_service(
+            result=result,
+            world_service=world_service,
+            campaign_state_service=(
+                campaign_state_service
+            ),
+        )
+    )
+
+    returned = service.play_turn(
+        "Exploro."
+    )
+
+    assert returned is result
+
+    assert (
+        state_service.get_state_calls
+        == 1
+    )
+
+    assert len(
+        resolver.calls
+    ) == 1
+
+    assert (
+        resolver.calls[0][0]
+        is world_service.world
+    )
+
+
+def test_play_turn_does_not_call_world_service_directly():
+    result = make_result()
+
+    world_service = RecordingWorldService()
+
+    campaign_state_service = (
+        RecordingCampaignStateService(
+            world_service
+        )
+    )
+
+    service, _, _, _ = make_service(
+        result=result,
+        world_service=world_service,
+        campaign_state_service=(
+            campaign_state_service
+        ),
+    )
+
+    service.play_turn(
+        "Exploro."
+    )
+
+    # CampaignTurnService obtiene el mundo
+    # exclusivamente a través de CampaignStateService.
+    assert (
+        campaign_state_service.get_state_calls
+        == 1
+    )
+
+
+def test_campaign_state_service_error_is_wrapped():
+    result = make_result()
+
+    world_service = RecordingWorldService()
+
+    campaign_state_service = (
+        RecordingCampaignStateService(
+            world_service
+        )
+    )
+
+    campaign_state_service.state_error = (
+        CampaignStateServiceError(
+            "campaign does not exist"
+        )
+    )
+
+    service, resolver, _, _ = make_service(
+        result=result,
+        world_service=world_service,
+        campaign_state_service=(
+            campaign_state_service
+        ),
+    )
+
+    with pytest.raises(
+        CampaignTurnServiceError,
+        match="failed to obtain campaign state",
+    ) as exc_info:
+
+        service.play_turn(
+            "Exploro."
+        )
+
+    assert isinstance(
+        exc_info.value.__cause__,
+        CampaignStateServiceError,
+    )
+
+    assert resolver.calls == []
+
+
+def test_load_delegates_to_campaign_state_service():
+    world_service = RecordingWorldService()
+
+    campaign_state_service = (
+        RecordingCampaignStateService(
+            world_service
+        )
+    )
+
+    service, _, _, _ = make_service(
+        world_service=world_service,
+        campaign_state_service=(
+            campaign_state_service
+        ),
+    )
+
+    returned = service.load()
+
+    assert returned is world_service.world
+
+    assert (
+        campaign_state_service.load_world_calls
+        == 1
+    )
+
+
+def test_save_delegates_to_campaign_state_service():
+    world_service = RecordingWorldService()
+
+    campaign_state_service = (
+        RecordingCampaignStateService(
+            world_service
+        )
+    )
+
+    service, _, _, _ = make_service(
+        world_service=world_service,
+        campaign_state_service=(
+            campaign_state_service
+        ),
+    )
+
+    service.save()
+
+    assert (
+        campaign_state_service.save_world_calls
+        == 1
+    )
+
+
+def test_get_world_delegates_to_campaign_state_service():
+    world_service = RecordingWorldService()
+
+    campaign_state_service = (
+        RecordingCampaignStateService(
+            world_service
+        )
+    )
+
+    service, _, _, _ = make_service(
+        world_service=world_service,
+        campaign_state_service=(
+            campaign_state_service
+        ),
+    )
+
+    returned = service.get_world()
+
+    assert returned is world_service.world
+
+    assert (
+        campaign_state_service.get_world_calls
+        == 1
+    )

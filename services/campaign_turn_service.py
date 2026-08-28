@@ -3,6 +3,11 @@ from __future__ import annotations
 from models.turn_resolution_result import TurnResolutionResult
 from models.world_state import WorldState
 
+from services.campaign_state_service import (
+    CampaignState,
+    CampaignStateService,
+    CampaignStateServiceError,
+)
 from services.turn_resolution_service import (
     TurnResolutionService,
     TurnResolutionServiceError,
@@ -18,49 +23,31 @@ class CampaignTurnServiceError(RuntimeError):
 
 class CampaignTurnService:
     """
-    Fachada de alto nivel para ejecutar un turno completo de campaña.
+    Fachada de alto nivel para ejecutar un turno de campaña.
 
-    Responsabilidad:
+    Arquitectura:
 
-        campaña
-           |
-           v
-        WorldService
-           |
-           v
-        WorldState
-           |
-           v
+        CampaignTurnService
+                |
+                v
+        CampaignStateService
+                |
+                +--> CampaignRepository
+                +--> CharacterRepository
+                +--> WorldService
+                |
+                v
+          CampaignState
+                |
+                v
         TurnResolutionService
-           |
-           +--> DMService
-           |
-           +--> LLMWorldExtractor
-           |
-           +--> WorldApplier
-           |
-           v
-        WorldState actualizado y persistido
 
-    Este servicio es la frontera entre la aplicación y el motor
-    de resolución de turnos.
+    CampaignTurnService coordina el flujo de campaña.
 
-    TurnResolutionService:
-        - resuelve el turno
-        - delega la aplicación y persistencia atómica
-        de las operaciones en WorldService
+    No accede directamente a SQLite.
 
-    WorldService:
-        - mantiene WorldState
-        - aplica operaciones
-        - garantiza la consistencia entre el estado
-        en memoria y la persistencia
-        - no conoce la narrativa del turno
-
-    CampaignTurnService:
-        - obtiene el WorldState actual
-        - delega la resolución del turno
-        - traduce errores de la capa de resolución
+    CampaignStateService es la fachada para obtener y persistir
+    el estado de campaña.
     """
 
     def __init__(
@@ -68,6 +55,7 @@ class CampaignTurnService:
         *,
         turn_resolution_service: TurnResolutionService,
         world_service: WorldService,
+        campaign_state_service: CampaignStateService | None = None,
     ) -> None:
 
         if not isinstance(
@@ -87,14 +75,27 @@ class CampaignTurnService:
                 "world_service must be a WorldService"
             )
 
+        if campaign_state_service is not None and not isinstance(
+            campaign_state_service,
+            CampaignStateService,
+        ):
+            raise TypeError(
+                "campaign_state_service must be a "
+                "CampaignStateService"
+            )
+
         self.turn_resolution_service = (
             turn_resolution_service
         )
 
         self.world_service = world_service
 
+        self.campaign_state_service = (
+            campaign_state_service
+        )
+
     # ============================================================
-    # PUBLIC API
+    # PLAY TURN
     # ============================================================
 
     def play_turn(
@@ -102,16 +103,17 @@ class CampaignTurnService:
         player_input: str,
     ) -> TurnResolutionResult:
         """
-        Ejecuta un turno sobre la campaña actualmente cargada.
+        Ejecuta un turno completo.
 
-        Flujo:
+        Con CampaignStateService:
 
-            1. Obtener WorldState actual.
-            2. Resolver el turno.
-            3. Devolver el resultado.
+            1. obtiene el estado de campaña
+            2. obtiene WorldState
+            3. resuelve el turno
+            4. devuelve el resultado
 
-        La resolución narrativa y de operaciones pertenece
-        exclusivamente a TurnResolutionService.
+        Sin CampaignStateService se conserva el comportamiento
+        anterior para compatibilidad.
         """
 
         if not isinstance(
@@ -129,7 +131,50 @@ class CampaignTurnService:
                 "player_input must not be empty"
             )
 
-        world = self.world_service.get_world()
+        # --------------------------------------------------------
+        # Obtener WorldState
+        # --------------------------------------------------------
+
+        if self.campaign_state_service is not None:
+
+            try:
+                state = (
+                    self.campaign_state_service.get_state()
+                )
+
+            except CampaignStateServiceError as exc:
+                raise CampaignTurnServiceError(
+                    "failed to obtain campaign state"
+                ) from exc
+
+            except Exception as exc:
+                raise CampaignTurnServiceError(
+                    "CampaignStateService failed to get "
+                    "campaign state"
+                ) from exc
+
+            if not isinstance(
+                state,
+                CampaignState,
+            ):
+                raise CampaignTurnServiceError(
+                    "CampaignStateService returned an invalid "
+                    "CampaignState"
+                )
+
+            world = state.world
+
+        else:
+
+            try:
+                world = (
+                    self.world_service.get_world()
+                )
+
+            except Exception as exc:
+                raise CampaignTurnServiceError(
+                    "WorldService failed to get world"
+                ) from exc
 
         if not isinstance(
             world,
@@ -138,6 +183,10 @@ class CampaignTurnService:
             raise CampaignTurnServiceError(
                 "WorldService returned an invalid WorldState"
             )
+
+        # --------------------------------------------------------
+        # Resolver turno
+        # --------------------------------------------------------
 
         try:
             result = (
@@ -168,25 +217,43 @@ class CampaignTurnService:
 
         return result
 
-
     # ============================================================
-    # CAMPAIGN STATE
+    # LOAD
     # ============================================================
 
     def load(self) -> WorldState:
         """
-        Carga la campaña desde persistencia.
+        Carga el WorldState persistido.
 
-        Devuelve el WorldState cargado.
+        CampaignStateService es la fachada principal.
         """
 
-        try:
-            world = self.world_service.load()
+        if self.campaign_state_service is not None:
 
-        except Exception as exc:
-            raise CampaignTurnServiceError(
-                "failed to load campaign world"
-            ) from exc
+            try:
+                world = (
+                    self.campaign_state_service.load_world()
+                )
+
+            except CampaignStateServiceError as exc:
+                raise CampaignTurnServiceError(
+                    "failed to obtain campaign state"
+                ) from exc
+
+            except Exception as exc:
+                raise CampaignTurnServiceError(
+                    "failed to load campaign world"
+                ) from exc
+
+        else:
+
+            try:
+                world = self.world_service.load()
+
+            except Exception as exc:
+                raise CampaignTurnServiceError(
+                    "failed to load campaign world"
+                ) from exc
 
         if not isinstance(
             world,
@@ -198,10 +265,33 @@ class CampaignTurnService:
 
         return world
 
+    # ============================================================
+    # SAVE
+    # ============================================================
+
     def save(self) -> None:
         """
-        Persiste explícitamente el estado actual de la campaña.
+        Persiste explícitamente el estado actual.
+
+        CampaignStateService es la fachada principal.
         """
+
+        if self.campaign_state_service is not None:
+
+            try:
+                self.campaign_state_service.save_world()
+
+            except CampaignStateServiceError as exc:
+                raise CampaignTurnServiceError(
+                    "failed to save campaign world"
+                ) from exc
+
+            except Exception as exc:
+                raise CampaignTurnServiceError(
+                    "failed to save campaign world"
+                ) from exc
+
+            return
 
         try:
             self.world_service.save()
@@ -211,12 +301,45 @@ class CampaignTurnService:
                 "failed to save campaign world"
             ) from exc
 
+    # ============================================================
+    # GET WORLD
+    # ============================================================
+
     def get_world(self) -> WorldState:
         """
-        Devuelve el WorldState actual de la campaña.
+        Devuelve el WorldState actual.
+
+        Cuando existe CampaignStateService, delega en él.
         """
 
-        world = self.world_service.get_world()
+        if self.campaign_state_service is not None:
+
+            try:
+                world = (
+                    self.campaign_state_service.get_world()
+                )
+
+            except CampaignStateServiceError as exc:
+                raise CampaignTurnServiceError(
+                    "failed to obtain campaign state"
+                ) from exc
+
+            except Exception as exc:
+                raise CampaignTurnServiceError(
+                    "CampaignStateService failed to get world"
+                ) from exc
+
+        else:
+
+            try:
+                world = (
+                    self.world_service.get_world()
+                )
+
+            except Exception as exc:
+                raise CampaignTurnServiceError(
+                    "WorldService failed to get world"
+                ) from exc
 
         if not isinstance(
             world,
