@@ -9,30 +9,59 @@ class CharacterRepository:
     def get_character(
         self,
         entity_id: int,
+        *,
+        conn=None,
     ) -> CharacterState | None:
 
-        row = one(
-            """
-            SELECT
-                entity_id,
-                level,
-                class_name,
-                current_hp,
-                max_hp,
-                armor_class,
-                strength,
-                dexterity,
-                constitution,
-                intelligence,
-                wisdom,
-                charisma,
-                proficiency_bonus,
-                metadata
-            FROM character_states
-            WHERE entity_id=?
-            """,
-            (entity_id,),
-        )
+        if conn is None:
+            row = one(
+                """
+                SELECT
+                    entity_id,
+                    level,
+                    class_name,
+                    current_hp,
+                    max_hp,
+                    armor_class,
+                    strength,
+                    dexterity,
+                    constitution,
+                    intelligence,
+                    wisdom,
+                    charisma,
+                    proficiency_bonus,
+                    metadata
+                FROM character_states
+                WHERE entity_id=?
+                """,
+                (entity_id,),
+            )
+
+        else:
+            row = conn.execute(
+                """
+                SELECT
+                    entity_id,
+                    level,
+                    class_name,
+                    current_hp,
+                    max_hp,
+                    armor_class,
+                    strength,
+                    dexterity,
+                    constitution,
+                    intelligence,
+                    wisdom,
+                    charisma,
+                    proficiency_bonus,
+                    metadata
+                FROM character_states
+                WHERE entity_id=?
+                """,
+                (entity_id,),
+            ).fetchone()
+
+            row = dict(row) if row else None
 
         if row is None:
             return None
@@ -42,10 +71,11 @@ class CharacterRepository:
     def save_character(
         self,
         character: CharacterState,
+        *,
+        conn=None,
     ) -> CharacterState:
 
-        execute(
-            """
+        query = """
             INSERT INTO character_states (
                 entity_id,
                 level,
@@ -78,26 +108,40 @@ class CharacterRepository:
                 charisma=excluded.charisma,
                 proficiency_bonus=excluded.proficiency_bonus,
                 metadata=excluded.metadata
-            """,
-            (
-                character.entity_id,
-                character.level,
-                character.class_name,
-                character.current_hp,
-                character.max_hp,
-                character.armor_class,
-                character.strength,
-                character.dexterity,
-                character.constitution,
-                character.intelligence,
-                character.wisdom,
-                character.charisma,
-                character.proficiency_bonus,
-                json.dumps(character.metadata),
-            ),
+        """
+
+        params = (
+            character.entity_id,
+            character.level,
+            character.class_name,
+            character.current_hp,
+            character.max_hp,
+            character.armor_class,
+            character.strength,
+            character.dexterity,
+            character.constitution,
+            character.intelligence,
+            character.wisdom,
+            character.charisma,
+            character.proficiency_bonus,
+            json.dumps(character.metadata),
         )
 
-        loaded = self.get_character(character.entity_id)
+        if conn is None:
+            execute(
+                query,
+                params,
+            )
+        else:
+            conn.execute(
+                query,
+                params,
+            )
+
+        loaded = self.get_character(
+            character.entity_id,
+            conn=conn,
+        )
 
         if loaded is None:
             raise RuntimeError(

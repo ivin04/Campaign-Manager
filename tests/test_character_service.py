@@ -17,6 +17,8 @@ class RecordingCharacterRepository:
     def get_character(
         self,
         entity_id,
+        *,
+        conn=None,
     ):
         if (
             self.character is not None
@@ -29,6 +31,8 @@ class RecordingCharacterRepository:
     def save_character(
         self,
         character,
+        *,
+        conn=None,
     ):
         self.saved.append(character)
         self.character = character
@@ -187,3 +191,68 @@ def test_change_hp_preserves_character_state():
     assert result.metadata == {
         "race": "Human",
     }
+
+def test_change_hp_passes_connection_to_repository():
+
+    class RecordingRepository:
+
+        def __init__(self):
+            self.get_conn = None
+            self.save_conn = None
+
+        def get_character(
+            self,
+            entity_id,
+            *,
+            conn=None,
+        ):
+            self.get_conn = conn
+
+            return CharacterState(
+                entity_id=entity_id,
+                current_hp=10,
+                max_hp=10,
+            )
+
+        def save_character(
+            self,
+            character,
+            *,
+            conn=None,
+        ):
+            self.save_conn = conn
+            return character
+
+    repository = RecordingRepository()
+
+    service = CharacterService(repository)
+
+    connection = object()
+
+    result = service.change_hp(
+        entity_id=1,
+        amount=-4,
+        conn=connection,
+    )
+
+    assert result.current_hp == 6
+    assert repository.get_conn is connection
+    assert repository.save_conn is connection
+
+def test_change_hp_works_without_explicit_connection():
+
+    repository = RecordingCharacterRepository(
+        make_character(
+            current_hp=10,
+            max_hp=10,
+        )
+    )
+
+    service = CharacterService(repository)
+
+    result = service.change_hp(
+        entity_id=1,
+        amount=-3,
+    )
+
+    assert result.current_hp == 7

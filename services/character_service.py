@@ -22,11 +22,14 @@ class CharacterService:
         self,
         entity_id: int,
         amount: int,
+        *,
+        conn=None,
     ) -> CharacterState:
 
         character = (
             self.character_repository.get_character(
-                entity_id
+                entity_id,
+                conn=conn,
             )
         )
 
@@ -65,7 +68,8 @@ class CharacterService:
         try:
             return (
                 self.character_repository.save_character(
-                    updated
+                    updated,
+                    conn=conn,
                 )
             )
 
