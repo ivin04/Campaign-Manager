@@ -5,6 +5,7 @@ from models.turn_resolution_result import (
     TurnResolutionResult,
 )
 from models.turn_context import TurnContext
+from models.turn_record import TurnRecord
 from models.world_state import WorldState
 
 from services.campaign_turn_service import (
@@ -17,7 +18,7 @@ from services.turn_resolution_service import (
 )
 from services.world_service import WorldService
 from models.operation_result import OperationResult, OperationStatus
-from repositories.entity_repository import EntityRepository
+from repositories.turn_repository import TurnRepository
 
 from services.campaign_state_service import (
     CampaignState,
@@ -930,22 +931,24 @@ def test_get_world_delegates_to_campaign_state_service():
     )
 
 def test_play_turn_loads_recent_turns_before_resolving():
+
     recent_turns = [
         TurnRecord(
             id=1,
             session_id=10,
-            player_input="Entro en la taberna.",
-            narrative="El tabernero te observa.",
+            player_input="Entré en la taberna.",
+            narrative="El tabernero levantó la mirada.",
         ),
         TurnRecord(
             id=2,
             session_id=10,
-            player_input="Pregunto por Vorder.",
-            narrative="El tabernero señala hacia el norte.",
+            player_input="Pregunté por el camino norte.",
+            narrative="El tabernero señaló hacia las montañas.",
         ),
     ]
 
     class RecordingTurnRepository(TurnRepository):
+
         def __init__(self):
             self.calls = []
 
@@ -967,9 +970,13 @@ def test_play_turn_loads_recent_turns_before_resolving():
         def save_turn(self, turn):
             return turn
 
-    class RecordingTurnResolutionService:
+    class RecordingTurnResolutionService(
+        TurnResolutionService
+    ):
+
         def __init__(self):
             self.recent_turns = None
+            self.calls = []
 
         def resolve_turn(
             self,
@@ -978,14 +985,20 @@ def test_play_turn_loads_recent_turns_before_resolving():
             *,
             recent_turns=None,
         ):
+            self.calls.append(
+                (
+                    turn_context,
+                    player_input,
+                )
+            )
+
             self.recent_turns = recent_turns
 
-            return TurnResolutionResult(
+            return make_result(
                 player_input=player_input,
-                narrative="Respuesta.",
-                operations=(),
-                operation_results=(),
             )
+
+    world_service = RecordingWorldService()
 
     turn_repository = RecordingTurnRepository()
 
@@ -994,18 +1007,27 @@ def test_play_turn_loads_recent_turns_before_resolving():
     service = CampaignTurnService(
         turn_resolution_service=resolver,
         world_service=world_service,
-        campaign_state_service=campaign_state_service,
         turn_repository=turn_repository,
     )
 
     result = service.play_turn(
-        "Pregunto por el camino."
+        "  Pregunto por el camino.  "
     )
 
-    assert result.narrative == "Respuesta."
+    assert result.player_input == (
+        "Pregunto por el camino."
+    )
 
     assert resolver.recent_turns == recent_turns
 
     assert turn_repository.calls == [
-        (10, 10)
+        (None, 10),
+        (None, 10),
     ]
+
+    assert len(resolver.calls) == 1
+
+    assert (
+        resolver.calls[0][1]
+        == "Pregunto por el camino."
+    )

@@ -172,11 +172,17 @@ class TurnResolutionService:
         # ========================================================
 
         try:
-            narrative = self.dm_service.generate(
-                context,
-                normalized_input,
-                recent_turns=recent_turns,
-            )
+            if recent_turns is None:
+                narrative = self.dm_service.generate(
+                    context,
+                    normalized_input,
+                )
+            else:
+                narrative = self.dm_service.generate(
+                    context,
+                    normalized_input,
+                    recent_turns=recent_turns,
+                )
 
         except Exception as exc:
             raise TurnResolutionServiceError(
