@@ -279,21 +279,6 @@ class ContextBuilder:
         )
 
         if not candidates:
-            if history_text:
-                return history_text
-
-            return "Sin información relevante."
-
-        recent_turns = result.get(
-            "recent_turns",
-            [],
-        )
-
-        history_text = self._build_recent_turns_context(
-            recent_turns
-        )
-
-        if not candidates:
             return "Sin información relevante."
 
         candidates.sort(
@@ -361,12 +346,6 @@ class ContextBuilder:
         rendered_context = self._render_selected_candidates(
             selected
         )
-
-        if history_text:
-            return (
-                f"{history_text}\n\n"
-                f"{rendered_context}"
-            )
 
         return rendered_context
 
@@ -491,6 +470,64 @@ class ContextBuilder:
                         "text": text,
                         "score": score,
                         "category_order": category_order,
+                        "index": index,
+                    }
+                )
+
+        recent_turns = result.get(
+            "recent_turns",
+            [],
+        )
+
+        if isinstance(
+            recent_turns,
+            list,
+        ):
+            history_category = "recent_turns"
+
+            history_base_score = (
+                self.CATEGORY_BASE_SCORES.get(
+                    history_category,
+                    0.0,
+                )
+            )
+
+            history_category_order = (
+                self.CATEGORY_PRIORITY.get(
+                    history_category,
+                    len(category_definitions),
+                )
+            )
+
+            for index, turn in enumerate(
+                recent_turns
+            ):
+                if not isinstance(
+                    turn,
+                    TurnRecord,
+                ):
+                    continue
+
+                text = (
+                    f"Jugador: {turn.player_input}\n"
+                    f"DM: {turn.narrative}"
+                )
+
+                score = self.ranker.score_candidate(
+                    data={
+                        "player_input": turn.player_input,
+                        "narrative": turn.narrative,
+                    },
+                    query=query,
+                    base_score=history_base_score,
+                )
+
+                candidates.append(
+                    {
+                        "category": history_category,
+                        "text": text,
+                        "score": score,
+                        "category_order": history_category_order,
                         "index": index,
                     }
                 )
@@ -862,10 +899,11 @@ class ContextBuilder:
             "entities": "[ENTIDADES]",
             "relations": "[RELACIONES]",
             "events": "[EVENTOS]",
-            "items": "[ITEMS]",
-            "item_instances": "[ITEM_INSTANCES]",
-            "resources": "[RESOURCES]",
-            "resource_balances": "[RESOURCE_BALANCES]",
+            "items": "[OBJETOS]",
+            "item_instances": "[INSTANCIAS DE OBJETOS]",
+            "resources": "[RECURSOS]",
+            "resource_balances": "[BALANCES DE RECURSOS]",
+            "recent_turns": "HISTORIAL RECIENTE",
         }
 
         return headers.get(

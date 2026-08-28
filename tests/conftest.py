@@ -1,5 +1,19 @@
 import pytest
 
+from models.world_state import WorldState
+
+
+@pytest.fixture
+def empty_world():
+    return WorldState(
+        entities={},
+        items={},
+        item_instances={},
+        resources={},
+        resource_balances={},
+        relations={},
+    )
+
 
 @pytest.fixture(autouse=True)
 def isolated_database(tmp_path, monkeypatch):
