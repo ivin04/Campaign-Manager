@@ -174,7 +174,7 @@ class WorldService:
         Este método garantiza la atomicidad del WorldState en memoria.
         """
 
-        original_world = self._world
+        original_world = self.world
 
         result = self.apply_operations(operations)
 
@@ -184,7 +184,7 @@ class WorldService:
         try:
             self.save()
         except Exception:
-            self._world = original_world
+            self.world = original_world
             raise
 
         return result

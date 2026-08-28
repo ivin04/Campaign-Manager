@@ -40,25 +40,27 @@ class CampaignTurnService:
            +--> WorldApplier
            |
            v
-        WorldState actualizado
-           |
-           v
-        persistencia
+        WorldState actualizado y persistido
 
     Este servicio es la frontera entre la aplicación y el motor
     de resolución de turnos.
 
     TurnResolutionService:
         - resuelve el turno
-        - no persiste
+        - delega la aplicación y persistencia atómica
+        de las operaciones en WorldService
 
     WorldService:
-        - mantiene/persiste WorldState
+        - mantiene WorldState
+        - aplica operaciones
+        - garantiza la consistencia entre el estado
+        en memoria y la persistencia
         - no conoce la narrativa del turno
 
     CampaignTurnService:
-        - coordina ambos
-        - decide cuándo persistir
+        - obtiene el WorldState actual
+        - delega la resolución del turno
+        - traduce errores de la capa de resolución
     """
 
     def __init__(
@@ -105,9 +107,8 @@ class CampaignTurnService:
         Flujo:
 
             1. Obtener WorldState actual.
-            2. Resolver turno.
-            3. Persistir si el turno produjo cambios.
-            4. Devolver resultado.
+            2. Resolver el turno.
+            3. Devolver el resultado.
 
         La resolución narrativa y de operaciones pertenece
         exclusivamente a TurnResolutionService.

@@ -1,4 +1,4 @@
-import copy
+import pytest
 import database
 
 from models.entity import Entity
@@ -398,3 +398,113 @@ def test_apply_operations_restores_original_world_when_apply_raises(
 
     assert service.world is original_world
     assert service.world.entities == {}
+
+def test_apply_operations_and_save_persists_successful_operations(
+    monkeypatch,
+):
+    service = WorldService()
+
+    operation = CreateEntityOperation(
+        name="Fungoso",
+        entity_type="character",
+    )
+
+    original_save = service.repository.save_world
+    save_calls = []
+
+    def spy_save_world(world):
+        save_calls.append(world)
+        return original_save(world)
+
+    monkeypatch.setattr(
+        service.repository,
+        "save_world",
+        spy_save_world,
+    )
+
+    result = service.apply_operations_and_save(
+        [operation]
+    )
+
+    assert result["success"] is True
+    assert len(save_calls) == 1
+    assert save_calls[0] is service.get_world()
+
+def test_apply_operations_and_save_restores_original_world_when_save_fails(
+    monkeypatch,
+):
+    service = WorldService()
+
+    operation = CreateEntityOperation(
+        name="Fungoso",
+        entity_type="character",
+    )
+
+    original_world = service.get_world()
+
+    def failing_save_world(world):
+        raise RuntimeError("database failed")
+
+    monkeypatch.setattr(
+        service.repository,
+        "save_world",
+        failing_save_world,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="database failed",
+    ):
+        service.apply_operations_and_save(
+            [operation]
+        )
+
+    assert service.get_world() is original_world
+
+def test_apply_operations_and_save_does_not_save_when_operation_fails(
+    monkeypatch,
+):
+    service = WorldService()
+
+    operation = CreateEntityOperation(
+        name="Fungoso",
+        entity_type="character",
+    )
+
+    original_world = service.get_world()
+
+    save_called = False
+
+    def spy_save_world(world):
+        nonlocal save_called
+        save_called = True
+
+    def failing_apply(
+        world,
+        operation,
+    ):
+        return OperationResult(
+            status=OperationStatus.INVALID,
+            message="operation failed",
+            operation=operation,
+        )
+
+    monkeypatch.setattr(
+        service.repository,
+        "save_world",
+        spy_save_world,
+    )
+
+    monkeypatch.setattr(
+        service.applier,
+        "apply",
+        failing_apply,
+    )
+
+    result = service.apply_operations_and_save(
+        [operation]
+    )
+
+    assert result["success"] is False
+    assert save_called is False
+    assert service.get_world() is original_world

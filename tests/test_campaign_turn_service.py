@@ -445,7 +445,7 @@ def test_world_is_not_saved_when_world_did_not_change():
     )
 
 
-def test_world_is_saved_when_world_changed():
+def test_play_turn_does_not_save_world_directly():
 
     result = make_result(
         world_changed=True
@@ -463,7 +463,7 @@ def test_world_is_saved_when_world_changed():
 
     assert (
         world_service.save_calls
-        == 1
+        == 0
     )
 
 
@@ -497,66 +497,6 @@ def test_save_failure_is_wrapped():
         exc_info.value.__cause__,
         RuntimeError,
     )
-
-
-# ============================================================
-# ORDER
-# ============================================================
-
-
-def test_turn_resolution_happens_before_persistence():
-
-    order = []
-
-    result = make_result(
-        world_changed=True
-    )
-
-    world_service = RecordingWorldService()
-
-    original_save = world_service.save
-
-    def save():
-        order.append("save")
-
-        return original_save()
-
-    world_service.save = save
-
-    resolver = RecordingTurnResolutionService(
-        result
-    )
-
-    original_resolve = (
-        resolver.resolve_turn
-    )
-
-    def resolve(
-        world,
-        player_input,
-    ):
-        order.append("resolve")
-
-        return original_resolve(
-            world,
-            player_input,
-        )
-
-    resolver.resolve_turn = resolve
-
-    service = CampaignTurnService(
-        turn_resolution_service=resolver,
-        world_service=world_service,
-    )
-
-    service.play_turn(
-        "Exploro."
-    )
-
-    assert order == [
-        "resolve",
-        "save",
-    ]
 
 
 # ============================================================

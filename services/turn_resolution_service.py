@@ -36,7 +36,7 @@ class TurnResolutionService:
         WorldOperation[]
            |
            v
-        WorldService.apply_operations()
+        WorldService.apply_operations_and_save()
            |
            v
         resultado atómico
@@ -47,7 +47,8 @@ class TurnResolutionService:
     - validar entrada del jugador
     - generar narrativa mediante DMService
     - extraer operaciones mediante LLMWorldExtractor
-    - aplicar operaciones de forma atómica mediante WorldService
+    - aplicar y persistir operaciones de forma consistente
+        mediante WorldService
     - devolver TurnResolutionResult
 
     NO debe:
@@ -121,7 +122,9 @@ class TurnResolutionService:
             - ninguna operación queda aplicada
             - el WorldState original se conserva
 
-        La persistencia en SQLite NO se realiza aquí.
+        TurnResolutionService no accede directamente a SQLite.
+        La aplicación y persistencia consistente del mundo se delegan
+        en WorldService.
         """
 
         self._validate_world(world)
@@ -204,7 +207,7 @@ class TurnResolutionService:
         # ========================================================
 
         try:
-            application = self._world_service.apply_operations_and_save(
+            application = self.world_service.apply_operations_and_save(
                 operations
             )
 
