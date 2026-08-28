@@ -229,6 +229,11 @@ class TurnResolutionService:
                 "WorldApplicationResult"
             )
 
+        if not application.success:
+            raise TurnResolutionServiceError(
+                "WorldService failed to apply operations"
+            )
+
         # ========================================================
         # 4. RESULTADO
         # ========================================================

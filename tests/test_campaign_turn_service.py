@@ -16,8 +16,7 @@ from services.turn_resolution_service import (
 )
 from services.world_service import WorldService
 from models.operation_result import OperationResult, OperationStatus
-
-
+from models.world_application_result import WorldApplicationResult
 
 
 # ============================================================
@@ -640,3 +639,37 @@ def test_get_world_rejects_invalid_world():
     ):
 
         service.get_world()
+
+def test_turn_resolution_fails_when_world_application_is_unsuccessful(
+    monkeypatch,
+):
+    world = WorldState()
+
+    class FakeDMService:
+        def generate(self, world, player_input):
+            return "Fungoso entra en la taberna."
+
+    class FakeExtractor:
+        def extract(self, narrative, world):
+            return []
+
+    class FakeWorldService:
+        def apply_operations_and_save(self, operations):
+            return WorldApplicationResult(
+                success=False,
+                changed=False,
+                results=(),
+                world=world,
+            )
+
+    service = TurnResolutionService(
+        dm_service=FakeDMService(),
+        extractor=FakeExtractor(),
+        world_service=FakeWorldService(),
+    )
+
+    with pytest.raises(TurnResolutionServiceError):
+        service.resolve_turn(
+            world,
+            "Entrar en la taberna",
+        )
