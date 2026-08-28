@@ -165,19 +165,6 @@ class CampaignTurnService:
                 "an invalid TurnResolutionResult"
             )
 
-        # --------------------------------------------------------
-        # Persistencia
-        # --------------------------------------------------------
-
-        if result.world_changed:
-            try:
-                self.world_service.save()
-
-            except Exception as exc:
-                raise CampaignTurnServiceError(
-                    "failed to persist campaign world"
-                ) from exc
-
         return result
 
 

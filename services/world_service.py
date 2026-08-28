@@ -174,73 +174,20 @@ class WorldService:
         Este método garantiza la atomicidad del WorldState en memoria.
         """
 
-        # =========================================================
-        # 1. Guardar el estado original
-        # =========================================================
+        original_world = self._world
 
-        original_state = self.world
+        result = self.apply_operations(operations)
 
-        # =========================================================
-        # 2. Crear estado de trabajo independiente
-        # =========================================================
-
-        working_state = copy.deepcopy(
-            original_state
-        )
-
-        self.world = working_state
-
-        results = []
+        if not result["success"]:
+            return result
 
         try:
-
-            # =====================================================
-            # 3. Aplicar TODAS las operaciones sobre la copia
-            # =====================================================
-
-            for operation in operations:
-
-                result = self.apply(
-                    operation
-                )
-
-                results.append(result)
-
-                # -------------------------------------------------
-                # Si una operación falla lógicamente:
-                # abortamos TODO.
-                # -------------------------------------------------
-
-                if not result.success:
-
-                    self.world = original_state
-
-                    return {
-                        "success": False,
-                        "results": results,
-                    }
-
-            # =====================================================
-            # 4. Todas las operaciones han tenido éxito
-            # =====================================================
-
             self.save()
-
-            return {
-                "success": True,
-                "results": results,
-                "world": self.world,
-            }
-
         except Exception:
-
-            # =====================================================
-            # 5. Error inesperado
-            # =====================================================
-
-            self.world = original_state
-
+            self._world = original_world
             raise
+
+        return result
 
     def get_world(self) -> WorldState:
         """

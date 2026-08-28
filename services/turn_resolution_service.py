@@ -204,7 +204,7 @@ class TurnResolutionService:
         # ========================================================
 
         try:
-            application = self.world_service.apply_operations(
+            application = self._world_service.apply_operations_and_save(
                 operations
             )
 
