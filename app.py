@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import init_db
 
 from models.schemas import (
+    ActiveCharacterUpdate,
     CampaignUpdate,
     CampaignSessionUpdate,
     SessionIn,
@@ -307,6 +308,53 @@ def create_session(data: SessionIn):
         **data.model_dump()
     )
 
+@app.get("/campaign/state")
+def get_campaign_state():
+
+    try:
+        state = campaign_state_service.get_state()
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        ) from exc
+
+    return {
+        "campaign_id": state.campaign_id,
+        "name": state.name,
+        "system": state.system,
+        "tone": state.tone,
+        "current_location_id": state.current_location_id,
+        "current_session_id": state.current_session_id,
+        "active_character_id": state.active_character_id,
+        "summary": state.summary,
+    }
+
+@app.patch("/campaign/active-character")
+def update_active_character(
+    data: ActiveCharacterUpdate,
+):
+
+    try:
+        state = (
+            campaign_state_service.set_active_character(
+                data.character_id
+            )
+        )
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    return {
+        "campaign_id": state.campaign_id,
+        "active_character_id": (
+            state.active_character_id
+        ),
+    }
 
 # ============================================================
 # TURN

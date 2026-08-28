@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CampaignUpdate(BaseModel):
@@ -24,3 +24,9 @@ class SessionIn(BaseModel):
 
 class TurnIn(BaseModel):
     player_input: str
+
+class ActiveCharacterUpdate(BaseModel):
+    character_id: int | None = Field(
+        default=None,
+        ge=1,
+    )
