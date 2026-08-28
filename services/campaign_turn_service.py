@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from models.turn_resolution_result import TurnResolutionResult
 from models.world_state import WorldState
+from models.turn_context import TurnContext
 
 from services.campaign_state_service import (
     CampaignState,
@@ -138,31 +139,31 @@ class CampaignTurnService:
         if self.campaign_state_service is not None:
 
             try:
-                state = (
-                    self.campaign_state_service.get_state()
+                turn_context = (
+                    self.campaign_state_service.get_turn_context()
                 )
 
             except CampaignStateServiceError as exc:
                 raise CampaignTurnServiceError(
-                    "failed to obtain campaign state"
+                    "failed to obtain campaign turn context"
                 ) from exc
 
             except Exception as exc:
                 raise CampaignTurnServiceError(
                     "CampaignStateService failed to get "
-                    "campaign state"
+                    "turn context"
                 ) from exc
 
             if not isinstance(
-                state,
-                CampaignState,
+                turn_context,
+                TurnContext,
             ):
                 raise CampaignTurnServiceError(
                     "CampaignStateService returned an invalid "
-                    "CampaignState"
+                    "TurnContext"
                 )
 
-            world = state.world
+            world = turn_context.world
 
         else:
 

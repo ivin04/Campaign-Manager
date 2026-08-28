@@ -4,6 +4,7 @@ import pytest
 from models.turn_resolution_result import (
     TurnResolutionResult,
 )
+from models.turn_context import TurnContext
 from models.world_state import WorldState
 
 from services.campaign_turn_service import (
@@ -73,6 +74,7 @@ class RecordingCampaignStateService(
         self.world_service = world_service
 
         self.get_state_calls = 0
+        self.get_turn_context_calls = 0
         self.get_world_calls = 0
         self.load_world_calls = 0
         self.save_world_calls = 0
@@ -89,6 +91,19 @@ class RecordingCampaignStateService(
             raise self.state_error
 
         return CampaignState(
+            campaign={},
+            current_session=None,
+            active_character=None,
+            world=self.world_service.world,
+        )
+
+    def get_turn_context(self):
+        self.get_turn_context_calls += 1
+
+        if self.state_error is not None:
+            raise self.state_error
+
+        return TurnContext(
             campaign={},
             current_session=None,
             active_character=None,
@@ -738,7 +753,7 @@ def test_play_turn_uses_campaign_state_service():
     assert returned is result
 
     assert (
-        state_service.get_state_calls
+        state_service.get_turn_context_calls
         == 1
     )
 
@@ -778,7 +793,7 @@ def test_play_turn_does_not_call_world_service_directly():
     # CampaignTurnService obtiene el mundo
     # exclusivamente a través de CampaignStateService.
     assert (
-        campaign_state_service.get_state_calls
+        campaign_state_service.get_turn_context_calls
         == 1
     )
 
@@ -810,7 +825,7 @@ def test_campaign_state_service_error_is_wrapped():
 
     with pytest.raises(
         CampaignTurnServiceError,
-        match="failed to obtain campaign state",
+        match="failed to obtain campaign turn context",
     ) as exc_info:
 
         service.play_turn(

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from models.world_state import WorldState
+from models.turn_context import TurnContext
 
 from repositories.campaign_repository import CampaignRepository
 from repositories.character_repository import CharacterRepository
@@ -302,3 +303,23 @@ class CampaignStateService:
             raise CampaignStateServiceError(
                 "failed to save campaign world"
             ) from exc
+
+    def get_turn_context(
+        self,
+        campaign_id: int = 1,
+    ) -> TurnContext:
+        """
+        Construye el contexto completo necesario para
+        resolver un turno.
+        """
+
+        state = self.get_state(
+            campaign_id
+        )
+
+        return TurnContext(
+            campaign=state.campaign,
+            current_session=state.current_session,
+            active_character=state.active_character,
+            world=state.world,
+        )
