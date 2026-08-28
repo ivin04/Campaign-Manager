@@ -131,22 +131,26 @@ class TurnResolutionService:
         en WorldService.
         """
 
-        if isinstance(turn_context, TurnContext):
+        if isinstance(
+            turn_context,
+            TurnContext,
+        ):
             world = turn_context.world
 
-        elif isinstance(turn_context, WorldState):
+        elif isinstance(
+            turn_context,
+            WorldState,
+        ):
             world = turn_context
 
         else:
             raise TypeError(
-                "turn_context must be a TurnContext"
+                "turn_context must be a TurnContext or WorldState"
             )
 
         normalized_input = self._validate_player_input(
             player_input
         )
-
-        world = turn_context.world
 
         if not normalized_input:
             raise TurnResolutionServiceError(

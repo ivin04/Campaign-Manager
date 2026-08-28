@@ -360,8 +360,13 @@ def test_get_world_is_called_before_resolution():
         resolver.calls
     ) == 1
 
+    assert isinstance(
+        resolver.calls[0][0],
+        TurnContext,
+    )
+
     assert (
-        resolver.calls[0][0]
+        resolver.calls[0][0].world
         is world_service.world
     )
 
@@ -761,8 +766,13 @@ def test_play_turn_uses_campaign_state_service():
         resolver.calls
     ) == 1
 
+    assert isinstance(
+        resolver.calls[0][0],
+        TurnContext,
+    )
+
     assert (
-        resolver.calls[0][0]
+        resolver.calls[0][0].world
         is world_service.world
     )
 

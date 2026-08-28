@@ -191,7 +191,7 @@ def test_turn_context_must_be_turn_context():
 
     with pytest.raises(
         TypeError,
-        match="turn_context must be a TurnContext",
+        match="turn_context must be a TurnContext or WorldState"
     ):
 
         service.resolve_turn(

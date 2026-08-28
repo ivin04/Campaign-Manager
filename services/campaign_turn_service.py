@@ -316,19 +316,31 @@ class CampaignTurnService:
         if self.campaign_state_service is not None:
 
             try:
-                world = (
-                    self.campaign_state_service.get_world()
+                turn_context = (
+                    self.campaign_state_service.get_turn_context()
                 )
 
             except CampaignStateServiceError as exc:
                 raise CampaignTurnServiceError(
-                    "failed to obtain campaign state"
+                    "failed to obtain campaign turn context"
                 ) from exc
 
             except Exception as exc:
                 raise CampaignTurnServiceError(
-                    "CampaignStateService failed to get world"
+                    "CampaignStateService failed to get "
+                    "turn context"
                 ) from exc
+
+            if not isinstance(
+                turn_context,
+                TurnContext,
+            ):
+                raise CampaignTurnServiceError(
+                    "CampaignStateService returned an invalid "
+                    "TurnContext"
+                )
+
+            world = turn_context.world
 
         else:
 
@@ -341,6 +353,13 @@ class CampaignTurnService:
                 raise CampaignTurnServiceError(
                     "WorldService failed to get world"
                 ) from exc
+
+            turn_context = TurnContext(
+                campaign={},
+                current_session=None,
+                active_character=None,
+                world=world,
+            )
 
         if not isinstance(
             world,
