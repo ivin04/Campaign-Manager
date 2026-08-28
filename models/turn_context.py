@@ -6,6 +6,7 @@ from models.campaign_state import CampaignState
 from models.character_state import CharacterState
 from models.session_state import SessionState
 from models.world_state import WorldState
+from models.entity import Entity
 
 @dataclass(frozen=True)
 class TurnContext:
@@ -17,17 +18,16 @@ class TurnContext:
     - campaña actual
     - sesión actual
     - personaje activo
+    - entidad narrativa del personaje activo
     - WorldState actual
-
-    TurnContext es inmutable y no modifica ninguno
-    de los objetos que contiene.
     """
 
     campaign: CampaignState
     current_session: SessionState | None
     active_character: CharacterState | None
+    active_character_entity: Entity | None
     world: WorldState
-
+    
     def __post_init__(self) -> None:
         if not isinstance(
             self.campaign,
@@ -65,4 +65,15 @@ class TurnContext:
         ):
             raise TypeError(
                 "world must be a WorldState"
+            )
+
+        if (
+            self.active_character_entity is not None
+            and not isinstance(
+                self.active_character_entity,
+                Entity,
+            )
+        ):
+            raise TypeError(
+                "active_character_entity must be an Entity or None"
             )

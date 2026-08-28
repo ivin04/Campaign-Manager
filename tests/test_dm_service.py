@@ -7,6 +7,7 @@ from models.world_state import WorldState
 from models.campaign_state import CampaignState
 from models.character_state import CharacterState
 from models.session_state import SessionState
+from models.entity import Entity
 from services.context_builder import ContextBuilder
 from services.dm_service import (
     DMService,
@@ -78,6 +79,13 @@ def make_turn_context():
             entity_id=20,
         ),
         world=WorldState(),
+        active_character_entity=Entity(
+            id=20,
+            name="Aldric",
+            entity_type="player_character",
+            description="Un aventurero.",
+            notes="Conoce Vorder's Hold.",
+        ),
     )
 
 

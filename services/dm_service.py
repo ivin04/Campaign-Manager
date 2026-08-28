@@ -308,6 +308,7 @@ class DMService:
         campaign = turn_context.campaign
         session = turn_context.current_session
         character = turn_context.active_character
+        character_entity = turn_context.active_character_entity
 
         lines: list[str] = []
 
@@ -322,10 +323,30 @@ class DMService:
             )
 
         if character is not None:
-            lines.append(
-                f"Personaje activo: "
-                f"{DMService._format_context_object(character)}"
-            )
+
+            if character_entity is not None:
+                lines.append(
+                    "Personaje activo: "
+                    f"{character_entity.name}"
+                )
+
+                if character_entity.description:
+                    lines.append(
+                        f"Descripción del personaje: "
+                        f"{character_entity.description}"
+                    )
+
+                if character_entity.notes:
+                    lines.append(
+                        f"Notas del personaje: "
+                        f"{character_entity.notes}"
+                    )
+
+            else:
+                lines.append(
+                    "Personaje activo: "
+                    f"{DMService._format_context_object(character)}"
+                )
 
         if not lines:
             return "Sin información de campaña disponible."

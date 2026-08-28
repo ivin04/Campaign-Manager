@@ -8,6 +8,7 @@ from models.turn_context import TurnContext
 
 from repositories.campaign_repository import CampaignRepository
 from repositories.character_repository import CharacterRepository
+from repositories.entity_repository import EntityRepository
 
 from services.world_service import WorldService
 
@@ -60,6 +61,7 @@ class CampaignStateService:
         *,
         campaign_repository: CampaignRepository,
         character_repository: CharacterRepository,
+        entity_repository: EntityRepository,
         world_service: WorldService,
     ) -> None:
 
@@ -87,9 +89,18 @@ class CampaignStateService:
                 "world_service must be a WorldService"
             )
 
+        if not isinstance(
+            entity_repository,
+            EntityRepository,
+        ):
+            raise TypeError(
+                "entity_repository must be an EntityRepository"
+            )
+
         self.campaign_repository = campaign_repository
         self.character_repository = character_repository
         self.world_service = world_service
+        self.entity_repository = entity_repository
 
     # ============================================================
     # PUBLIC API
@@ -351,6 +362,20 @@ class CampaignStateService:
                     "CharacterRepository returned an invalid CharacterState"
                 )
 
+            active_character_entity = None
+
+            if active_character is not None:
+                active_character_entity = (
+                    self.entity_repository.get_entity(
+                        active_character.entity_id
+                    )
+                )
+
+                if active_character_entity is None:
+                    raise CampaignStateServiceError(
+                        "active character entity does not exist"
+                    )
+
         world = self.world_service.get_world()
 
         if not isinstance(
@@ -365,5 +390,6 @@ class CampaignStateService:
             campaign=campaign_state,
             current_session=session_state,
             active_character=active_character,
+            active_character_entity=active_character_entity,
             world=world,
         )
