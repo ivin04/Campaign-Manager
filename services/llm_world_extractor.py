@@ -4,11 +4,7 @@ import json
 from typing import Any, Callable
 
 from models.world_state import WorldState
-from operations.world_operations import WorldOperation
-
-from operations.turn_operations import (
-    TurnOperation,
-)
+from operations.turn_operations import TurnOperation
 
 
 class LLMExtractionError(ValueError):
@@ -17,17 +13,22 @@ class LLMExtractionError(ValueError):
 
 class LLMWorldExtractor:
     """
-    Responsabilidades:
+    Extrae operaciones persistentes a partir de la narrativa generada
+    por el DM.
 
-    - Enviar texto + estado relevante al proveedor.
-    - Parsear JSON.
-    - Validar la estructura.
-    - Convertir operaciones a WorldOperation.
-    - No modificar WorldState.
-    - No persistir nada.
+    El extractor:
+        - recibe narrativa + WorldState
+        - construye el prompt
+        - consulta al proveedor LLM
+        - parsea el JSON
+        - delega la conversión de operaciones al OperationParser
+        - valida el resultado
 
-    El proveedor se inyecta para poder probar todo sin necesitar
-    un modelo real.
+    El extractor NO:
+        - modifica el mundo
+        - persiste datos
+        - aplica operaciones
+        - implementa reglas de dominio
     """
 
     def __init__(
@@ -52,7 +53,7 @@ class LLMWorldExtractor:
         self,
         text: str,
         world: WorldState,
-    ) -> list[WorldOperation]:
+    ) -> list[TurnOperation]:
         return self.extract(
             text,
             world,
@@ -105,13 +106,10 @@ class LLMWorldExtractor:
         world: WorldState,
     ) -> str:
         """
-        Construye un prompt determinista.
+        Construye un prompt determinista para extraer cambios
+        persistentes del turno.
 
-        El LLM NO debe inventar cambios persistentes
-        que no estén respaldados por el texto.
-
-        Solo se proporciona el índice mínimo necesario
-        para resolver referencias a entidades existentes.
+        El LLM no debe ejecutar operaciones ni inventar IDs.
         """
 
         entity_lines = []
@@ -141,23 +139,26 @@ class LLMWorldExtractor:
             "NO inventes información.\n"
             "NO ejecutes operaciones.\n"
             "\n"
+            "Puedes devolver operaciones de mundo o de personaje.\n"
+            "\n"
             "Cuando una operación necesite un entity_id, "
             "usa únicamente los IDs de las entidades conocidas "
             "que aparecen abajo.\n"
+            "\n"
             "NO inventes IDs.\n"
             "\n"
             "Entidades conocidas:\n"
             f"{known_entities}\n"
             "\n"
             "Devuelve exclusivamente JSON válido con esta forma:\n"
-            '{\n'
+            "{\n"
             '  "operations": []\n'
-            '}\n'
+            "}\n"
             "\n"
             "Texto narrativo:\n"
             f"{text}\n"
         )
-    
+
     # ============================================================
     # RESPONSE PARSING
     # ============================================================
@@ -224,7 +225,7 @@ class LLMWorldExtractor:
     def _parse_operations(
         self,
         payload: dict[str, Any],
-    ) -> list[WorldOperation]:
+    ) -> list[TurnOperation]:
         try:
             operations = self.operation_parser.parse(
                 payload
@@ -249,11 +250,11 @@ class LLMWorldExtractor:
         ):
             if not isinstance(
                 operation,
-                WorldOperation,
+                TurnOperation,
             ):
                 raise LLMExtractionError(
                     "Operation parser returned "
-                    f"an invalid WorldOperation at index {index}"
+                    f"an invalid TurnOperation at index {index}"
                 )
 
         return operations

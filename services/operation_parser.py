@@ -18,6 +18,12 @@ from operations.world_operations import (
     WorldOperation,
 )
 
+from operations.character_operations import (
+    ChangeCharacterHpOperation,
+)
+
+from operations.turn_operations import TurnOperation
+
 
 class OperationParseError(ValueError):
     """Raised when an LLM response cannot be converted safely to operations."""
@@ -47,9 +53,14 @@ class OperationParser:
         "update_relation": UpdateRelationOperation,
         "remove_relation": RemoveRelationOperation,
         "create_event": CreateEventOperation,
+
+        "change_character_hp": ChangeCharacterHpOperation,
     }
 
-    def parse(self, payload: str | dict[str, Any]) -> list[WorldOperation]:
+    def parse(
+        self,
+        payload: str | dict[str, Any],
+    ) -> list[TurnOperation]:
         """Parse an LLM JSON response into validated operation objects."""
 
         data = self._decode(payload)
@@ -62,7 +73,7 @@ class OperationParser:
         if not isinstance(operations, list):
             raise OperationParseError("'operations' must be a list.")
 
-        result: list[WorldOperation] = []
+        result: list[TurnOperation] = []
 
         for index, raw_operation in enumerate(operations):
             try:
@@ -102,7 +113,10 @@ class OperationParser:
     # Operation parsing
     # ------------------------------------------------------------------
 
-    def _parse_operation(self, raw: Any) -> WorldOperation:
+    def _parse_operation(
+        self,
+        raw: Any,
+    ) -> TurnOperation:
 
         if not isinstance(raw, dict):
             raise OperationParseError(
@@ -242,6 +256,9 @@ class OperationParser:
             "update_relation": {
                 "target_id",
             },
+            "change_character_hp": {
+                "entity_id",
+            },
         }.get(operation_type, set())
 
         for field_name in entity_id_fields:
@@ -376,13 +393,22 @@ class OperationParser:
         amount = fields.get("amount")
 
         if amount is not None:
-            if (
-                not isinstance(amount, (int, float))
-                or isinstance(amount, bool)
-            ):
-                raise OperationParseError(
-                    "'amount' must be a number."
-                )
+            if operation_type == "change_character_hp":
+                if (
+                    isinstance(amount, bool)
+                    or not isinstance(amount, int)
+                ):
+                    raise OperationParseError(
+                        "'amount' must be an integer."
+                    )
+            else:
+                if (
+                    not isinstance(amount, (int, float))
+                    or isinstance(amount, bool)
+                ):
+                    raise OperationParseError(
+                        "'amount' must be a number."
+                    )
 
         # --------------------------------------------------------------
         # Metadata
@@ -463,4 +489,24 @@ class OperationParser:
             if value is not None and not isinstance(value, str):
                 raise OperationParseError(
                     f"'{name}' must be a string or null."
+                )
+
+        if operation_type == "change_character_hp":
+            entity_id = fields.get("entity_id")
+            amount = fields.get("amount")
+
+            if isinstance(entity_id, bool) or not isinstance(
+                entity_id,
+                int,
+            ):
+                raise OperationParseError(
+                    "'entity_id' must be an integer."
+                )
+
+            if isinstance(amount, bool) or not isinstance(
+                amount,
+                int,
+            ):
+                raise OperationParseError(
+                    "'amount' must be an integer."
                 )
