@@ -1,7 +1,7 @@
 import sqlite3
 
 
-CURRENT_VERSION = 2
+CURRENT_VERSION = 3
 
 
 def migration_001(conn: sqlite3.Connection) -> None:
@@ -238,6 +238,11 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("PRAGMA user_version = 2")
         version = 2
 
+    if version < 3:
+        migration_003(conn)
+        conn.execute("PRAGMA user_version = 3")
+        version = 3
+
     if version != CURRENT_VERSION:
         raise RuntimeError(
             f"Database schema version {version} is not supported. "
@@ -257,5 +262,28 @@ def migration_002(conn: sqlite3.Connection) -> None:
         DROP TABLE IF EXISTS locations;
         DROP TABLE IF EXISTS quests;
         DROP TABLE IF EXISTS relationships;
+        """
+    )
+
+def migration_003(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS character_states (
+            entity_id INTEGER PRIMARY KEY,
+            level INTEGER NOT NULL DEFAULT 1,
+            class_name TEXT,
+            current_hp INTEGER NOT NULL DEFAULT 0,
+            max_hp INTEGER NOT NULL DEFAULT 0,
+            armor_class INTEGER NOT NULL DEFAULT 10,
+            strength INTEGER NOT NULL DEFAULT 10,
+            dexterity INTEGER NOT NULL DEFAULT 10,
+            constitution INTEGER NOT NULL DEFAULT 10,
+            intelligence INTEGER NOT NULL DEFAULT 10,
+            wisdom INTEGER NOT NULL DEFAULT 10,
+            charisma INTEGER NOT NULL DEFAULT 10,
+            proficiency_bonus INTEGER NOT NULL DEFAULT 2,
+            metadata TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
+        );
         """
     )
