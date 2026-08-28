@@ -1,7 +1,6 @@
 import sqlite3
 
-CURRENT_VERSION = 5
-
+CURRENT_VERSION = 6
 
 def migration_001(conn: sqlite3.Connection) -> None:
     conn.executescript(
@@ -303,6 +302,39 @@ def migration_005(conn: sqlite3.Connection) -> None:
         """
     )
 
+def migration_006(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS turns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            session_id INTEGER,
+
+            player_input TEXT NOT NULL,
+            narrative TEXT NOT NULL,
+
+            operation_count INTEGER NOT NULL DEFAULT 0,
+            successful_operation_count INTEGER NOT NULL DEFAULT 0,
+            failed_operation_count INTEGER NOT NULL DEFAULT 0,
+
+            all_operations_succeeded INTEGER NOT NULL DEFAULT 1,
+            world_changed INTEGER NOT NULL DEFAULT 0,
+
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+            FOREIGN KEY (session_id)
+                REFERENCES sessions(id)
+                ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_turns_session
+            ON turns(session_id);
+
+        CREATE INDEX IF NOT EXISTS idx_turns_created_at
+            ON turns(created_at);
+        """
+    )
+
 
 def run_migrations(conn: sqlite3.Connection) -> None:
     version = conn.execute(
@@ -333,6 +365,11 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         migration_005(conn)
         conn.execute("PRAGMA user_version = 5")
         version = 5
+
+    if version < 6:
+        migration_006(conn)
+        conn.execute("PRAGMA user_version = 6")
+        version = 6
 
     if version != CURRENT_VERSION:
         raise RuntimeError(

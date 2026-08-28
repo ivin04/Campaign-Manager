@@ -4,6 +4,8 @@ from models.turn_resolution_result import TurnResolutionResult
 from models.world_state import WorldState
 from models.campaign_state import CampaignState
 from models.turn_context import TurnContext
+from models.turn_record import TurnRecord
+from repositories.turn_repository import TurnRepository
 
 from services.campaign_state_service import (
     CampaignStateService,
@@ -57,6 +59,7 @@ class CampaignTurnService:
         turn_resolution_service: TurnResolutionService,
         world_service: WorldService,
         campaign_state_service: CampaignStateService | None = None,
+        turn_repository: TurnRepository | None = None,
     ) -> None:
 
         if not isinstance(
@@ -94,6 +97,16 @@ class CampaignTurnService:
         self.campaign_state_service = (
             campaign_state_service
         )
+
+        if turn_repository is not None and not isinstance(
+            turn_repository,
+            TurnRepository,
+        ):
+            raise TypeError(
+                "turn_repository must be a TurnRepository"
+            )
+
+        self.turn_repository = turn_repository
 
     # ============================================================
     # PLAY TURN
@@ -222,6 +235,47 @@ class CampaignTurnService:
                 "TurnResolutionService returned "
                 "an invalid TurnResolutionResult"
             )
+
+        if self.turn_repository is not None:
+
+            session_id = None
+
+            if isinstance(
+                turn_context,
+                TurnContext,
+            ) and turn_context.current_session is not None:
+                session_id = (
+                    turn_context.current_session.session_id
+                )
+
+            try:
+                self.turn_repository.save_turn(
+                    TurnRecord(
+                        session_id=session_id,
+                        player_input=result.player_input,
+                        narrative=result.narrative,
+                        operation_count=(
+                            result.operation_count
+                        ),
+                        successful_operation_count=(
+                            result.successful_operation_count
+                        ),
+                        failed_operation_count=(
+                            result.failed_operation_count
+                        ),
+                        all_operations_succeeded=(
+                            result.all_operations_succeeded
+                        ),
+                        world_changed=(
+                            result.world_changed
+                        ),
+                    )
+                )
+
+            except Exception as exc:
+                raise CampaignTurnServiceError(
+                    "failed to persist turn history"
+                ) from exc
 
         return result
 

@@ -13,6 +13,7 @@ from models.schemas import (
 from repositories.campaign_repository import CampaignRepository
 from repositories.character_repository import CharacterRepository
 from repositories.entity_repository import EntityRepository
+from repositories.turn_repository import TurnRepository
 
 from services.campaign_turn_service import (
     CampaignTurnService,
@@ -96,6 +97,7 @@ def create_campaign_turn_service(
     world_service: WorldService,
     context_builder: ContextBuilder,
     campaign_state_service: CampaignStateService,
+    turn_repository: TurnRepository | None = None,
 ) -> CampaignTurnService:
     """
     Construye el pipeline completo de resolución de turnos.
@@ -157,6 +159,14 @@ def create_campaign_turn_service(
             "campaign_state_service must be a CampaignStateService"
         )
 
+    if turn_repository is not None and not isinstance(
+        turn_repository,
+        TurnRepository,
+    ):
+        raise TypeError(
+            "turn_repository must be a TurnRepository"
+        )
+
     provider = OllamaProvider()
 
     operation_parser = OperationParser()
@@ -173,14 +183,15 @@ def create_campaign_turn_service(
 
     turn_resolution_service = TurnResolutionService(
         dm_service=dm_service,
-        extractor=extractor,
         world_service=world_service,
+        extractor=extractor,
     )
 
     return CampaignTurnService(
         turn_resolution_service=turn_resolution_service,
         world_service=world_service,
         campaign_state_service=campaign_state_service,
+        turn_repository=turn_repository,
     )
 
 
@@ -195,6 +206,8 @@ campaign_repository = CampaignRepository()
 character_repository = CharacterRepository()
 
 entity_repository = EntityRepository()
+
+turn_repository = TurnRepository()
 
 campaign_state_service = CampaignStateService(
     campaign_repository=campaign_repository,
@@ -213,6 +226,7 @@ campaign_turn_service = create_campaign_turn_service(
     world_service=world_service,
     context_builder=context_builder,
     campaign_state_service=campaign_state_service,
+    turn_repository=turn_repository,
 )
 
 # ============================================================
@@ -339,6 +353,43 @@ def play_turn(data: TurnIn):
             in result.operation_results
         ],
     }
+
+@app.get("/turns")
+def get_turns(
+    session_id: int | None = Query(
+        default=None,
+        ge=1,
+    ),
+):
+    turns = turn_repository.list_turns(
+        session_id=session_id,
+    )
+
+    return [
+        {
+            "id": turn.id,
+            "session_id": turn.session_id,
+            "player_input": turn.player_input,
+            "narrative": turn.narrative,
+            "operation_count": (
+                turn.operation_count
+            ),
+            "successful_operation_count": (
+                turn.successful_operation_count
+            ),
+            "failed_operation_count": (
+                turn.failed_operation_count
+            ),
+            "all_operations_succeeded": (
+                turn.all_operations_succeeded
+            ),
+            "world_changed": (
+                turn.world_changed
+            ),
+            "created_at": turn.created_at,
+        }
+        for turn in turns
+    ]
 
 
 # ============================================================
