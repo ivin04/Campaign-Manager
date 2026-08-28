@@ -187,21 +187,6 @@ class CampaignTurnService:
                     "WorldService returned an invalid WorldState"
                 )
 
-        turn_context = TurnContext(
-            campaign=CampaignState(),
-            current_session=None,
-            active_character=None,
-            world=world,
-        )
-
-        if not isinstance(
-            world,
-            WorldState,
-        ):
-            raise CampaignTurnServiceError(
-                "WorldService returned an invalid WorldState"
-            )
-
         # --------------------------------------------------------
         # Resolver turno
         # --------------------------------------------------------
