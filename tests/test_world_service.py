@@ -568,3 +568,137 @@ def test_apply_operations_and_save_marks_world_as_changed(
     assert result.results[0].success is True
 
     assert len(save_calls) == 1
+
+def test_apply_turn_operations_rolls_back_when_character_operation_fails(
+    monkeypatch,
+):
+    from services.character_applier import (
+        CharacterApplierError,
+    )
+
+    class RecordingConnection:
+        def __init__(self):
+            self.committed = False
+            self.rolled_back = False
+
+    connection = RecordingConnection()
+
+    class ConnectionContext:
+
+        def __enter__(self):
+            return connection
+
+        def __exit__(
+            self,
+            exc_type,
+            exc_value,
+            traceback,
+        ):
+            if exc_type is None:
+                connection.committed = True
+            else:
+                connection.rolled_back = True
+
+            return False
+
+    monkeypatch.setattr(
+        "services.world_service.get_conn",
+        lambda: ConnectionContext(),
+    )
+
+    class FailingCharacterApplier:
+
+        def apply(
+            self,
+            operation,
+            *,
+            conn=None,
+        ):
+            raise CharacterApplierError(
+                "character failure"
+            )
+
+    service = WorldService(
+        character_applier=FailingCharacterApplier(),
+    )
+
+    original_world = service.world
+
+    with pytest.raises(
+        CharacterApplierError,
+        match="character failure",
+    ):
+        service.apply_turn_operations(
+            world_operations=(),
+            character_operations=(object(),),
+        )
+
+    assert service.world is original_world
+    assert connection.committed is False
+    assert connection.rolled_back is True
+
+def test_apply_turn_operations_rolls_back_when_world_operation_fails(
+    monkeypatch,
+):
+    class RecordingConnection:
+        def __init__(self):
+            self.committed = False
+            self.rolled_back = False
+
+    connection = RecordingConnection()
+
+    class ConnectionContext:
+
+        def __enter__(self):
+            return connection
+
+        def __exit__(
+            self,
+            exc_type,
+            exc_value,
+            traceback,
+        ):
+            if exc_type is None:
+                connection.committed = True
+            else:
+                connection.rolled_back = True
+
+            return False
+
+    monkeypatch.setattr(
+        "services.world_service.get_conn",
+        lambda: ConnectionContext(),
+    )
+
+    service = WorldService()
+
+    original_world = service.world
+
+    class FailingWorldApplier:
+
+        def apply(
+            self,
+            world,
+            operation,
+        ):
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message="world operation failed",
+                operation=operation,
+            )
+
+    service.applier = FailingWorldApplier()
+
+    with pytest.raises(
+        RuntimeError,
+        match="world operation failed",
+    ):
+        service.apply_turn_operations(
+            world_operations=(object(),),
+            character_operations=(),
+        )
+
+    assert service.world is original_world
+
+    assert connection.committed is False
+    assert connection.rolled_back is True

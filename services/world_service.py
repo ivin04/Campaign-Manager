@@ -267,7 +267,9 @@ class WorldService:
                     if not result.success:
                         self.world = original_world
 
-                        return tuple(results)
+                        raise RuntimeError(
+                            "world operation failed"
+                        )
 
                 for operation in character_operations:
 
