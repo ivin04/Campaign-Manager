@@ -26,7 +26,7 @@ class TurnContext:
     current_session: SessionState | None
     active_character: CharacterState | None
     world: WorldState
-    active_character_entity: Entity | None
+    active_character_entity: Entity | None = None
     
     def __post_init__(self) -> None:
         if not isinstance(

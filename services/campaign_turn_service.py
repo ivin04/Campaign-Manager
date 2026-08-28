@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from models.turn_resolution_result import TurnResolutionResult
 from models.world_state import WorldState
-from models.turn_context import TurnContext
-
 from models.campaign_state import CampaignState
 from models.turn_context import TurnContext
 
@@ -356,12 +354,17 @@ class CampaignTurnService:
                     "WorldService failed to get world"
                 ) from exc
 
-        if not isinstance(
-            world,
-            WorldState,
-        ):
-            raise CampaignTurnServiceError(
-                "WorldService returned an invalid WorldState"
-            )
+            if not isinstance(
+                world,
+                WorldState,
+            ):
+                raise CampaignTurnServiceError(
+                    "WorldService returned an invalid WorldState"
+                )
 
-        return world
+            turn_context = TurnContext(
+                campaign=CampaignState(),
+                current_session=None,
+                active_character=None,
+                world=world,
+            )
