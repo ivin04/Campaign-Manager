@@ -1,10 +1,17 @@
+from models.operation_result import (
+    OperationResult,
+    OperationStatus,
+)
+
 from operations.character_operations import (
     ChangeCharacterHpOperation,
 )
+
 from services.character_service import (
     CharacterService,
     CharacterServiceError,
 )
+
 
 class CharacterApplierError(Exception):
     pass
@@ -23,7 +30,8 @@ class CharacterApplier:
         operation,
         *,
         conn=None,
-    ):
+    ) -> OperationResult:
+
         if isinstance(
             operation,
             ChangeCharacterHpOperation,
@@ -50,12 +58,15 @@ class CharacterApplier:
                     str(exc)
                 ) from exc
 
-            return {
-                "success": True,
-                "changed": True,
-                "entity_id": operation.entity_id,
-                "current_hp": character.current_hp,
-            }
+            return OperationResult(
+                status=OperationStatus.SUCCESS,
+                message="Character HP changed",
+                operation=operation,
+                data={
+                    "entity_id": operation.entity_id,
+                    "current_hp": character.current_hp,
+                },
+            )
 
         raise CharacterApplierError(
             f"unsupported character operation: "

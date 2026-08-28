@@ -47,17 +47,22 @@ class TurnResolutionResult:
 
     operation_results: tuple = ()
 
+
     @property
     def world_changed(self) -> bool:
         """
         Indica si el turno produjo algún cambio confirmado.
 
-        Incluye tanto operaciones del mundo como operaciones
-        del personaje.
+        La aplicación de operaciones es atómica. Por tanto:
 
-        La aplicación de operaciones es atómica:
-        si falta algún resultado o alguna operación falla,
-        el turno no se considera cambiado.
+            - si alguna operación falla, el turno se revierte
+            y no existe ningún cambio confirmado.
+
+            - si todas las operaciones tienen éxito pero ninguna
+            modifica el estado, no hay cambio.
+
+            - si todas tienen éxito y al menos una modifica el estado,
+            el turno produjo un cambio confirmado.
         """
 
         if self.operation_count == 0:
@@ -69,28 +74,21 @@ class TurnResolutionResult:
         ):
             return False
 
+        if not self.all_operations_succeeded:
+            return False
+
         return any(
             self._result_changed(result)
             for result in self.operation_results
         )
 
 
+
     @staticmethod
     def _result_changed(result) -> bool:
         """
         Obtiene si un resultado representa un cambio.
-
-        Soporta tanto OperationResult como los diccionarios
-        utilizados actualmente por CharacterApplier.
         """
-
-        if isinstance(result, dict):
-            return bool(
-                result.get(
-                    "changed",
-                    False,
-                )
-            )
 
         return bool(
             getattr(
@@ -165,16 +163,13 @@ class TurnResolutionResult:
     @staticmethod
     def _result_success(result) -> bool:
         """
-        Obtiene success tanto de OperationResult como
-        de los resultados devueltos por los appliers
-        que utilizan diccionarios.
+        Obtiene si un resultado representa una operación exitosa.
         """
 
-        if isinstance(result, dict):
-            return bool(
-                result.get("success", False)
-            )
-
         return bool(
-            getattr(result, "success", False)
+            getattr(
+                result,
+                "success",
+                False,
+            )
         )

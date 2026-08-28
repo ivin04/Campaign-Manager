@@ -18,6 +18,7 @@ class OperationResult:
     status: OperationStatus
     message: str = ""
     operation: Any | None = None
+    data: dict[str, Any] | None = None
 
     @property
     def success(self) -> bool:
@@ -27,7 +28,7 @@ class OperationResult:
     def changed(self) -> bool:
         """
         Indica si la operación produjo una modificación real
-        del WorldState.
+        del estado.
         """
 
         return self.status == OperationStatus.SUCCESS

@@ -246,7 +246,7 @@ def test_world_changed_is_false_when_operation_is_no_change():
 
     assert result.world_changed is False
 
-def test_world_changed_is_false_when_operation_is_no_change():
+def test_world_changed_is_false_when_operation_is_no_change_with_unchanged_message():
 
     result = make_result(
         operations=(

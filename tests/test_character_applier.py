@@ -1,4 +1,8 @@
 from models.character_state import CharacterState
+from models.operation_result import (
+    OperationResult,
+    OperationStatus,
+)
 from operations.character_operations import (
     ChangeCharacterHpOperation,
 )
@@ -50,13 +54,21 @@ def test_change_hp_operation_is_applied():
         (1, -4),
     ]
 
-    assert result == {
-        "success": True,
-        "changed": True,
+    assert isinstance(
+        result,
+        OperationResult,
+    )
+
+    assert result.status == OperationStatus.SUCCESS
+    assert result.success is True
+    assert result.changed is True
+
+    assert result.operation == operation
+
+    assert result.data == {
         "entity_id": 1,
         "current_hp": 6,
     }
-
 
 def test_unsupported_character_operation_is_rejected():
 
@@ -163,11 +175,13 @@ def test_apply_change_character_hp_passes_connection():
 
     connection = object()
 
+    operation = ChangeCharacterHpOperation(
+        entity_id=7,
+        amount=-5,
+    )
+
     result = applier.apply(
-        ChangeCharacterHpOperation(
-            entity_id=7,
-            amount=-5,
-        ),
+        operation,
         conn=connection,
     )
 
@@ -179,9 +193,18 @@ def test_apply_change_character_hp_passes_connection():
         )
     ]
 
-    assert result == {
-        "success": True,
-        "changed": True,
+    assert isinstance(
+        result,
+        OperationResult,
+    )
+
+    assert result.status == OperationStatus.SUCCESS
+    assert result.success is True
+    assert result.changed is True
+
+    assert result.operation == operation
+
+    assert result.data == {
         "entity_id": 7,
         "current_hp": 15,
     }
