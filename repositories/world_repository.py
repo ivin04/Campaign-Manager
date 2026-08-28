@@ -224,23 +224,73 @@ class WorldRepository:
     # SAVE
     # ============================================================
 
-    def save_world(self, world: WorldState):
-
+    def save_world(
+        self,
+        world: WorldState,
+        *,
+        conn=None,
+    ):
         world_to_save = copy.deepcopy(world)
 
-        with get_conn() as conn:
+        if conn is None:
+            with get_conn() as connection:
+                self._save_world(
+                    connection,
+                    world_to_save,
+                )
+            return
 
-            self._normalize_world_dependencies(world_to_save)
+        self._save_world(
+            conn,
+            world_to_save,
+        )
 
-            self._delete_missing_records(conn, world_to_save)
+    def _save_world(
+        self,
+        conn,
+        world: WorldState,
+    ):
+        self._normalize_world_dependencies(world)
 
-            self._save_entities(conn, world_to_save)
-            self._save_items(conn, world_to_save)
-            self._save_item_instances(conn, world_to_save)
-            self._save_resources(conn, world_to_save)
-            self._save_resource_balances(conn, world_to_save)
-            self._save_relations(conn, world_to_save)
-            self._save_events(conn, world_to_save)
+        self._delete_missing_records(
+            conn,
+            world,
+        )
+
+        self._save_entities(
+            conn,
+            world,
+        )
+
+        self._save_items(
+            conn,
+            world,
+        )
+
+        self._save_item_instances(
+            conn,
+            world,
+        )
+
+        self._save_resources(
+            conn,
+            world,
+        )
+
+        self._save_resource_balances(
+            conn,
+            world,
+        )
+
+        self._save_relations(
+            conn,
+            world,
+        )
+
+        self._save_events(
+            conn,
+            world,
+        )
 
     # ============================================================
     # SAVE ENTITIES

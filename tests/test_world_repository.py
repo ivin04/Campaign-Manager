@@ -1244,3 +1244,61 @@ def test_next_entity_id_does_not_reuse_deleted_ids():
     del world.entities[3]
 
     assert WorldApplier._next_entity_id(world) == 3
+
+def test_save_world_accepts_external_connection():
+    repository = WorldRepository()
+
+    world = WorldState()
+
+    class RecordingConnection:
+
+        def __init__(self):
+            self.calls = []
+
+        def execute(
+            self,
+            query,
+            params=(),
+        ):
+            self.calls.append(
+                (
+                    query,
+                    params,
+                )
+            )
+
+            class Cursor:
+                def fetchone(self):
+                    return None
+
+            return Cursor()
+
+    connection = RecordingConnection()
+
+    repository.save_world(
+        world,
+        conn=connection,
+    )
+
+    assert connection.calls
+
+def test_save_world_does_not_open_connection_when_one_is_provided(
+    monkeypatch,
+):
+    repository = WorldRepository()
+
+    world = WorldState()
+
+    def fail_get_conn():
+        raise AssertionError(
+            "save_world must not open a new connection "
+            "when conn is provided"
+        )
+
+    monkeypatch.setattr(
+        "repositories.world_repository.get_conn",
+        fail_get_conn,
+    )
+
+    # Usa aquí la fixture/conexión SQLite real de tus tests
+    # de WorldRepository.
