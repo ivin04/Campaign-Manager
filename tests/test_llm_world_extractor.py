@@ -546,3 +546,71 @@ def test_multiple_operations_are_returned():
         operation_1,
         operation_2,
     ]
+
+def test_prompt_includes_known_entity_ids():
+    provider = FakeProvider(
+        '{"operations": []}'
+    )
+
+    parser = FakeParser()
+
+    extractor = LLMWorldExtractor(
+        provider=provider,
+        operation_parser=parser,
+    )
+
+    world = WorldState()
+
+    entity = world.entities[1] = type(
+        "Entity",
+        (),
+        {
+            "name": "Aldric",
+            "entity_type": "npc",
+        },
+    )()
+
+    extractor.extract(
+        "Aldric aparece.",
+        world,
+    )
+
+    assert len(provider.calls) == 1
+
+    assert "ID 1" in provider.calls[0]
+    assert "Aldric" in provider.calls[0]
+    assert "npc" in provider.calls[0]
+
+def test_prompt_does_not_include_unrelated_world_state():
+    provider = FakeProvider(
+        '{"operations": []}'
+    )
+
+    parser = FakeParser()
+
+    extractor = LLMWorldExtractor(
+        provider=provider,
+        operation_parser=parser,
+    )
+
+    world = WorldState()
+
+    world.entities[1] = type(
+        "Entity",
+        (),
+        {
+            "name": "Aldric",
+            "entity_type": "npc",
+            "description": "Mercader de Vorder's Hold.",
+        },
+    )()
+
+    extractor.extract(
+        "Aldric aparece.",
+        world,
+    )
+
+    prompt = provider.calls[0]
+
+    assert "Aldric" in prompt
+    assert "Mercader de Vorder's Hold" not in prompt

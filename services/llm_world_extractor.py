@@ -105,7 +105,26 @@ class LLMWorldExtractor:
 
         El LLM NO debe inventar cambios persistentes
         que no estén respaldados por el texto.
+
+        Solo se proporciona el índice mínimo necesario
+        para resolver referencias a entidades existentes.
         """
+
+        entity_lines = []
+
+        for entity_id, entity in world.entities.items():
+            entity_lines.append(
+                f"- ID {entity_id}: "
+                f"{entity.name} "
+                f"({entity.entity_type})"
+            )
+
+        if entity_lines:
+            known_entities = "\n".join(
+                entity_lines
+            )
+        else:
+            known_entities = "- Ninguna"
 
         return (
             "Eres un extractor de estado de un mundo de D&D.\n"
@@ -118,6 +137,14 @@ class LLMWorldExtractor:
             "NO inventes información.\n"
             "NO ejecutes operaciones.\n"
             "\n"
+            "Cuando una operación necesite un entity_id, "
+            "usa únicamente los IDs de las entidades conocidas "
+            "que aparecen abajo.\n"
+            "NO inventes IDs.\n"
+            "\n"
+            "Entidades conocidas:\n"
+            f"{known_entities}\n"
+            "\n"
             "Devuelve exclusivamente JSON válido con esta forma:\n"
             '{\n'
             '  "operations": []\n'
@@ -126,7 +153,7 @@ class LLMWorldExtractor:
             "Texto narrativo:\n"
             f"{text}\n"
         )
-
+    
     # ============================================================
     # RESPONSE PARSING
     # ============================================================

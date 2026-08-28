@@ -104,3 +104,32 @@ class CampaignRepository:
             """,
             (session_id,),
         )
+
+    def get_session(
+        self,
+        session_id: int,
+    ):
+        return one(
+            """
+            SELECT *
+            FROM sessions
+            WHERE id=?
+            """,
+            (session_id,),
+        )
+
+    def get_current_session(
+        self,
+        campaign_id: int = 1,
+    ):
+        campaign = self.get_campaign(campaign_id)
+
+        if campaign is None:
+            return None
+
+        session_id = campaign["current_session_id"]
+
+        if session_id is None:
+            return None
+
+        return self.get_session(session_id)
