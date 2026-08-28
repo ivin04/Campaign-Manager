@@ -5,6 +5,7 @@ from models.operation_result import (
 )
 from models.world_state import WorldState
 from models.turn_context import TurnContext
+from models.campaign_state import CampaignState
 from operations.world_operations import (
     CreateEntityOperation,
 )
@@ -854,3 +855,32 @@ def test_turn_resolution_passes_complete_turn_context_to_dm():
     assert call_name == "generate"
     assert received_context is context
     assert received_input == "Exploro."
+
+def test_world_state_compatibility_creates_typed_turn_context():
+    service, dm, *_ = make_service()
+
+    world = WorldState()
+
+    service.resolve_turn(
+        world,
+        "Exploro.",
+    )
+
+    assert len(dm.calls) == 1
+
+    _, context, player_input = dm.calls[0]
+
+    assert isinstance(
+        context,
+        TurnContext,
+    )
+
+    assert isinstance(
+        context.campaign,
+        CampaignState,
+    )
+
+    assert context.current_session is None
+    assert context.active_character is None
+    assert context.world is world
+    assert player_input == "Exploro."

@@ -3,6 +3,7 @@ from __future__ import annotations
 from models.turn_resolution_result import TurnResolutionResult
 from models.world_state import WorldState
 from models.turn_context import TurnContext
+from models.campaign_state import CampaignState
 from operations.world_operations import WorldOperation
 from services.dm_service import DMService
 from services.llm_world_extractor import LLMWorldExtractor
@@ -142,7 +143,7 @@ class TurnResolutionService:
             WorldState,
         ):
             context = TurnContext(
-                campaign={},
+                campaign=CampaignState(),
                 current_session=None,
                 active_character=None,
                 world=turn_context,
