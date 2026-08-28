@@ -8,6 +8,10 @@ from services.dm_service import DMService
 from services.llm_world_extractor import LLMWorldExtractor
 from services.world_service import WorldService
 
+from models.world_application_result import (
+    WorldApplicationResult,
+)
+
 
 class TurnResolutionServiceError(RuntimeError):
     """
@@ -218,52 +222,19 @@ class TurnResolutionService:
 
         if not isinstance(
             application,
-            dict,
+            WorldApplicationResult,
         ):
             raise TurnResolutionServiceError(
-                "WorldService returned an invalid application result"
+                "WorldService returned an invalid "
+                "WorldApplicationResult"
             )
-
-        success = application.get(
-            "success",
-            False,
-        )
-
-        results = application.get(
-            "results",
-            [],
-        )
-
-        if not isinstance(
-            success,
-            bool,
-        ):
-            raise TurnResolutionServiceError(
-                "WorldService returned an invalid success value"
-            )
-
-        if not isinstance(
-            results,
-            list,
-        ):
-            raise TurnResolutionServiceError(
-                "WorldService returned invalid operation results"
-            )
-
-        for result in results:
-
-            if not isinstance(
-                result,
-                OperationResult,
-            ):
-                raise TurnResolutionServiceError(
-                    "WorldService returned an invalid OperationResult"
-                )
 
         # ========================================================
         # 4. RESULTADO
         # ========================================================
 
+        results = application.results
+        
         return TurnResolutionResult(
             player_input=normalized_input,
             narrative=narrative,

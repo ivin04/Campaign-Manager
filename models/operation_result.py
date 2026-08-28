@@ -22,3 +22,12 @@ class OperationResult:
     @property
     def success(self) -> bool:
         return self.status == OperationStatus.SUCCESS
+
+    @property
+    def changed(self) -> bool:
+        """
+        Indica si la operación produjo una modificación real
+        del WorldState.
+        """
+
+        return self.status == OperationStatus.SUCCESS

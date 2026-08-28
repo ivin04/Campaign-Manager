@@ -294,12 +294,12 @@ def test_apply_operations_applies_all_operations_without_saving():
         operations
     )
 
-    assert result["success"] is True
-    assert len(result["results"]) == 2
+    assert result.success is True
+    assert len(result.results) == 2
 
     assert repository.save_calls == 0
 
-    assert service.world is result["world"]
+    assert service.world is result.world
 
 def test_apply_operations_rolls_back_when_one_operation_fails(
     monkeypatch,
@@ -357,7 +357,7 @@ def test_apply_operations_rolls_back_when_one_operation_fails(
         ]
     )
 
-    assert result["success"] is False
+    assert result.success is False
 
     assert service.world is original_world
     assert service.world.entities == {}
@@ -426,7 +426,7 @@ def test_apply_operations_and_save_persists_successful_operations(
         [operation]
     )
 
-    assert result["success"] is True
+    assert result.success is True
     assert len(save_calls) == 1
     assert save_calls[0] is service.get_world()
 
@@ -505,6 +505,66 @@ def test_apply_operations_and_save_does_not_save_when_operation_fails(
         [operation]
     )
 
-    assert result["success"] is False
+    assert result.success is False
     assert save_called is False
     assert service.get_world() is original_world
+    assert result.changed is False
+    assert len(result.results) == 1
+
+def test_apply_operations_and_save_does_not_save_when_there_are_no_operations(
+    monkeypatch,
+):
+    service = WorldService()
+
+    save_called = False
+
+    def spy_save_world(world):
+        nonlocal save_called
+        save_called = True
+
+    monkeypatch.setattr(
+        service.repository,
+        "save_world",
+        spy_save_world,
+    )
+
+    result = service.apply_operations_and_save(
+        []
+    )
+
+    assert result.success is True
+    assert result.changed is False
+    assert result.results == ()
+    assert save_called is False
+
+def test_apply_operations_and_save_marks_world_as_changed(
+    monkeypatch,
+):
+    service = WorldService()
+
+    operation = CreateEntityOperation(
+        name="Aldric",
+        entity_type="character",
+    )
+
+    save_calls = []
+
+    def spy_save_world(world):
+        save_calls.append(world)
+
+    monkeypatch.setattr(
+        service.repository,
+        "save_world",
+        spy_save_world,
+    )
+
+    result = service.apply_operations_and_save(
+        [operation]
+    )
+
+    assert result.success is True
+    assert result.changed is True
+    assert len(result.results) == 1
+    assert result.results[0].success is True
+
+    assert len(save_calls) == 1

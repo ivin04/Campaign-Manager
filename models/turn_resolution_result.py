@@ -40,14 +40,10 @@ class TurnResolutionResult:
         Indica si el turno produjo un cambio confirmado
         en el WorldState.
 
-        La aplicación de operaciones es atómica, por lo que
-        una sola operación fallida implica rollback completo.
-
-        Por tanto:
-
-            todas las operaciones OK -> True
-            alguna operación falla   -> False
-            cero operaciones          -> False
+        La aplicación de operaciones es atómica:
+        si una sola operación falla, el lote completo
+        se considera no confirmado y el WorldState original
+        permanece intacto.
         """
 
         if not self.operations:
@@ -57,7 +53,7 @@ class TurnResolutionResult:
             return False
 
         return all(
-            result.success
+            result.changed
             for result in self.operation_results
         )
 

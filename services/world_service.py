@@ -3,6 +3,10 @@ from models.operation_result import OperationResult
 from repositories.world_repository import WorldRepository
 from services.world_applier import WorldApplier
 
+from models.world_application_result import (
+    WorldApplicationResult,
+)
+
 import copy
 
 class WorldService:
@@ -65,38 +69,26 @@ class WorldService:
     def apply_operations(
         self,
         operations,
-    ):
+    ) -> WorldApplicationResult:
         """
-        Aplica varias operaciones de forma atómica a nivel de WorldState.
+        Aplica varias operaciones de forma atómica sobre WorldState.
 
-        Comportamiento:
+        Las operaciones se aplican sobre una copia.
 
-        - Las operaciones se aplican sobre una copia.
-        - Si una operación devuelve success=False, se aborta todo.
-        - Si una operación lanza una excepción, se aborta todo.
-        - El WorldState original no se modifica si algo falla.
-        - NO persiste el estado en SQLite.
+        Si alguna operación falla:
 
-        Devuelve:
+            - se descarta el estado de trabajo
+            - se conserva el WorldState original
+            - changed=False
+            - no se persiste nada
 
-            {
-                "success": True/False,
-                "results": [...]
-            }
+        Si todas tienen éxito:
 
-        Si todas las operaciones tienen éxito, el nuevo WorldState
-        queda establecido en memoria.
+            - el nuevo WorldState pasa a ser el estado actual
+            - changed=True si hubo operaciones
         """
-
-        # =========================================================
-        # 1. Guardar el estado original
-        # =========================================================
 
         original_state = self.world
-
-        # =========================================================
-        # 2. Crear estado de trabajo independiente
-        # =========================================================
 
         working_state = copy.deepcopy(
             original_state
@@ -108,10 +100,6 @@ class WorldService:
 
         try:
 
-            # =====================================================
-            # 3. Aplicar TODAS las operaciones sobre la copia
-            # =====================================================
-
             for operation in operations:
 
                 result = self.apply(
@@ -120,35 +108,27 @@ class WorldService:
 
                 results.append(result)
 
-                # -------------------------------------------------
-                # Si una operación falla lógicamente:
-                # abortamos TODO.
-                # -------------------------------------------------
-
                 if not result.success:
 
                     self.world = original_state
 
-                    return {
-                        "success": False,
-                        "results": results,
-                    }
+                    return WorldApplicationResult(
+                        success=False,
+                        changed=False,
+                        results=tuple(results),
+                        world=original_state,
+                    )
 
-            # =====================================================
-            # 4. Todas las operaciones han tenido éxito
-            # =====================================================
+            changed = bool(results)
 
-            return {
-                "success": True,
-                "results": results,
-                "world": self.world,
-            }
+            return WorldApplicationResult(
+                success=True,
+                changed=changed,
+                results=tuple(results),
+                world=self.world,
+            )
 
         except Exception:
-
-            # =====================================================
-            # 5. Error inesperado
-            # =====================================================
 
             self.world = original_state
 
@@ -157,32 +137,48 @@ class WorldService:
     def apply_operations_and_save(
         self,
         operations,
-    ):
+    ) -> WorldApplicationResult:
         """
-        Aplica varias operaciones de forma atómica a nivel de WorldState.
+        Aplica operaciones de forma atómica y persiste únicamente
+        si el WorldState ha cambiado realmente.
 
-        Comportamiento:
+        Reglas:
 
-        - Las operaciones se aplican sobre una copia.
-        - Si una operación devuelve success=False, se aborta todo.
-        - Si una operación lanza una excepción, se aborta todo.
-        - El WorldState original no se modifica si algo falla.
-        - Solo se persiste una vez cuando todas las operaciones tienen éxito.
+            0 operaciones
+                -> success=True
+                -> changed=False
+                -> NO guarda
 
-        NOTA:
-        La atomicidad de SQLite se garantiza en el repositorio.
-        Este método garantiza la atomicidad del WorldState en memoria.
+            todas SUCCESS
+                -> success=True
+                -> changed=True
+                -> guarda una vez
+
+            alguna falla
+                -> success=False
+                -> changed=False
+                -> NO guarda
+
+            error durante persistencia
+                -> restaura la referencia original en memoria
+                -> propaga la excepción
         """
 
         original_world = self.world
 
-        result = self.apply_operations(operations)
+        result = self.apply_operations(
+            operations
+        )
 
-        if not result["success"]:
+        if not result.success:
+            return result
+
+        if not result.changed:
             return result
 
         try:
             self.save()
+
         except Exception:
             self.world = original_world
             raise

@@ -218,3 +218,35 @@ def test_failed_operation_count():
     )
 
     assert result.failed_operation_count == 2
+
+def test_world_changed_is_false_when_operation_is_no_change():
+
+    result = make_result(
+        operations=(
+            object(),
+        ),
+        operation_results=(
+            OperationResult(
+                status=OperationStatus.NO_CHANGE,
+                message="already in requested state",
+            ),
+        ),
+    )
+
+    assert result.world_changed is False
+
+def test_world_changed_is_false_when_operation_is_no_change():
+
+    result = make_result(
+        operations=(
+            object(),
+        ),
+        operation_results=(
+            OperationResult(
+                status=OperationStatus.NO_CHANGE,
+                message="unchanged",
+            ),
+        ),
+    )
+
+    assert result.world_changed is False
