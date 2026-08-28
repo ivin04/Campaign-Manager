@@ -1,7 +1,6 @@
 import sqlite3
 
-
-CURRENT_VERSION = 3
+CURRENT_VERSION = 4
 
 
 def migration_001(conn: sqlite3.Connection) -> None:
@@ -225,29 +224,6 @@ def migration_001(conn: sqlite3.Connection) -> None:
         """
     )
 
-def run_migrations(conn: sqlite3.Connection) -> None:
-    version = conn.execute("PRAGMA user_version").fetchone()[0]
-
-    if version < 1:
-        migration_001(conn)
-        conn.execute("PRAGMA user_version = 1")
-        version = 1
-
-    if version < 2:
-        migration_002(conn)
-        conn.execute("PRAGMA user_version = 2")
-        version = 2
-
-    if version < 3:
-        migration_003(conn)
-        conn.execute("PRAGMA user_version = 3")
-        version = 3
-
-    if version != CURRENT_VERSION:
-        raise RuntimeError(
-            f"Database schema version {version} is not supported. "
-            f"Expected {CURRENT_VERSION}."
-        )
 
 def migration_002(conn: sqlite3.Connection) -> None:
     conn.executescript(
@@ -264,6 +240,7 @@ def migration_002(conn: sqlite3.Connection) -> None:
         DROP TABLE IF EXISTS relationships;
         """
     )
+
 
 def migration_003(conn: sqlite3.Connection) -> None:
     conn.executescript(
@@ -283,7 +260,51 @@ def migration_003(conn: sqlite3.Connection) -> None:
             charisma INTEGER NOT NULL DEFAULT 10,
             proficiency_bonus INTEGER NOT NULL DEFAULT 2,
             metadata TEXT NOT NULL DEFAULT '{}',
-            FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
+
+            FOREIGN KEY (entity_id)
+                REFERENCES entities(id)
+                ON DELETE CASCADE
         );
         """
     )
+
+
+def migration_004(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        ALTER TABLE campaign
+        ADD COLUMN active_character_id INTEGER
+        """
+    )
+
+
+def run_migrations(conn: sqlite3.Connection) -> None:
+    version = conn.execute(
+        "PRAGMA user_version"
+    ).fetchone()[0]
+
+    if version < 1:
+        migration_001(conn)
+        conn.execute("PRAGMA user_version = 1")
+        version = 1
+
+    if version < 2:
+        migration_002(conn)
+        conn.execute("PRAGMA user_version = 2")
+        version = 2
+
+    if version < 3:
+        migration_003(conn)
+        conn.execute("PRAGMA user_version = 3")
+        version = 3
+
+    if version < 4:
+        migration_004(conn)
+        conn.execute("PRAGMA user_version = 4")
+        version = 4
+
+    if version != CURRENT_VERSION:
+        raise RuntimeError(
+            f"Database schema version {version} is not supported. "
+            f"Expected {CURRENT_VERSION}."
+        )

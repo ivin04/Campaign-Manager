@@ -133,3 +133,35 @@ class CampaignRepository:
             return None
 
         return self.get_session(session_id)
+
+    def update_active_character(
+        self,
+        campaign_id: int,
+        character_id: int | None,
+    ):
+        execute(
+            """
+            UPDATE campaign
+            SET
+                active_character_id=?,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (
+                character_id,
+                campaign_id,
+            ),
+        )
+
+        return self.get_campaign(campaign_id)
+
+    def get_active_character_id(
+        self,
+        campaign_id: int = 1,
+    ) -> int | None:
+        campaign = self.get_campaign(campaign_id)
+
+        if campaign is None:
+            return None
+
+        return campaign["active_character_id"]
