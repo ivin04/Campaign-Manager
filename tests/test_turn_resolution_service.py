@@ -4,6 +4,7 @@ from models.operation_result import (
     OperationStatus,
 )
 from models.world_state import WorldState
+from models.turn_context import TurnContext
 from operations.world_operations import (
     CreateEntityOperation,
 )
@@ -88,6 +89,13 @@ def make_world():
 
     return WorldState()
 
+def make_turn_context():
+    return TurnContext(
+        campaign={},
+        current_session=None,
+        active_character=None,
+        world=make_world(),
+    )
 
 def make_service(
     *,
@@ -177,11 +185,14 @@ def test_constructor_requires_world_service():
 # ============================================================
 
 
-def test_world_must_be_world_state():
+def test_turn_context_must_be_turn_context():
 
     service, *_ = make_service()
 
-    with pytest.raises(TypeError):
+    with pytest.raises(
+        TypeError,
+        match="turn_context must be a TurnContext",
+    ):
 
         service.resolve_turn(
             object(),
@@ -196,7 +207,7 @@ def test_player_input_must_be_string():
     with pytest.raises(TypeError):
 
         service.resolve_turn(
-            make_world(),
+            make_turn_context(),
             123,
         )
 
@@ -210,7 +221,7 @@ def test_empty_player_input_is_rejected():
     ):
 
         service.resolve_turn(
-            make_world(),
+            make_turn_context(),
             "   ",
         )
 
@@ -220,7 +231,7 @@ def test_player_input_is_stripped():
     service, dm, *_ = make_service()
 
     result = service.resolve_turn(
-        make_world(),
+        make_turn_context(),
         "   Exploro.   ",
     )
 
@@ -241,7 +252,7 @@ def test_narrative_is_returned():
     service, *_ = make_service()
 
     result = service.resolve_turn(
-        make_world(),
+        make_turn_context(),
         "Abro la puerta.",
     )
 
@@ -270,7 +281,7 @@ def test_empty_narrative_is_rejected():
     ):
 
         service.resolve_turn(
-            make_world(),
+            make_turn_context(),
             "Abro.",
         )
 
@@ -301,7 +312,7 @@ def test_dm_failure_is_wrapped():
     ):
 
         service.resolve_turn(
-            make_world(),
+            make_turn_context(),
             "Abro.",
         )
 
@@ -318,7 +329,7 @@ def test_no_operations_are_valid():
     )
 
     result = service.resolve_turn(
-        make_world(),
+        make_turn_context(),
         "Miro alrededor.",
     )
 
@@ -336,7 +347,7 @@ def test_extractor_receives_generated_narrative():
     )
 
     service.resolve_turn(
-        make_world(),
+        make_turn_context(),
         "Abro la puerta.",
     )
 
@@ -383,7 +394,7 @@ def test_extractor_failure_is_wrapped():
     ):
 
         service.resolve_turn(
-            make_world(),
+            make_turn_context(),
             "Abro.",
         )
 
@@ -425,7 +436,7 @@ def test_invalid_extractor_result_is_rejected():
     ):
 
         service.resolve_turn(
-            make_world(),
+            make_turn_context(),
             "Abro.",
         )
 
@@ -652,7 +663,7 @@ def test_turn_resolution_order():
     )
 
     service.resolve_turn(
-        make_world(),
+        make_turn_context(),
         "Exploro.",
     )
 
@@ -762,7 +773,7 @@ def test_turn_resolution_order_with_operation():
     )
 
     service.resolve_turn(
-        make_world(),
+        make_turn_context(),
         "Conozco a Aldric.",
     )
 
@@ -771,3 +782,27 @@ def test_turn_resolution_order_with_operation():
         "extractor",
         "applier",
     ]
+
+def test_turn_resolution_uses_world_from_turn_context():
+
+    world = make_world()
+
+    service, dm, extractor, _ = make_service()
+
+    context = TurnContext(
+        campaign={"id": 123},
+        current_session={"id": 456},
+        active_character={"id": 789},
+        world=world,
+    )
+
+    service.resolve_turn(
+        context,
+        "Exploro.",
+    )
+
+    assert dm.calls == [
+        ("generate", "Exploro.")
+    ]
+
+    assert extractor.received_world is world

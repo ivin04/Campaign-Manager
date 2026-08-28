@@ -192,7 +192,7 @@ class CampaignTurnService:
         try:
             result = (
                 self.turn_resolution_service.resolve_turn(
-                    world,
+                    turn_context,
                     normalized_input,
                 )
             )

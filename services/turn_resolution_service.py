@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from models.operation_result import OperationResult
 from models.turn_resolution_result import TurnResolutionResult
 from models.world_state import WorldState
+from models.turn_context import TurnContext
 from operations.world_operations import WorldOperation
 from services.dm_service import DMService
 from services.llm_world_extractor import LLMWorldExtractor
@@ -109,7 +109,7 @@ class TurnResolutionService:
 
     def resolve_turn(
         self,
-        world: WorldState,
+        turn_context: TurnContext | WorldState,
         player_input: str,
     ) -> TurnResolutionResult:
         """
@@ -131,11 +131,22 @@ class TurnResolutionService:
         en WorldService.
         """
 
-        self._validate_world(world)
+        if isinstance(turn_context, TurnContext):
+            world = turn_context.world
+
+        elif isinstance(turn_context, WorldState):
+            world = turn_context
+
+        else:
+            raise TypeError(
+                "turn_context must be a TurnContext"
+            )
 
         normalized_input = self._validate_player_input(
             player_input
         )
+
+        world = turn_context.world
 
         if not normalized_input:
             raise TurnResolutionServiceError(
