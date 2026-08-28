@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 from models.turn_record import TurnRecord
-from database import execute, one, rows
+from database import (
+    execute,
+    execute_in_conn,
+    one,
+    one_in_conn,
+    rows,
+)
 
 
 class TurnRepository:
@@ -14,6 +20,8 @@ class TurnRepository:
     def save_turn(
         self,
         turn: TurnRecord,
+        *,
+        conn=None,
     ) -> TurnRecord:
 
         if not isinstance(turn, TurnRecord):
@@ -37,8 +45,7 @@ class TurnRepository:
                 "turn.narrative must be a string"
             )
 
-        turn_id = execute(
-            """
+        query = """
             INSERT INTO turns (
                 session_id,
                 player_input,
@@ -50,37 +57,70 @@ class TurnRepository:
                 world_changed
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                turn.session_id,
-                turn.player_input,
-                turn.narrative,
-                turn.operation_count,
-                turn.successful_operation_count,
-                turn.failed_operation_count,
-                int(turn.all_operations_succeeded),
-                int(turn.world_changed),
-            ),
+        """
+
+        params = (
+            turn.session_id,
+            turn.player_input,
+            turn.narrative,
+            turn.operation_count,
+            turn.successful_operation_count,
+            turn.failed_operation_count,
+            int(turn.all_operations_succeeded),
+            int(turn.world_changed),
         )
 
-        row = one(
-            """
-            SELECT
-                id,
-                session_id,
-                player_input,
-                narrative,
-                operation_count,
-                successful_operation_count,
-                failed_operation_count,
-                all_operations_succeeded,
-                world_changed,
-                created_at
-            FROM turns
-            WHERE id=?
-            """,
-            (turn_id,),
-        )
+        if conn is None:
+            turn_id = execute(
+                query,
+                params,
+            )
+
+            row = one(
+                """
+                SELECT
+                    id,
+                    session_id,
+                    player_input,
+                    narrative,
+                    operation_count,
+                    successful_operation_count,
+                    failed_operation_count,
+                    all_operations_succeeded,
+                    world_changed,
+                    created_at
+                FROM turns
+                WHERE id=?
+                """,
+                (turn_id,),
+            )
+
+        else:
+            turn_id = execute_in_conn(
+                conn,
+                query,
+                params,
+            )
+
+            row = one_in_conn(
+                conn,
+                """
+                SELECT
+                    id,
+                    session_id,
+                    player_input,
+                    narrative,
+                    operation_count,
+                    successful_operation_count,
+                    failed_operation_count,
+                    all_operations_succeeded,
+                    world_changed,
+                    created_at
+                FROM turns
+                WHERE id=?
+                """,
+                (turn_id,),
+            )
 
         if row is None:
             raise RuntimeError(

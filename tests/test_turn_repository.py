@@ -1,6 +1,10 @@
 from models.turn_record import TurnRecord
 from repositories.turn_repository import TurnRepository
 
+from database import (
+    one,
+)
+
 
 def test_save_turn_and_get_turn(
     isolated_database,
@@ -265,10 +269,38 @@ def test_list_recent_turns_rejects_non_integer_limit(
         )
 
 def test_list_turns_with_session_id_returns_failed_operation_count(
-    turn_repository,
+    isolated_database,
 ):
+    from database import execute, one
+    from models.turn_record import TurnRecord
+    from repositories.turn_repository import TurnRepository
+
+    execute(
+        """
+        INSERT INTO sessions (
+            number,
+            title
+        )
+        VALUES (?, ?)
+        """,
+        (999, "test-session"),
+    )
+
+    session = one(
+        """
+        SELECT id
+        FROM sessions
+        WHERE number=?
+        """,
+        (999,),
+    )
+
+    assert session is not None
+
+    repository = TurnRepository()
+
     turn = TurnRecord(
-        session_id=42,
+        session_id=session["id"],
         player_input="attack",
         narrative="The goblin attacks.",
         operation_count=2,
@@ -278,14 +310,100 @@ def test_list_turns_with_session_id_returns_failed_operation_count(
         world_changed=False,
     )
 
-    saved = turn_repository.save_turn(turn)
+    saved = repository.save_turn(turn)
 
-    assert saved.failed_operation_count == 1
+    assert saved.id is not None
 
-    turns = turn_repository.list_turns(
-        session_id=42,
+    turns = repository.list_turns(
+        session_id=session["id"],
     )
 
     assert len(turns) == 1
-
     assert turns[0].failed_operation_count == 1
+
+def test_save_turn_can_use_existing_connection():
+    from database import get_conn
+    from models.turn_record import TurnRecord
+    from repositories.turn_repository import TurnRepository
+
+    repository = TurnRepository()
+
+    turn = TurnRecord(
+        session_id=None,
+        player_input="attack",
+        narrative="The goblin raises its blade.",
+        operation_count=1,
+        successful_operation_count=1,
+        failed_operation_count=0,
+        all_operations_succeeded=True,
+        world_changed=True,
+    )
+
+    with get_conn() as conn:
+        saved = repository.save_turn(
+            turn,
+            conn=conn,
+        )
+
+        assert saved.id is not None
+        assert saved.player_input == "attack"
+        assert saved.operation_count == 1
+        assert saved.successful_operation_count == 1
+        assert saved.failed_operation_count == 0
+        assert saved.all_operations_succeeded is True
+        assert saved.world_changed is True
+
+def test_save_turn_with_existing_connection_does_not_commit_independently():
+    from database import get_conn
+    from models.turn_record import TurnRecord
+    from repositories.turn_repository import TurnRepository
+
+    repository = TurnRepository()
+
+    turn = TurnRecord(
+        session_id=None,
+        player_input="test transaction",
+        narrative="Transaction test.",
+        operation_count=0,
+        successful_operation_count=0,
+        failed_operation_count=0,
+        all_operations_succeeded=True,
+        world_changed=False,
+    )
+
+    with get_conn() as conn:
+        repository.save_turn(
+            turn,
+            conn=conn,
+        )
+
+        row = conn.execute(
+            """
+            SELECT
+                player_input
+            FROM turns
+            WHERE player_input=?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            ("test transaction",),
+        ).fetchone()
+
+        assert row is not None
+
+        conn.rollback()
+
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT
+                player_input
+            FROM turns
+            WHERE player_input=?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            ("test transaction",),
+        ).fetchone()
+
+        assert row is None
