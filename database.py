@@ -81,3 +81,40 @@ def execute(query, params=()):
         )
 
         return cur.lastrowid
+
+def execute_in_conn(
+    conn,
+    query,
+    params=(),
+):
+    cur = conn.execute(
+        query,
+        params,
+    )
+
+    return cur.lastrowid
+
+def rows_in_conn(
+    conn,
+    query,
+    params=(),
+):
+    return [
+        dict(row)
+        for row in conn.execute(
+            query,
+            params,
+        ).fetchall()
+    ]
+
+def one_in_conn(
+    conn,
+    query,
+    params=(),
+):
+    row = conn.execute(
+        query,
+        params,
+    ).fetchone()
+
+    return dict(row) if row else None
