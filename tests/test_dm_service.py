@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from models.turn_context import TurnContext
 from models.world_state import WorldState
 from services.context_builder import ContextBuilder
 from services.dm_service import (
@@ -54,6 +55,24 @@ class RecordingContextBuilder(ContextBuilder):
             "events": [],
             "context": self.context,
         }
+
+def make_turn_context():
+    return TurnContext(
+        campaign={
+            "id": 1,
+            "name": "Campaña de prueba",
+        },
+        current_session={
+            "id": 10,
+            "number": 1,
+            "title": "La llegada",
+        },
+        active_character={
+            "id": 20,
+            "name": "Aldric",
+        },
+        world=WorldState(),
+    )
 
 
 class NonStringProvider(LLMProvider):
@@ -118,7 +137,7 @@ def test_generate_strips_provider_response():
     )
 
     result = service.generate(
-        WorldState(),
+        make_turn_context(),
         "Observo la niebla.",
     )
 
@@ -137,7 +156,7 @@ def test_service_is_callable():
     )
 
     result = service(
-        WorldState(),
+        make_turn_context(),
         "Abro la puerta.",
     )
 
@@ -207,7 +226,7 @@ def test_context_is_included_in_prompt():
     )
 
     service.generate(
-        WorldState(),
+        make_turn_context(),
         "Busco a Aldric.",
     )
 
@@ -232,7 +251,7 @@ def test_player_input_is_included_in_prompt():
     )
 
     service.generate(
-        WorldState(),
+        make_turn_context(),
         "Saco mi espada y avanzo hacia la puerta.",
     )
 
@@ -261,7 +280,7 @@ def test_prompt_contains_system_instructions():
     )
 
     service.generate(
-        WorldState(),
+        make_turn_context(),
         "Observo la habitación.",
     )
 
@@ -295,7 +314,7 @@ def test_prompt_contains_expected_sections():
     )
 
     service.generate(
-        WorldState(),
+        make_turn_context(),
         "Abro el cofre.",
     )
 
@@ -332,7 +351,7 @@ def test_custom_system_prompt_is_used():
     )
 
     service.generate(
-        WorldState(),
+        make_turn_context(),
         "Hago algo.",
     )
 
@@ -366,7 +385,7 @@ def test_empty_player_input_returns_empty_response():
     )
 
     result = service.generate(
-        WorldState(),
+        make_turn_context(),
         "   ",
     )
 
@@ -388,7 +407,7 @@ def test_empty_player_input_does_not_call_context_builder():
     )
 
     result = service.generate(
-        WorldState(),
+        make_turn_context(),
         "",
     )
 
@@ -404,7 +423,7 @@ def test_empty_player_input_does_not_call_context_builder():
 # ============================================================
 
 
-def test_world_must_be_world_state():
+def test_turn_context_must_be_turn_context():
     provider = FakeLLMProvider(
         response="Respuesta."
     )
@@ -415,7 +434,7 @@ def test_world_must_be_world_state():
 
     with pytest.raises(
         TypeError,
-        match="world must be a WorldState",
+        match="turn_context must be a TurnContext",
     ):
         service.generate(
             None,
@@ -437,7 +456,7 @@ def test_player_input_must_be_string():
         match="player_input must be a string",
     ):
         service.generate(
-            WorldState(),
+            make_turn_context(),
             None,
         )
 
@@ -514,7 +533,7 @@ def test_provider_error_is_wrapped():
         match="LLM provider failed",
     ):
         service.generate(
-            WorldState(),
+            make_turn_context(),
             "Intento algo.",
         )
 
@@ -531,7 +550,7 @@ def test_non_string_provider_response_is_rejected():
         match="non-string response",
     ):
         service.generate(
-            WorldState(),
+            make_turn_context(),
             "Intento algo.",
         )
 
@@ -548,7 +567,7 @@ def test_empty_provider_response_is_rejected():
         match="empty response",
     ):
         service.generate(
-            WorldState(),
+            make_turn_context(),
             "Intento algo.",
         )
 
@@ -585,7 +604,7 @@ def test_invalid_context_from_context_builder_is_rejected():
         match="invalid context",
     ):
         service.generate(
-            WorldState(),
+            make_turn_context(),
             "Algo.",
         )
 
@@ -662,7 +681,7 @@ def test_generate_calls_provider_exactly_once():
     )
 
     service.generate(
-        WorldState(),
+        make_turn_context(),
         "Exploro.",
     )
 
@@ -720,7 +739,7 @@ def test_end_to_end_fake_provider():
     )
 
     result = service.generate(
-        WorldState(),
+        make_turn_context(),
         "Salgo a la calle.",
     )
 
@@ -739,4 +758,133 @@ def test_end_to_end_fake_provider():
     assert (
         "Salgo a la calle."
         in provider.last_prompt
+    )
+
+def test_generate_uses_world_from_turn_context():
+    provider = FakeLLMProvider(
+        response="Respuesta narrativa."
+    )
+
+    context_builder = RecordingContextBuilder()
+
+    service = DMService(
+        provider,
+        context_builder,
+    )
+
+    turn_context = make_turn_context()
+
+    service.generate(
+        turn_context,
+        "Exploro.",
+    )
+
+    assert len(
+        context_builder.calls
+    ) == 1
+
+    called_world, called_query = (
+        context_builder.calls[0]
+    )
+
+    assert called_world is (
+        turn_context.world
+    )
+
+    assert called_query == "Exploro."
+
+
+def test_campaign_context_is_included_in_prompt():
+    provider = FakeLLMProvider(
+        response="Respuesta narrativa."
+    )
+
+    service = DMService(
+        provider
+    )
+
+    turn_context = make_turn_context()
+
+    service.generate(
+        turn_context,
+        "Observo la zona.",
+    )
+
+    prompt = provider.last_prompt
+
+    assert prompt is not None
+
+    assert (
+        "=== CONTEXTO DE CAMPAÑA ==="
+        in prompt
+    )
+
+    assert (
+        "Campaña de prueba"
+        in prompt
+    )
+
+    assert (
+        "La llegada"
+        in prompt
+    )
+
+    assert (
+        "Aldric"
+        in prompt
+    )
+
+
+def test_world_context_and_campaign_context_are_both_in_prompt():
+    provider = FakeLLMProvider(
+        response="Respuesta narrativa."
+    )
+
+    context_builder = RecordingContextBuilder(
+        context=(
+            "[ENTIDADES]\n"
+            "- Vorder's Hold (location): "
+            "puesto minero"
+        )
+    )
+
+    service = DMService(
+        provider,
+        context_builder,
+    )
+
+    turn_context = make_turn_context()
+
+    service.generate(
+        turn_context,
+        "Salgo a la calle.",
+    )
+
+    prompt = provider.last_prompt
+
+    assert prompt is not None
+
+    assert (
+        "Campaña de prueba"
+        in prompt
+    )
+
+    assert (
+        "La llegada"
+        in prompt
+    )
+
+    assert (
+        "Aldric"
+        in prompt
+    )
+
+    assert (
+        "Vorder's Hold"
+        in prompt
+    )
+
+    assert (
+        "Salgo a la calle."
+        in prompt
     )

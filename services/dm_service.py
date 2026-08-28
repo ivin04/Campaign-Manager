@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from models.turn_context import TurnContext
 from models.world_state import WorldState
 from services.context_builder import ContextBuilder
 from services.llm_provider import LLMProvider
@@ -18,6 +19,9 @@ class DMService:
     Flujo:
 
         jugador
+           |
+           v
+        TurnContext
            |
            v
         ContextBuilder
@@ -37,7 +41,8 @@ class DMService:
     Responsabilidades:
 
     - Validar entrada.
-    - Obtener contexto relevante.
+    - Recibir el contexto completo del turno.
+    - Obtener contexto relevante del WorldState.
     - Construir el prompt narrativo.
     - Delegar la generación al LLMProvider.
     - Devolver la respuesta textual.
@@ -129,16 +134,26 @@ class DMService:
 
     def generate(
         self,
-        world: WorldState,
+        turn_context: TurnContext,
         player_input: str,
     ) -> str:
         """
         Genera una respuesta narrativa para la acción del jugador.
 
-        No modifica WorldState.
+        TurnContext contiene el estado completo necesario para
+        resolver el turno:
+
+        - campaña
+        - sesión actual
+        - personaje activo
+        - WorldState
+
+        DMService no modifica ninguno de estos objetos.
         """
 
-        self._validate_world(world)
+        self._validate_turn_context(
+            turn_context
+        )
 
         normalized_input = self._validate_player_input(
             player_input
@@ -148,7 +163,7 @@ class DMService:
             return ""
 
         context_result = self.context_builder.build(
-            world,
+            turn_context.world,
             normalized_input,
         )
 
@@ -163,6 +178,7 @@ class DMService:
             )
 
         prompt = self._build_prompt(
+            turn_context=turn_context,
             player_input=normalized_input,
             context=context,
         )
@@ -192,7 +208,7 @@ class DMService:
 
     def __call__(
         self,
-        world: WorldState,
+        turn_context: TurnContext,
         player_input: str,
     ) -> str:
         """
@@ -200,7 +216,7 @@ class DMService:
         """
 
         return self.generate(
-            world,
+            turn_context,
             player_input,
         )
 
@@ -209,16 +225,16 @@ class DMService:
     # ============================================================
 
     @staticmethod
-    def _validate_world(
-        world: WorldState,
+    def _validate_turn_context(
+        turn_context: TurnContext,
     ) -> None:
 
         if not isinstance(
-            world,
-            WorldState,
+            turn_context,
+            TurnContext,
         ):
             raise TypeError(
-                "world must be a WorldState"
+                "turn_context must be a TurnContext"
             )
 
     @staticmethod
@@ -243,6 +259,7 @@ class DMService:
     def _build_prompt(
         self,
         *,
+        turn_context: TurnContext,
         player_input: str,
         context: str,
     ) -> str:
@@ -252,12 +269,20 @@ class DMService:
         El prompt mantiene separadas:
 
         - instrucciones del DM
+        - contexto de campaña
         - contexto del mundo
         - acción del jugador
         """
 
+        campaign_context = self._build_campaign_context(
+            turn_context
+        )
+
         return (
             f"{self.system_prompt}\n"
+            "\n"
+            "=== CONTEXTO DE CAMPAÑA ===\n"
+            f"{campaign_context}\n"
             "\n"
             "=== CONTEXTO DEL MUNDO ===\n"
             f"{context}\n"
@@ -267,3 +292,80 @@ class DMService:
             "\n"
             "=== RESPUESTA DEL DUNGEON MASTER ===\n"
         )
+
+    @staticmethod
+    def _build_campaign_context(
+        turn_context: TurnContext,
+    ) -> str:
+        """
+        Construye una representación textual mínima del
+        contexto de campaña disponible en TurnContext.
+
+        Esta información no sustituye al contexto de memoria.
+        Solo proporciona al DM el estado de alto nivel del turno.
+        """
+
+        campaign = turn_context.campaign
+        session = turn_context.current_session
+        character = turn_context.active_character
+
+        lines: list[str] = []
+
+        if campaign is not None:
+            lines.append(
+                f"Campaña: {DMService._format_context_object(campaign)}"
+            )
+
+        if session is not None:
+            lines.append(
+                f"Sesión actual: {DMService._format_context_object(session)}"
+            )
+
+        if character is not None:
+            lines.append(
+                f"Personaje activo: "
+                f"{DMService._format_context_object(character)}"
+            )
+
+        if not lines:
+            return "Sin información de campaña disponible."
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_context_object(
+        value: Any,
+    ) -> str:
+        """
+        Convierte de forma segura los objetos de estado de alto
+        nivel a texto sin imponer todavía un serializador específico.
+
+        Los modelos actuales son dataclasses, pero se mantiene
+        esta función tolerante para no acoplar DMService a una
+        implementación concreta del modelo.
+        """
+
+        if value is None:
+            return "None"
+
+        if isinstance(value, dict):
+            if not value:
+                return "{}"
+
+            return ", ".join(
+                f"{key}={item}"
+                for key, item in value.items()
+            )
+
+        if hasattr(value, "__dict__"):
+            values = vars(value)
+
+            if not values:
+                return value.__class__.__name__
+
+            return ", ".join(
+                f"{key}={item}"
+                for key, item in values.items()
+            )
+
+        return str(value)

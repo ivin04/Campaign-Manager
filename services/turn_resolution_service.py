@@ -163,7 +163,7 @@ class TurnResolutionService:
 
         try:
             narrative = self.dm_service.generate(
-                world,
+                turn_context,
                 normalized_input,
             )
 

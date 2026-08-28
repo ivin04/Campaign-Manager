@@ -36,15 +36,19 @@ class RecordingDMService(DMService):
 
     def generate(
         self,
-        world,
+        turn_context,
         player_input,
     ):
         self.calls.append(
-            ("generate", player_input)
+            (
+                "generate",
+                turn_context,
+                player_input,
+            )
         )
 
         return super().generate(
-            world,
+            turn_context,
             player_input,
         )
 
@@ -238,7 +242,11 @@ def test_player_input_is_stripped():
     assert result.player_input == "Exploro."
 
     assert dm.calls == [
-        ("generate", "Exploro.")
+        (
+            "generate",
+            result,
+            "Exploro.",
+        )
     ]
 
 
@@ -802,7 +810,44 @@ def test_turn_resolution_uses_world_from_turn_context():
     )
 
     assert dm.calls == [
-        ("generate", "Exploro.")
+        (
+            "generate",
+            context,
+            "Exploro.",
+        )
     ]
 
     assert extractor.received_world is world
+
+def test_turn_resolution_passes_complete_turn_context_to_dm():
+    service, dm, _, _ = make_service()
+
+    context = TurnContext(
+        campaign={
+            "id": 123,
+        },
+        current_session={
+            "id": 456,
+        },
+        active_character={
+            "id": 789,
+        },
+        world=make_world(),
+    )
+
+    service.resolve_turn(
+        context,
+        "Exploro.",
+    )
+
+    assert len(dm.calls) == 1
+
+    (
+        call_name,
+        received_context,
+        received_input,
+    ) = dm.calls[0]
+
+    assert call_name == "generate"
+    assert received_context is context
+    assert received_input == "Exploro."
