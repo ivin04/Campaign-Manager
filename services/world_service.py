@@ -1,13 +1,33 @@
+import copy
+
+from database import get_conn
+
 from models.world_state import WorldState
 from models.operation_result import OperationResult
-from repositories.world_repository import WorldRepository
-from services.world_applier import WorldApplier
+
+from repositories.world_repository import (
+    WorldRepository,
+)
+
+from repositories.character_repository import (
+    CharacterRepository,
+)
+
+from services.world_applier import (
+    WorldApplier,
+)
+
+from services.character_applier import (
+    CharacterApplier,
+)
+
+from services.character_service import (
+    CharacterService,
+)
 
 from models.world_application_result import (
     WorldApplicationResult,
 )
-
-import copy
 
 class WorldService:
     """
@@ -27,9 +47,24 @@ class WorldService:
         self,
         repository: WorldRepository | None = None,
         applier: WorldApplier | None = None,
+        character_applier: CharacterApplier | None = None,
     ):
-        self.repository = repository or WorldRepository()
-        self.applier = applier or WorldApplier()
+        self.repository = (
+            repository or WorldRepository()
+        )
+
+        self.applier = (
+            applier or WorldApplier()
+        )
+
+        self.character_applier = (
+            character_applier
+            or CharacterApplier(
+                CharacterService(
+                    CharacterRepository()
+                )
+            )
+        )
 
         self.world = WorldState()
 
@@ -184,6 +219,76 @@ class WorldService:
             raise
 
         return result
+
+    def apply_turn_operations(
+        self,
+        world_operations,
+        character_operations,
+    ) -> tuple:
+        """
+        Aplica las operaciones de mundo y personaje de un turno
+        dentro de una única transacción SQLite.
+
+        Si cualquier operación falla:
+
+            - SQLite hace rollback.
+            - El WorldState original se conserva.
+            - No queda ningún cambio parcial.
+
+        Si todas tienen éxito:
+
+            - se persiste el WorldState si cambió.
+            - se persisten las operaciones de personaje.
+            - SQLite hace commit al salir de get_conn().
+        """
+
+        original_world = self.world
+
+        working_world = copy.deepcopy(
+            original_world
+        )
+
+        self.world = working_world
+
+        results = []
+
+        try:
+            with get_conn() as conn:
+
+                for operation in world_operations:
+
+                    result = self.applier.apply(
+                        self.world,
+                        operation,
+                    )
+
+                    results.append(result)
+
+                    if not result.success:
+                        self.world = original_world
+
+                        return tuple(results)
+
+                for operation in character_operations:
+
+                    result = self.character_applier.apply(
+                        operation,
+                        conn=conn,
+                    )
+
+                    results.append(result)
+
+                if world_operations:
+                    self.repository.save_world(
+                        self.world,
+                        conn=conn,
+                    )
+
+        except Exception:
+            self.world = original_world
+            raise
+
+        return tuple(results)
 
     def get_world(self) -> WorldState:
         """

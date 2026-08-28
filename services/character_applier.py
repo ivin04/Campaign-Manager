@@ -6,7 +6,6 @@ from services.character_service import (
     CharacterServiceError,
 )
 
-
 class CharacterApplierError(Exception):
     pass
 

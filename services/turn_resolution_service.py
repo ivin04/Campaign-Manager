@@ -268,29 +268,22 @@ class TurnResolutionService:
         # ========================================================
 
         try:
-            application = self.world_service.apply_operations_and_save(
-                world_operations
+            operation_results = (
+                self.world_service.apply_turn_operations(
+                    world_operations,
+                    character_operations,
+                )
             )
-
         except Exception as exc:
             raise TurnResolutionServiceError(
                 "WorldService failed to apply operations"
             ) from exc
 
-        if not isinstance(
-            application,
-            WorldApplicationResult,
-        ):
-            raise TurnResolutionServiceError(
-                "WorldService returned an invalid "
-                "WorldApplicationResult"
-            )
-
         # ========================================================
         # 4. RESULTADO
         # ========================================================
 
-        results = application.results
+        results = operation_results
         
         return TurnResolutionResult(
             player_input=normalized_input,
