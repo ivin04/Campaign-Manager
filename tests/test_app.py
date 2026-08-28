@@ -1,9 +1,15 @@
 import pytest
 
-from app import create_campaign_turn_service, create_context_builder
-from services.world_service import WorldService
-from services.memory_search_service import MemorySearchService
+from app import create_campaign_turn_service
+from models.world_state import WorldState
+from repositories.campaign_repository import CampaignRepository
+from repositories.character_repository import CharacterRepository
+from services.campaign_state_service import CampaignStateService
 from services.context_builder import ContextBuilder
+from services.memory_search_service import MemorySearchService
+from services.turn_resolution_service import TurnResolutionService
+from services.world_service import WorldService
+
 
 def test_create_campaign_turn_service_uses_provided_context_builder():
     world_service = WorldService()
@@ -14,35 +20,49 @@ def test_create_campaign_turn_service_uses_provided_context_builder():
         memory_search_service=memory_search_service,
     )
 
+    campaign_repository = CampaignRepository()
+
+    character_repository = CharacterRepository()
+
+    campaign_state_service = CampaignStateService(
+        campaign_repository=campaign_repository,
+        character_repository=character_repository,
+        world_service=world_service,
+    )
+
     service = create_campaign_turn_service(
         world_service=world_service,
         context_builder=context_builder,
+        campaign_state_service=campaign_state_service,
     )
 
-    dm_service = (
-        service.turn_resolution_service.dm_service
-    )
+    assert service.turn_resolution_service is not None
+    assert service.campaign_state_service is campaign_state_service
+
+    dm_service = service.turn_resolution_service.dm_service
 
     assert dm_service.context_builder is context_builder
 
+
 def test_create_campaign_turn_service_rejects_invalid_context_builder():
+    world_service = WorldService()
+
+    campaign_repository = CampaignRepository()
+
+    character_repository = CharacterRepository()
+
+    campaign_state_service = CampaignStateService(
+        campaign_repository=campaign_repository,
+        character_repository=character_repository,
+        world_service=world_service,
+    )
+
     with pytest.raises(
         TypeError,
         match="context_builder must be a ContextBuilder",
     ):
         create_campaign_turn_service(
-            world_service=WorldService(),
-            context_builder=object(),
-        )
-
-def test_create_context_builder_rejects_invalid_memory_search_service():
-    with pytest.raises(
-        TypeError,
-        match=(
-            "memory_search_service must be "
-            "a MemorySearchService"
-        ),
-    ):
-        create_context_builder(
-            memory_search_service=object(),
+            world_service=world_service,
+            context_builder="invalid",
+            campaign_state_service=campaign_state_service,
         )

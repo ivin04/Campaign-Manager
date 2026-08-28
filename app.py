@@ -11,6 +11,7 @@ from models.schemas import (
 )
 
 from repositories.campaign_repository import CampaignRepository
+from repositories.character_repository import CharacterRepository
 
 from services.campaign_turn_service import (
     CampaignTurnService,
@@ -28,6 +29,7 @@ from services.turn_resolution_service import (
     TurnResolutionService,
 )
 from services.world_service import WorldService
+from services.campaign_state_service import CampaignStateService
 
 
 app = FastAPI(
@@ -92,6 +94,7 @@ def create_context_builder(
 def create_campaign_turn_service(
     world_service: WorldService,
     context_builder: ContextBuilder,
+    campaign_state_service: CampaignStateService,
 ) -> CampaignTurnService:
     """
     Construye el pipeline completo de resolución de turnos.
@@ -145,6 +148,14 @@ def create_campaign_turn_service(
             "context_builder must be a ContextBuilder"
         )
 
+    if not isinstance(
+        campaign_state_service,
+        CampaignStateService,
+    ):
+        raise TypeError(
+            "campaign_state_service must be a CampaignStateService"
+        )
+
     provider = OllamaProvider()
 
     operation_parser = OperationParser()
@@ -168,6 +179,7 @@ def create_campaign_turn_service(
     return CampaignTurnService(
         turn_resolution_service=turn_resolution_service,
         world_service=world_service,
+        campaign_state_service=campaign_state_service,
     )
 
 
@@ -175,10 +187,17 @@ def create_campaign_turn_service(
 # SINGLETON APPLICATION STATE
 # ============================================================
 
-
 world_service = create_world_service()
 
 campaign_repository = CampaignRepository()
+
+character_repository = CharacterRepository()
+
+campaign_state_service = CampaignStateService(
+    campaign_repository=campaign_repository,
+    character_repository=character_repository,
+    world_service=world_service,
+)
 
 memory_search_service = MemorySearchService()
 
@@ -189,8 +208,8 @@ context_builder = create_context_builder(
 campaign_turn_service = create_campaign_turn_service(
     world_service=world_service,
     context_builder=context_builder,
+    campaign_state_service=campaign_state_service,
 )
-
 
 # ============================================================
 # BASIC
