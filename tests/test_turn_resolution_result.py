@@ -13,6 +13,10 @@ from operations.character_operations import (
     ChangeCharacterHpOperation,
 )
 
+from operations.world_operations import (
+    WorldOperation,
+)
+
 
 def make_success() -> OperationResult:
     return OperationResult(
@@ -295,3 +299,54 @@ def test_operation_count_includes_character_operations():
     )
 
     assert result.operation_count == 2
+
+def test_world_changed_is_true_for_character_operation():
+    result = TurnResolutionResult(
+        player_input="Ataco al goblin.",
+        narrative="El golpe alcanza al goblin.",
+        character_operations=(
+            ChangeCharacterHpOperation(
+                entity_id=1,
+                amount=-5,
+            ),
+        ),
+        operation_results=(
+            type(
+                "Result",
+                (),
+                {
+                    "success": True,
+                    "changed": True,
+                },
+            )(),
+        ),
+    )
+
+    assert result.world_changed is True
+
+def test_world_changed_requires_results_for_all_operations():
+    result = TurnResolutionResult(
+        player_input="Ataco.",
+        narrative="El golpe impacta.",
+        operations=(
+            WorldOperation(),
+        ),
+        character_operations=(
+            ChangeCharacterHpOperation(
+                entity_id=1,
+                amount=-5,
+            ),
+        ),
+        operation_results=(
+            type(
+                "Result",
+                (),
+                {
+                    "success": True,
+                    "changed": True,
+                },
+            )(),
+        ),
+    )
+
+    assert result.world_changed is False

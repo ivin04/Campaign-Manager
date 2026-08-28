@@ -7,6 +7,10 @@ from operations.character_operations import (
 )
 from operations.world_operations import WorldOperation
 
+from models.operation_result import (
+    OperationStatus,
+)
+
 
 @dataclass(frozen=True)
 class TurnResolutionResult:
@@ -46,24 +50,53 @@ class TurnResolutionResult:
     @property
     def world_changed(self) -> bool:
         """
-        Indica si el turno produjo un cambio confirmado
-        en el WorldState.
+        Indica si el turno produjo algún cambio confirmado.
+
+        Incluye tanto operaciones del mundo como operaciones
+        del personaje.
 
         La aplicación de operaciones es atómica:
-        si una sola operación falla, el lote completo
-        se considera no confirmado y el WorldState original
-        permanece intacto.
+        si falta algún resultado o alguna operación falla,
+        el turno no se considera cambiado.
         """
 
-        if not self.operations:
+        if self.operation_count == 0:
             return False
 
-        if len(self.operation_results) != len(self.operations):
+        if (
+            len(self.operation_results)
+            != self.operation_count
+        ):
             return False
 
         return all(
-            result.changed
+            self._result_changed(result)
             for result in self.operation_results
+        )
+
+    @staticmethod
+    def _result_changed(result) -> bool:
+        """
+        Obtiene si un resultado representa un cambio.
+
+        Soporta tanto OperationResult como los diccionarios
+        utilizados actualmente por CharacterApplier.
+        """
+
+        if isinstance(result, dict):
+            return bool(
+                result.get(
+                    "changed",
+                    False,
+                )
+            )
+
+        return bool(
+            getattr(
+                result,
+                "changed",
+                False,
+            )
         )
 
     @property
@@ -71,13 +104,10 @@ class TurnResolutionResult:
         """
         Indica si todas las operaciones fueron aplicadas
         correctamente.
-
-        Un turno sin operaciones se considera exitoso
-        respecto a la aplicación.
         """
 
         return all(
-            result.success
+            self._result_success(result)
             for result in self.operation_results
         )
 
@@ -86,8 +116,7 @@ class TurnResolutionResult:
         """
         Número total de operaciones detectadas.
 
-        Incluye operaciones del mundo y operaciones
-        del personaje.
+        Incluye mundo y personaje.
         """
 
         return (
@@ -102,7 +131,7 @@ class TurnResolutionResult:
         """
 
         return sum(
-            result.success
+            self._result_success(result)
             for result in self.operation_results
         )
 
@@ -113,7 +142,7 @@ class TurnResolutionResult:
         """
 
         return sum(
-            not result.success
+            not self._result_success(result)
             for result in self.operation_results
         )
 
@@ -124,3 +153,38 @@ class TurnResolutionResult:
         """
 
         return self.narrative
+
+    @staticmethod
+    def _result_success(result) -> bool:
+        """
+        Obtiene success tanto de OperationResult como
+        de los resultados devueltos por los appliers
+        que utilizan diccionarios.
+        """
+
+        if isinstance(result, dict):
+            return bool(
+                result.get("success", False)
+            )
+
+        return bool(
+            getattr(result, "success", False)
+        )
+
+
+    @staticmethod
+    def _result_changed(result) -> bool:
+        """
+        Obtiene changed tanto de OperationResult como
+        de los resultados devueltos por los appliers
+        que utilizan diccionarios.
+        """
+
+        if isinstance(result, dict):
+            return bool(
+                result.get("changed", False)
+            )
+
+        return bool(
+            getattr(result, "changed", False)
+        )
