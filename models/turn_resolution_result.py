@@ -2,8 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from models.operation_result import OperationResult
+from operations.character_operations import (
+    CharacterOperation,
+)
 from operations.world_operations import WorldOperation
+
+from operations.character_operations import (
+    CharacterOperation,
+)
 
 
 @dataclass(frozen=True)
@@ -31,8 +37,15 @@ class TurnResolutionResult:
 
     player_input: str
     narrative: str
+
     operations: tuple[WorldOperation, ...] = ()
-    operation_results: tuple[OperationResult, ...] = ()
+
+    character_operations: tuple[
+        CharacterOperation,
+        ...
+    ] = ()
+
+    operation_results: tuple = ()
 
     @property
     def world_changed(self) -> bool:

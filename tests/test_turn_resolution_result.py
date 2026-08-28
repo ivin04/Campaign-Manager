@@ -6,6 +6,13 @@ from models.operation_result import OperationResult
 from models.turn_resolution_result import TurnResolutionResult
 from models.operation_result import OperationStatus
 
+from models.turn_resolution_result import (
+    TurnResolutionResult,
+)
+from operations.character_operations import (
+    ChangeCharacterHpOperation,
+)
+
 
 def make_success() -> OperationResult:
     return OperationResult(
@@ -250,3 +257,24 @@ def test_world_changed_is_false_when_operation_is_no_change():
     )
 
     assert result.world_changed is False
+
+def test_turn_resolution_result_supports_character_operations():
+
+    operation = ChangeCharacterHpOperation(
+        entity_id=1,
+        amount=-5,
+    )
+
+    result = TurnResolutionResult(
+        player_input="Ataco al goblin.",
+        narrative="El goblin te hiere.",
+        character_operations=(
+            operation,
+        ),
+    )
+
+    assert result.character_operations == (
+        operation,
+    )
+
+    assert result.operations == ()
