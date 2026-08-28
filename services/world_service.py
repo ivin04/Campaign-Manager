@@ -29,6 +29,10 @@ from models.world_application_result import (
     WorldApplicationResult,
 )
 
+class _WorldTurnOperationFailure(Exception):
+    def __init__(self, results):
+        self.results = tuple(results)
+
 class WorldService:
     """
     Fachada principal para trabajar con el estado persistente del mundo.
@@ -229,17 +233,23 @@ class WorldService:
         Aplica las operaciones de mundo y personaje de un turno
         dentro de una única transacción SQLite.
 
-        Si cualquier operación falla:
+        Si una operación de mundo devuelve un resultado fallido:
 
-            - SQLite hace rollback.
-            - El WorldState original se conserva.
-            - No queda ningún cambio parcial.
+            - se fuerza rollback mediante una excepción interna
+            - se conserva el WorldState original
+            - se devuelven los resultados obtenidos hasta el fallo
 
-        Si todas tienen éxito:
+        Si una operación de personaje lanza una excepción:
 
-            - se persiste el WorldState si cambió.
-            - se persisten las operaciones de personaje.
-            - SQLite hace commit al salir de get_conn().
+            - SQLite hace rollback
+            - se conserva el WorldState original
+            - la excepción se propaga
+
+        Si todas las operaciones tienen éxito:
+
+            - se persiste el WorldState si existen operaciones de mundo
+            - se persisten las operaciones de personaje
+            - SQLite hace commit
         """
 
         original_world = self.world
@@ -265,10 +275,8 @@ class WorldService:
                     results.append(result)
 
                     if not result.success:
-                        self.world = original_world
-
-                        raise RuntimeError(
-                            "world operation failed"
+                        raise _WorldTurnOperationFailure(
+                            results
                         )
 
                 for operation in character_operations:
@@ -286,8 +294,16 @@ class WorldService:
                         conn=conn,
                     )
 
-        except Exception:
+        except _WorldTurnOperationFailure as exc:
+
             self.world = original_world
+
+            return exc.results
+
+        except Exception:
+
+            self.world = original_world
+
             raise
 
         return tuple(results)

@@ -689,14 +689,14 @@ def test_apply_turn_operations_rolls_back_when_world_operation_fails(
 
     service.applier = FailingWorldApplier()
 
-    with pytest.raises(
-        RuntimeError,
-        match="world operation failed",
-    ):
-        service.apply_turn_operations(
-            world_operations=(object(),),
-            character_operations=(),
-        )
+    result = service.apply_turn_operations(
+        world_operations=(object(),),
+        character_operations=(),
+    )
+
+    assert len(result) == 1
+    assert result[0].success is False
+    assert result[0].status == OperationStatus.INVALID
 
     assert service.world is original_world
 

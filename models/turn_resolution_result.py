@@ -102,9 +102,16 @@ class TurnResolutionResult:
     @property
     def all_operations_succeeded(self) -> bool:
         """
-        Indica si todas las operaciones fueron aplicadas
-        correctamente.
+        Indica si todas las operaciones detectadas
+        fueron aplicadas correctamente.
+
+        La ausencia de resultados para alguna operación
+        implica que el turno no se considera completamente
+        exitoso.
         """
+
+        if len(self.operation_results) != self.operation_count:
+            return False
 
         return all(
             self._result_success(result)
@@ -169,22 +176,4 @@ class TurnResolutionResult:
 
         return bool(
             getattr(result, "success", False)
-        )
-
-
-    @staticmethod
-    def _result_changed(result) -> bool:
-        """
-        Obtiene changed tanto de OperationResult como
-        de los resultados devueltos por los appliers
-        que utilizan diccionarios.
-        """
-
-        if isinstance(result, dict):
-            return bool(
-                result.get("changed", False)
-            )
-
-        return bool(
-            getattr(result, "changed", False)
         )
