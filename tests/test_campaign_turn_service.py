@@ -918,9 +918,12 @@ def test_get_world_delegates_to_campaign_state_service():
 
     returned = service.get_world()
 
-    assert returned is world_service.world
+    assert (
+        returned
+        is world_service.world
+    )
 
     assert (
-        campaign_state_service.get_world_calls
+        campaign_state_service.get_turn_context_calls
         == 1
     )

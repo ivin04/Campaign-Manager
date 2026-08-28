@@ -177,6 +177,21 @@ class CampaignTurnService:
                     "WorldService failed to get world"
                 ) from exc
 
+            if not isinstance(
+                world,
+                WorldState,
+            ):
+                raise CampaignTurnServiceError(
+                    "WorldService returned an invalid WorldState"
+                )
+
+            turn_context = TurnContext(
+                campaign={},
+                current_session=None,
+                active_character=None,
+                world=world,
+            )
+
         if not isinstance(
             world,
             WorldState,
@@ -353,13 +368,6 @@ class CampaignTurnService:
                 raise CampaignTurnServiceError(
                     "WorldService failed to get world"
                 ) from exc
-
-            turn_context = TurnContext(
-                campaign={},
-                current_session=None,
-                active_character=None,
-                world=world,
-            )
 
         if not isinstance(
             world,
