@@ -22,18 +22,29 @@ class CharacterApplier:
     def apply(
         self,
         operation,
+        *,
+        conn=None,
     ):
         if isinstance(
             operation,
             ChangeCharacterHpOperation,
         ):
             try:
-                character = (
-                    self.character_service.change_hp(
-                        entity_id=operation.entity_id,
-                        amount=operation.amount,
+                if conn is None:
+                    character = (
+                        self.character_service.change_hp(
+                            entity_id=operation.entity_id,
+                            amount=operation.amount,
+                        )
                     )
-                )
+                else:
+                    character = (
+                        self.character_service.change_hp(
+                            entity_id=operation.entity_id,
+                            amount=operation.amount,
+                            conn=conn,
+                        )
+                    )
 
             except CharacterServiceError as exc:
                 raise CharacterApplierError(
