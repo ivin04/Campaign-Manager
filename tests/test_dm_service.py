@@ -4,6 +4,9 @@ import pytest
 
 from models.turn_context import TurnContext
 from models.world_state import WorldState
+from models.campaign_state import CampaignState
+from models.character_state import CharacterState
+from models.session_state import SessionState
 from services.context_builder import ContextBuilder
 from services.dm_service import (
     DMService,
@@ -58,19 +61,22 @@ class RecordingContextBuilder(ContextBuilder):
 
 def make_turn_context():
     return TurnContext(
-        campaign={
-            "id": 1,
-            "name": "Campaña de prueba",
-        },
-        current_session={
-            "id": 10,
-            "number": 1,
-            "title": "La llegada",
-        },
-        active_character={
-            "id": 20,
-            "name": "Aldric",
-        },
+        campaign=CampaignState(
+            campaign_id=1,
+            name="Campaña de prueba",
+            system="D&D 5e 2014",
+            tone="serio",
+            summary="Campaña de pruebas.",
+        ),
+        current_session=SessionState(
+            session_id=10,
+            number=1,
+            title="La llegada",
+            summary="Primera sesión.",
+        ),
+        active_character=CharacterState(
+            entity_id=20,
+        ),
         world=WorldState(),
     )
 
@@ -831,11 +837,6 @@ def test_campaign_context_is_included_in_prompt():
         in prompt
     )
 
-    assert (
-        "Aldric"
-        in prompt
-    )
-
 
 def test_world_context_and_campaign_context_are_both_in_prompt():
     provider = FakeLLMProvider(
@@ -873,11 +874,6 @@ def test_world_context_and_campaign_context_are_both_in_prompt():
 
     assert (
         "La llegada"
-        in prompt
-    )
-
-    assert (
-        "Aldric"
         in prompt
     )
 

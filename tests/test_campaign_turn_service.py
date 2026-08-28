@@ -91,7 +91,7 @@ class RecordingCampaignStateService(
             raise self.state_error
 
         return CampaignState(
-            campaign={},
+            campaign=CampaignState(),
             current_session=None,
             active_character=None,
             world=self.world_service.world,
@@ -104,7 +104,7 @@ class RecordingCampaignStateService(
             raise self.state_error
 
         return TurnContext(
-            campaign={},
+            campaign=CampaignState(),
             current_session=None,
             active_character=None,
             world=self.world_service.world,

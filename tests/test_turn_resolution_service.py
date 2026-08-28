@@ -6,6 +6,8 @@ from models.operation_result import (
 from models.world_state import WorldState
 from models.turn_context import TurnContext
 from models.campaign_state import CampaignState
+from models.character_state import CharacterState
+from models.session_state import SessionState
 from operations.world_operations import (
     CreateEntityOperation,
 )
@@ -96,10 +98,23 @@ def make_world():
 
 def make_turn_context():
     return TurnContext(
-        campaign={},
-        current_session=None,
-        active_character=None,
-        world=make_world(),
+        campaign=CampaignState(
+            campaign_id=1,
+            name="Campaña de prueba",
+            system="D&D 5e 2014",
+            tone="serio",
+            summary="Campaña de pruebas.",
+        ),
+        current_session=SessionState(
+            session_id=10,
+            number=1,
+            title="La llegada",
+            summary="Primera sesión.",
+        ),
+        active_character=CharacterState(
+            entity_id=20,
+        ),
+        world=WorldState(),
     )
 
 def make_service(
@@ -802,9 +817,22 @@ def test_turn_resolution_uses_world_from_turn_context():
     service, dm, extractor, _ = make_service()
 
     context = TurnContext(
-        campaign={"id": 123},
-        current_session={"id": 456},
-        active_character={"id": 789},
+        campaign=CampaignState(
+            campaign_id=1,
+            name="Test Campaign",
+            system="D&D 5e 2014",
+            tone="serio",
+            summary="Campaña de pruebas.",
+        ),
+        current_session=SessionState(
+            session_id=10,
+            number=1,
+            title="La llegada",
+            summary="Primera sesión.",
+        ),
+        active_character=CharacterState(
+            entity_id=20,
+        ),
         world=world,
     )
 
@@ -824,19 +852,28 @@ def test_turn_resolution_uses_world_from_turn_context():
     assert extractor.received_world is world
 
 def test_turn_resolution_passes_complete_turn_context_to_dm():
+    world = make_world()
+
     service, dm, _, _ = make_service()
 
     context = TurnContext(
-        campaign={
-            "id": 123,
-        },
-        current_session={
-            "id": 456,
-        },
-        active_character={
-            "id": 789,
-        },
-        world=make_world(),
+        campaign=CampaignState(
+            campaign_id=1,
+            name="Test Campaign",
+            system="D&D 5e 2014",
+            tone="serio",
+            summary="Campaña de pruebas.",
+        ),
+        current_session=SessionState(
+            session_id=10,
+            number=1,
+            title="La llegada",
+            summary="Primera sesión.",
+        ),
+        active_character=CharacterState(
+            entity_id=20,
+        ),
+        world=world,
     )
 
     service.resolve_turn(
