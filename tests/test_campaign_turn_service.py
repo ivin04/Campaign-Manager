@@ -1022,7 +1022,6 @@ def test_play_turn_loads_recent_turns_before_resolving():
 
     assert turn_repository.calls == [
         (None, 10),
-        (None, 10),
     ]
 
     assert len(resolver.calls) == 1
