@@ -54,6 +54,7 @@ class ContextBuilder:
         "item_instances": 0.50,
         "resources": 0.40,
         "resource_balances": 0.30,
+        "recent_turns": 0.90,
     }
 
     CATEGORY_PRIORITY = {
@@ -64,6 +65,7 @@ class ContextBuilder:
         "item_instances": 4,
         "resources": 5,
         "resource_balances": 6,
+        "recent_turns": 0,
     }
 
     # ============================================================

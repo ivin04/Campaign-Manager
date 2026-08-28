@@ -112,6 +112,8 @@ class TurnResolutionService:
         self,
         turn_context: TurnContext | WorldState,
         player_input: str,
+        *,
+        recent_turns=None,
     ) -> TurnResolutionResult:
         """
         Resuelve un turno completo.
@@ -173,6 +175,7 @@ class TurnResolutionService:
             narrative = self.dm_service.generate(
                 context,
                 normalized_input,
+                recent_turns=recent_turns,
             )
 
         except Exception as exc:

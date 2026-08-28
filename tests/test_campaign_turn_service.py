@@ -928,3 +928,84 @@ def test_get_world_delegates_to_campaign_state_service():
         campaign_state_service.get_turn_context_calls
         == 1
     )
+
+def test_play_turn_loads_recent_turns_before_resolving():
+    recent_turns = [
+        TurnRecord(
+            id=1,
+            session_id=10,
+            player_input="Entro en la taberna.",
+            narrative="El tabernero te observa.",
+        ),
+        TurnRecord(
+            id=2,
+            session_id=10,
+            player_input="Pregunto por Vorder.",
+            narrative="El tabernero señala hacia el norte.",
+        ),
+    ]
+
+    class RecordingTurnRepository(TurnRepository):
+        def __init__(self):
+            self.calls = []
+
+        def list_recent_turns(
+            self,
+            *,
+            session_id=None,
+            limit=10,
+        ):
+            self.calls.append(
+                (
+                    session_id,
+                    limit,
+                )
+            )
+
+            return recent_turns
+
+        def save_turn(self, turn):
+            return turn
+
+    class RecordingTurnResolutionService:
+        def __init__(self):
+            self.recent_turns = None
+
+        def resolve_turn(
+            self,
+            turn_context,
+            player_input,
+            *,
+            recent_turns=None,
+        ):
+            self.recent_turns = recent_turns
+
+            return TurnResolutionResult(
+                player_input=player_input,
+                narrative="Respuesta.",
+                operations=(),
+                operation_results=(),
+            )
+
+    turn_repository = RecordingTurnRepository()
+
+    resolver = RecordingTurnResolutionService()
+
+    service = CampaignTurnService(
+        turn_resolution_service=resolver,
+        world_service=world_service,
+        campaign_state_service=campaign_state_service,
+        turn_repository=turn_repository,
+    )
+
+    result = service.play_turn(
+        "Pregunto por el camino."
+    )
+
+    assert result.narrative == "Respuesta."
+
+    assert resolver.recent_turns == recent_turns
+
+    assert turn_repository.calls == [
+        (10, 10)
+    ]

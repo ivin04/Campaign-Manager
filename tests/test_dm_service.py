@@ -8,6 +8,7 @@ from models.campaign_state import CampaignState
 from models.character_state import CharacterState
 from models.session_state import SessionState
 from models.entity import Entity
+from models.turn_record import TurnRecord
 from services.context_builder import ContextBuilder
 from services.dm_service import (
     DMService,
@@ -903,4 +904,73 @@ def test_world_context_and_campaign_context_are_both_in_prompt():
     assert (
         "Salgo a la calle."
         in prompt
+    )
+
+# ============================================================
+# RECENT TURN HISTORY
+# ============================================================
+
+
+def test_generate_passes_recent_turns_to_context_builder():
+    provider = FakeLLMProvider(
+        response="Respuesta narrativa."
+    )
+
+    class RecentTurnsContextBuilder(ContextBuilder):
+        def __init__(self):
+            super().__init__()
+            self.received_recent_turns = None
+
+        def build(
+            self,
+            world,
+            query,
+            recent_turns=None,
+        ):
+            self.received_recent_turns = recent_turns
+
+            return {
+                "query": query,
+                "entities": [],
+                "items": [],
+                "item_instances": [],
+                "resources": [],
+                "resource_balances": [],
+                "relations": [],
+                "events": [],
+                "recent_turns": recent_turns or [],
+                "context": "[HISTORIAL]",
+            }
+
+    context_builder = RecentTurnsContextBuilder()
+
+    service = DMService(
+        provider,
+        context_builder,
+    )
+
+    recent_turns = [
+        TurnRecord(
+            id=1,
+            session_id=10,
+            player_input="Entré en la taberna.",
+            narrative="El tabernero levantó la mirada.",
+        ),
+        TurnRecord(
+            id=2,
+            session_id=10,
+            player_input="Pregunté por el camino norte.",
+            narrative="El tabernero señaló hacia las montañas.",
+        ),
+    ]
+
+    service.generate(
+        make_turn_context(),
+        "Pregunto de nuevo por las montañas.",
+        recent_turns=recent_turns,
+    )
+
+    assert (
+        context_builder.received_recent_turns
+        == recent_turns
     )

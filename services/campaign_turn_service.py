@@ -206,6 +206,36 @@ class CampaignTurnService:
             )
 
         # --------------------------------------------------------
+        # Obtener historial reciente
+        # --------------------------------------------------------
+
+        recent_turns = []
+
+        if self.turn_repository is not None:
+            session_id = None
+
+            if (
+                isinstance(turn_context, TurnContext)
+                and turn_context.current_session is not None
+            ):
+                session_id = (
+                    turn_context.current_session.session_id
+                )
+
+            try:
+                recent_turns = (
+                    self.turn_repository.list_recent_turns(
+                        session_id=session_id,
+                        limit=10,
+                    )
+                )
+
+            except Exception as exc:
+                raise CampaignTurnServiceError(
+                    "failed to load recent turn history"
+                ) from exc
+
+        # --------------------------------------------------------
         # Resolver turno
         # --------------------------------------------------------
 
@@ -214,6 +244,7 @@ class CampaignTurnService:
                 self.turn_resolution_service.resolve_turn(
                     turn_context,
                     normalized_input,
+                    recent_turns=recent_turns,
                 )
             )
 

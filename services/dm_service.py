@@ -131,11 +131,13 @@ class DMService:
     # ============================================================
     # PUBLIC API
     # ============================================================
-
+    
     def generate(
         self,
         turn_context: TurnContext,
         player_input: str,
+        *,
+        recent_turns=None,
     ) -> str:
         """
         Genera una respuesta narrativa para la acción del jugador.
@@ -162,10 +164,17 @@ class DMService:
         if not normalized_input:
             return ""
 
-        context_result = self.context_builder.build(
-            turn_context.world,
-            normalized_input,
-        )
+        if recent_turns is None:
+            context_result = self.context_builder.build(
+                turn_context.world,
+                normalized_input,
+            )
+        else:
+            context_result = self.context_builder.build(
+                turn_context.world,
+                normalized_input,
+                recent_turns=recent_turns,
+            )
 
         context = context_result.get(
             "context",
