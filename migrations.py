@@ -1,6 +1,6 @@
 import sqlite3
 
-CURRENT_VERSION = 4
+CURRENT_VERSION = 5
 
 
 def migration_001(conn: sqlite3.Connection) -> None:
@@ -277,6 +277,32 @@ def migration_004(conn: sqlite3.Connection) -> None:
         """
     )
 
+def migration_005(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO campaign (
+            id,
+            name,
+            system,
+            tone,
+            current_location_id,
+            current_session_id,
+            active_character_id,
+            summary
+        )
+        VALUES (
+            1,
+            'Nueva campaña',
+            'D&D 5e 2014',
+            '',
+            NULL,
+            NULL,
+            NULL,
+            ''
+        )
+        """
+    )
+
 
 def run_migrations(conn: sqlite3.Connection) -> None:
     version = conn.execute(
@@ -302,6 +328,11 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         migration_004(conn)
         conn.execute("PRAGMA user_version = 4")
         version = 4
+
+    if version < 5:
+        migration_005(conn)
+        conn.execute("PRAGMA user_version = 5")
+        version = 5
 
     if version != CURRENT_VERSION:
         raise RuntimeError(

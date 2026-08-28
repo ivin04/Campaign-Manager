@@ -124,3 +124,12 @@ def test_update_current_session_and_get_current_session(
     assert current_session is not None
     assert current_session["id"] == session_id
     assert current_session["title"] == "Current Session"
+
+def test_fresh_database_creates_default_campaign():
+    repository = CampaignRepository()
+
+    campaign = repository.get_campaign()
+
+    assert campaign is not None
+    assert campaign["id"] == 1
+    assert campaign["system"] == "D&D 5e 2014"
