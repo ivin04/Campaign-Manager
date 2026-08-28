@@ -191,3 +191,88 @@ def test_context_ranker_query_matching_is_case_insensitive():
     )
 
     assert score == ranker.DIRECT_MATCH_BONUS
+
+def test_context_ranker_strong_relation_has_higher_relevance():
+    ranker = ContextRanker()
+
+    assert (
+        ranker.get_relation_relevance("friend")
+        >
+        ranker.get_relation_relevance("knows")
+    )
+
+
+def test_context_ranker_relation_relevance_is_case_insensitive():
+    ranker = ContextRanker()
+
+    assert (
+        ranker.get_relation_relevance("FRIEND")
+        ==
+        ranker.get_relation_relevance("friend")
+    )
+
+def test_context_ranker_direct_entity_has_higher_score_than_related():
+    ranker = ContextRanker()
+
+    direct = {
+        "id": 1,
+        "name": "Fungoso",
+        "_relevance": 1.0,
+    }
+
+    related = {
+        "id": 2,
+        "name": "Aldric",
+        "_relevance": 0.7,
+    }
+
+    direct_score = ranker.entity_context_score(
+        direct,
+        "Fungoso",
+    )
+
+    related_score = ranker.entity_context_score(
+        related,
+        "Fungoso",
+    )
+
+    assert direct_score > related_score
+
+def test_context_ranker_non_matching_candidate_gets_no_bonus():
+    ranker = ContextRanker()
+
+    data = {
+        "name": "Aldric",
+        "description": "Un minero viejo.",
+    }
+
+    score = ranker.direct_match_bonus(
+        data,
+        "fungoso",
+    )
+
+    assert score == 0.0
+
+def test_context_ranker_word_matching_contributes_to_score():
+    ranker = ContextRanker()
+
+    text = "- Fungoso (character): aventurero peculiar"
+
+    score = ranker.score_context_candidate(
+        text,
+        "fungoso peculiar",
+        1.0,
+    )
+
+    assert score > 1.0
+
+def test_context_ranker_empty_query_keeps_base_score():
+    ranker = ContextRanker()
+
+    score = ranker.score_context_candidate(
+        "- Fungoso",
+        "",
+        1.0,
+    )
+
+    assert score == 1.0
