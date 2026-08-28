@@ -234,20 +234,20 @@ def test_player_input_is_stripped():
 
     service, dm, *_ = make_service()
 
+    context = make_turn_context()
+
     result = service.resolve_turn(
-        make_turn_context(),
+        context,
         "   Exploro.   ",
     )
 
     assert result.player_input == "Exploro."
 
-    assert dm.calls == [
-        (
-            "generate",
-            result,
-            "Exploro.",
-        )
-    ]
+    assert len(dm.calls) == 1
+
+    assert dm.calls[0][0] == "generate"
+    assert dm.calls[0][1] is context
+    assert dm.calls[0][2] == "Exploro."
 
 
 # ============================================================
@@ -274,7 +274,9 @@ def test_empty_narrative_is_rejected():
 
     dm = RecordingDMService()
 
-    dm.generate = lambda world, player_input: ""
+    dm.generate = (
+        lambda turn_context, player_input: ""
+    )
 
     service = TurnResolutionService(
         dm_service=dm,
@@ -299,7 +301,7 @@ def test_dm_failure_is_wrapped():
     dm = RecordingDMService()
 
     def failing_generate(
-        world,
+        turn_context,
         player_input,
     ):
         raise RuntimeError("boom")
@@ -615,12 +617,13 @@ def test_turn_resolution_order():
     original_generate = dm.generate
 
     def generate(
-        world,
+        turn_context,
         player_input,
     ):
         order.append("dm")
+
         return original_generate(
-            world,
+            turn_context,
             player_input,
         )
 
@@ -712,13 +715,13 @@ def test_turn_resolution_order_with_operation():
     original_generate = dm.generate
 
     def generate(
-        world,
+        turn_context,
         player_input,
     ):
         order.append("dm")
 
         return original_generate(
-            world,
+            turn_context,
             player_input,
         )
 

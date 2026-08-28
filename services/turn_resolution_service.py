@@ -135,18 +135,25 @@ class TurnResolutionService:
             turn_context,
             TurnContext,
         ):
-            world = turn_context.world
+            context = turn_context
 
         elif isinstance(
             turn_context,
             WorldState,
         ):
-            world = turn_context
+            context = TurnContext(
+                campaign={},
+                current_session=None,
+                active_character=None,
+                world=turn_context,
+            )
 
         else:
             raise TypeError(
                 "turn_context must be a TurnContext or WorldState"
             )
+
+        world = context.world
 
         normalized_input = self._validate_player_input(
             player_input
@@ -163,7 +170,7 @@ class TurnResolutionService:
 
         try:
             narrative = self.dm_service.generate(
-                turn_context,
+                context,
                 normalized_input,
             )
 

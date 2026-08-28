@@ -115,10 +115,10 @@ def test_generate_returns_provider_response():
         provider
     )
 
-    world = WorldState()
+    turn_context = make_turn_context()
 
     result = service.generate(
-        world,
+        turn_context,
         "Miro por la ventana.",
     )
 
@@ -187,10 +187,10 @@ def test_generate_uses_context_builder():
         context_builder,
     )
 
-    world = WorldState()
+    turn_context = make_turn_context()
 
     service.generate(
-        world,
+        turn_context,
         "Busco a Aldric.",
     )
 
@@ -202,7 +202,7 @@ def test_generate_uses_context_builder():
         context_builder.calls[0]
     )
 
-    assert called_world is world
+    assert called_world is turn_context.world
     assert called_query == (
         "Busco a Aldric."
     )
@@ -626,7 +626,9 @@ def test_generate_does_not_modify_world():
         context_builder,
     )
 
-    world = WorldState()
+    turn_context = make_turn_context()
+
+    world = turn_context.world
 
     entities_before = dict(
         world.entities
@@ -645,7 +647,7 @@ def test_generate_does_not_modify_world():
     )
 
     service.generate(
-        world,
+        turn_context,
         "Abro la puerta.",
     )
 
@@ -697,15 +699,15 @@ def test_each_generation_creates_one_provider_call():
         provider
     )
 
-    world = WorldState()
+    turn_context = make_turn_context()
 
     service.generate(
-        world,
+        turn_context,
         "Primera acción.",
     )
 
     service.generate(
-        world,
+        turn_context,
         "Segunda acción.",
     )
 
