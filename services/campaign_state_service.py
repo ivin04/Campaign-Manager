@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
+from models.campaign_state import CampaignState
+from models.character_state import CharacterState
+from models.session_state import SessionState
 from models.world_state import WorldState
 from models.turn_context import TurnContext
 
@@ -15,23 +16,6 @@ class CampaignStateServiceError(RuntimeError):
     """
     Error base del servicio de estado de campaña.
     """
-
-
-@dataclass(frozen=True)
-class CampaignState:
-    """
-    Estado operativo completo de una campaña.
-
-    Contiene únicamente referencias al estado persistido
-    y el WorldState actual.
-
-    No modifica ninguno de ellos.
-    """
-
-    campaign: object
-    current_session: object | None
-    active_character: object | None
-    world: WorldState
 
 
 class CampaignStateService:
@@ -116,7 +100,8 @@ class CampaignStateService:
         campaign_id: int = 1,
     ) -> CampaignState:
         """
-        Devuelve el estado completo actual de la campaña.
+        Devuelve el estado persistido de alto nivel
+        de la campaña.
         """
 
         campaign = self.campaign_repository.get_campaign(
@@ -128,49 +113,23 @@ class CampaignStateService:
                 "campaign does not exist"
             )
 
-        current_session = (
-            self.campaign_repository.get_current_session(
-                campaign_id
-            )
-        )
-
-        active_character_id = (
-            self.campaign_repository.get_active_character_id(
-                campaign_id
-            )
-        )
-
-        active_character = None
-
-        if active_character_id is not None:
-            active_character = (
-                self.character_repository.get_character(
-                    active_character_id
-                )
-            )
-
-            if active_character is None:
-                raise CampaignStateServiceError(
-                    "active character does not exist"
-                )
-
-        world = self.world_service.get_world()
-
-        if not isinstance(
-            world,
-            WorldState,
-        ):
-            raise CampaignStateServiceError(
-                "WorldService returned an invalid WorldState"
-            )
-
         return CampaignState(
-            campaign=campaign,
-            current_session=current_session,
-            active_character=active_character,
-            world=world,
+            campaign_id=campaign["id"],
+            name=campaign["name"],
+            system=campaign["system"],
+            tone=campaign["tone"] or "",
+            current_location_id=campaign[
+                "current_location_id"
+            ],
+            current_session_id=campaign[
+                "current_session_id"
+            ],
+            active_character_id=campaign[
+                "active_character_id"
+            ],
+            summary=campaign["summary"] or "",
         )
-
+    
     # ============================================================
     # ACTIVE CHARACTER
     # ============================================================
@@ -313,13 +272,98 @@ class CampaignStateService:
         resolver un turno.
         """
 
-        state = self.get_state(
+        campaign = self.campaign_repository.get_campaign(
             campaign_id
         )
 
+        if campaign is None:
+            raise CampaignStateServiceError(
+                "campaign does not exist"
+            )
+
+        campaign_state = CampaignState(
+            campaign_id=campaign["id"],
+            name=campaign["name"],
+            system=campaign["system"],
+            tone=campaign["tone"] or "",
+            current_location_id=campaign[
+                "current_location_id"
+            ],
+            current_session_id=campaign[
+                "current_session_id"
+            ],
+            active_character_id=campaign[
+                "active_character_id"
+            ],
+            summary=campaign["summary"] or "",
+        )
+
+        current_session = (
+            self.campaign_repository.get_current_session(
+                campaign_id
+            )
+        )
+
+        session_state = None
+
+        if current_session is not None:
+            session_state = SessionState(
+                session_id=current_session["id"],
+                number=current_session["number"],
+                title=current_session["title"] or "",
+                summary=current_session["summary"] or "",
+                start_location=(
+                    current_session["start_location"]
+                    or ""
+                ),
+                end_location=(
+                    current_session["end_location"]
+                    or ""
+                ),
+                notes=current_session["notes"] or "",
+            )
+
+        active_character_id = (
+            self.campaign_repository.get_active_character_id(
+                campaign_id
+            )
+        )
+
+        active_character = None
+
+        if active_character_id is not None:
+            active_character = (
+                self.character_repository.get_character(
+                    active_character_id
+                )
+            )
+
+            if active_character is None:
+                raise CampaignStateServiceError(
+                    "active character does not exist"
+                )
+
+            if not isinstance(
+                active_character,
+                CharacterState,
+            ):
+                raise CampaignStateServiceError(
+                    "CharacterRepository returned an invalid CharacterState"
+                )
+
+        world = self.world_service.get_world()
+
+        if not isinstance(
+            world,
+            WorldState,
+        ):
+            raise CampaignStateServiceError(
+                "WorldService returned an invalid WorldState"
+            )
+
         return TurnContext(
-            campaign=state.campaign,
-            current_session=state.current_session,
-            active_character=state.active_character,
-            world=state.world,
+            campaign=campaign_state,
+            current_session=session_state,
+            active_character=active_character,
+            world=world,
         )

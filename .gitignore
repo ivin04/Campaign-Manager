@@ -6,3 +6,4 @@ data/*.db
 *.py[cod]
 *$py.class
 data/*.backup
+*.json
