@@ -7,10 +7,6 @@ from operations.character_operations import (
 )
 from operations.world_operations import WorldOperation
 
-from operations.character_operations import (
-    CharacterOperation,
-)
-
 
 @dataclass(frozen=True)
 class TurnResolutionResult:
@@ -88,10 +84,16 @@ class TurnResolutionResult:
     @property
     def operation_count(self) -> int:
         """
-        Número de operaciones detectadas.
+        Número total de operaciones detectadas.
+
+        Incluye operaciones del mundo y operaciones
+        del personaje.
         """
 
-        return len(self.operations)
+        return (
+            len(self.operations)
+            + len(self.character_operations)
+        )
 
     @property
     def successful_operation_count(self) -> int:

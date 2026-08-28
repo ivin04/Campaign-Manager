@@ -278,3 +278,20 @@ def test_turn_resolution_result_supports_character_operations():
     )
 
     assert result.operations == ()
+
+def test_operation_count_includes_character_operations():
+
+    world_operation = object()
+
+    character_operation = object()
+
+    result = TurnResolutionResult(
+        player_input="Ataco.",
+        narrative="El golpe impacta.",
+        operations=(world_operation,),
+        character_operations=(
+            character_operation,
+        ),
+    )
+
+    assert result.operation_count == 2
