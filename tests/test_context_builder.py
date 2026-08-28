@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from models.entity import Entity
 from models.event import Event
 from models.item import Item, ItemInstance
@@ -7,6 +9,8 @@ from models.relation import Relation
 from models.resource import Resource, ResourceBalance
 from models.world_state import WorldState
 from services.context_builder import ContextBuilder
+from services.context_ranker import ContextRanker
+from services.memory_search_service import MemorySearchService
 
 
 def build_world() -> WorldState:
@@ -1112,3 +1116,23 @@ def test_context_builder_structured_data_is_not_limited_by_text_budget():
 
     assert "Fungoso" in names
     assert "Goblin" in names
+
+def test_context_builder_uses_provided_context_ranker():
+    ranker = ContextRanker()
+
+    builder = ContextBuilder(
+        memory_search_service=MemorySearchService(),
+        ranker=ranker,
+    )
+
+    assert builder.ranker is ranker
+
+def test_context_builder_rejects_invalid_context_ranker():
+    with pytest.raises(
+        TypeError,
+        match="ranker must be a ContextRanker",
+    ):
+        ContextBuilder(
+            memory_search_service=MemorySearchService(),
+            ranker=object(),
+        )

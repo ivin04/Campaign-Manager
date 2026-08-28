@@ -5,6 +5,8 @@ from typing import Any
 from models.world_state import WorldState
 from services.memory_search_service import MemorySearchService
 from services.world_serializer import WorldSerializer
+from services.context_ranker import ContextRanker
+
 
 class ContextBuilder:
     """
@@ -21,6 +23,7 @@ class ContextBuilder:
     esos candidatos dentro del contexto.
 
     Responsabilidades:
+
     - Identificar entidades principales.
     - Calcular relevancia.
     - Incluir entidades relacionadas.
@@ -38,15 +41,8 @@ class ContextBuilder:
 
     DEFAULT_MAX_DEPTH = 1
 
-    # Presupuesto inicial conservador.
-    #
     # Se mide en caracteres, no tokens.
-    # Más adelante podremos sustituirlo por un tokenizer real
-    # cuando sepamos qué modelo utilizará el DM.
     DEFAULT_MAX_CONTEXT_CHARS = 6000
-
-    DIRECT_ENTITY_RELEVANCE = 1.0
-    RELATED_ENTITY_RELEVANCE = 0.7
 
     # ============================================================
     # CONTEXT CANDIDATE SCORING
@@ -72,50 +68,28 @@ class ContextBuilder:
         "resource_balances": 6,
     }
 
-    DIRECT_MATCH_BONUS = 0.25
+    # Compatibilidad con el contrato histórico de ContextBuilder.
+    # La implementación real del scoring vive en ContextRanker.
+
+    DIRECT_ENTITY_RELEVANCE = ContextRanker.DIRECT_ENTITY_RELEVANCE
+    RELATED_ENTITY_RELEVANCE = ContextRanker.RELATED_ENTITY_RELEVANCE
+    DIRECT_MATCH_BONUS = ContextRanker.DIRECT_MATCH_BONUS
+    DEFAULT_RELATION_RELEVANCE = (
+        ContextRanker.DEFAULT_RELATION_RELEVANCE
+    )
+    RELATION_RELEVANCE_WEIGHTS = (
+        ContextRanker.RELATION_RELEVANCE_WEIGHTS
+    )
 
     # ============================================================
-    # RELATION RELEVANCE
+    # INITIALIZATION
     # ============================================================
-
-    DEFAULT_RELATION_RELEVANCE = 0.70
-
-    RELATION_RELEVANCE_WEIGHTS = {
-        # Relaciones sociales / narrativas fuertes
-        "friend": 1.00,
-        "friendship": 1.00,
-        "ally": 1.00,
-        "alliance": 1.00,
-        "family": 1.00,
-        "parent": 1.00,
-        "child": 1.00,
-
-        # Relaciones hostiles
-        "enemy": 0.95,
-        "rival": 0.90,
-        "hostile": 0.90,
-
-        # Relaciones de pertenencia / proximidad
-        "owner": 0.90,
-        "owns": 0.90,
-        "member": 0.85,
-        "member_of": 0.85,
-
-        # Relaciones espaciales
-        "lives_in": 0.75,
-        "located_in": 0.75,
-        "resident_of": 0.75,
-
-        # Relaciones débiles
-        "knows": 0.65,
-        "met": 0.60,
-        "works_with": 0.80,
-    }
 
     def __init__(
         self,
         memory_search_service: MemorySearchService | None = None,
         max_context_chars: int = DEFAULT_MAX_CONTEXT_CHARS,
+        ranker: ContextRanker | None = None,
     ) -> None:
 
         if not isinstance(max_context_chars, int):
@@ -134,6 +108,20 @@ class ContextBuilder:
         )
 
         self.max_context_chars = max_context_chars
+
+        if ranker is not None and not isinstance(
+            ranker,
+            ContextRanker,
+        ):
+            raise TypeError(
+                "ranker must be a ContextRanker"
+            )
+
+        self.ranker = ranker or ContextRanker()
+
+    # ============================================================
+    # PUBLIC API
+    # ============================================================
 
     def build(
         self,
@@ -175,14 +163,20 @@ class ContextBuilder:
     # ============================================================
 
     @staticmethod
-    def _validate_world(world: WorldState) -> None:
+    def _validate_world(
+        world: WorldState,
+    ) -> None:
+
         if not isinstance(world, WorldState):
             raise TypeError(
                 "world must be a WorldState"
             )
 
     @staticmethod
-    def _validate_query(query: str) -> str:
+    def _validate_query(
+        query: str,
+    ) -> str:
+
         if not isinstance(query, str):
             raise TypeError(
                 "query must be a string"
@@ -198,7 +192,7 @@ class ContextBuilder:
         self,
         world: WorldState,
         matched_entities: list[dict[str, Any]],
-        max_depth: int = 1,
+        max_depth: int = DEFAULT_MAX_DEPTH,
     ) -> list[dict[str, Any]]:
         """
         Amplía las entidades encontradas siguiendo relaciones activas.
@@ -207,16 +201,13 @@ class ContextBuilder:
 
         Una entidad directa empieza con:
 
-            1.0
+            DIRECT_ENTITY_RELEVANCE
 
         Una entidad relacionada recibe:
 
             relevancia_origen
             * peso_relacion
             * factor_profundidad
-
-        De esta forma una relación fuerte conserva más relevancia
-        que una relación débil.
 
         La función no modifica WorldState.
         """
@@ -234,6 +225,10 @@ class ContextBuilder:
         # --------------------------------------------------------
 
         for entity in matched_entities:
+
+            if not isinstance(entity, dict):
+                continue
+
             entity_id = entity.get("id")
 
             if not isinstance(entity_id, int):
@@ -289,14 +284,10 @@ class ContextBuilder:
                 )
 
                 relation_weight = (
-                    self._get_relation_relevance(
+                    self.ranker.get_relation_relevance(
                         relation_type
                     )
                 )
-
-                # ------------------------------------------------
-                # FACTOR DE PROFUNDIDAD
-                # ------------------------------------------------
 
                 depth_factor = (
                     self.RELATED_ENTITY_RELEVANCE
@@ -314,14 +305,19 @@ class ContextBuilder:
 
                 if subject_id in current_ids:
 
+                    target_entity = world.entities.get(
+                        target_id
+                    )
+
                     if (
-                        target_id in world.entities
+                        target_entity is not None
                         and getattr(
-                            world.entities[target_id],
+                            target_entity,
                             "active",
                             True,
                         )
                     ):
+
                         candidate_relevance = (
                             entity_relevance[subject_id]
                             * propagation_factor
@@ -341,14 +337,19 @@ class ContextBuilder:
 
                 if target_id in current_ids:
 
+                    subject_entity = world.entities.get(
+                        subject_id
+                    )
+
                     if (
-                        subject_id in world.entities
+                        subject_entity is not None
                         and getattr(
-                            world.entities[subject_id],
+                            subject_entity,
                             "active",
                             True,
                         )
                     ):
+
                         candidate_relevance = (
                             entity_relevance[target_id]
                             * propagation_factor
@@ -408,10 +409,6 @@ class ContextBuilder:
                 entity_data
             )
 
-        # --------------------------------------------------------
-        # ORDENAR
-        # --------------------------------------------------------
-
         result.sort(
             key=lambda entity: (
                 -entity.get(
@@ -429,38 +426,7 @@ class ContextBuilder:
             )
         )
 
-        # --------------------------------------------------------
-        # LIMPIAR CAMPOS INTERNOS
-        # --------------------------------------------------------
-
         return result
-
-    @classmethod
-    def _get_relation_relevance(
-        cls,
-        relation_type: Any,
-    ) -> float:
-        """
-        Devuelve el peso de propagación de una relación.
-
-        La comparación es case-insensitive y tolera valores
-        no string.
-        """
-
-        if relation_type is None:
-            return cls.DEFAULT_RELATION_RELEVANCE
-
-        normalized = str(
-            relation_type
-        ).strip().casefold()
-
-        if not normalized:
-            return cls.DEFAULT_RELATION_RELEVANCE
-
-        return cls.RELATION_RELEVANCE_WEIGHTS.get(
-            normalized,
-            cls.DEFAULT_RELATION_RELEVANCE,
-        )
 
     @staticmethod
     def _register_related_entity(
@@ -475,8 +441,6 @@ class ContextBuilder:
 
         Si ya existe por otro camino del grafo, conserva
         la mayor relevancia encontrada.
-
-        Esto evita que un camino débil sobrescriba uno fuerte.
         """
 
         existing_depth = entity_depths.get(
@@ -499,71 +463,6 @@ class ContextBuilder:
         if depth < existing_depth:
             entity_depths[entity_id] = depth
 
-    def _entity_context_score(
-        self,
-        entity: dict[str, Any],
-        query: str,
-    ) -> float:
-        """
-        Conserva la relevancia relacional calculada previamente
-        y añade una pequeña bonificación por coincidencia directa.
-        """
-
-        relevance = entity.get(
-            "_relevance",
-            self.DIRECT_ENTITY_RELEVANCE,
-        )
-
-        try:
-            relevance = float(relevance)
-        except (TypeError, ValueError):
-            relevance = self.DIRECT_ENTITY_RELEVANCE
-
-        return (
-            relevance
-            + self._direct_match_bonus(
-                entity,
-                query,
-            )
-        )
-
-    def _direct_match_bonus(
-        self,
-        data: dict[str, Any],
-        query: str,
-    ) -> float:
-        """
-        Añade una pequeña bonificación cuando la consulta aparece
-        directamente en los datos del candidato.
-        """
-
-        if not query:
-            return 0.0
-
-        searchable_fields = (
-            "name",
-            "description",
-            "title",
-            "notes",
-            "significance",
-            "relation_type",
-            "event_type",
-            "resource_type",
-            "unit",
-        )
-
-        for field in searchable_fields:
-
-            value = data.get(field)
-
-            if value is None:
-                continue
-
-            if query in str(value).casefold():
-                return self.DIRECT_MATCH_BONUS
-
-        return 0.0
-
     # ============================================================
     # RELATIONS
     # ============================================================
@@ -573,9 +472,11 @@ class ContextBuilder:
         world: WorldState,
         entities: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
+
         entity_ids = {
             entity.get("id")
             for entity in entities
+            if isinstance(entity, dict)
         }
 
         result: list[dict[str, Any]] = []
@@ -633,9 +534,11 @@ class ContextBuilder:
         world: WorldState,
         entities: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
+
         entity_ids = {
             entity.get("id")
             for entity in entities
+            if isinstance(entity, dict)
         }
 
         result: list[dict[str, Any]] = []
@@ -695,6 +598,210 @@ class ContextBuilder:
         return result
 
     # ============================================================
+    # CONTEXT DATA
+    # ============================================================
+
+    def _build_context_data(
+        self,
+        world: WorldState,
+        normalized_query: str,
+    ) -> dict[str, Any]:
+        """
+        Construye los datos estructurados relevantes.
+
+        Esta fase NO aplica el presupuesto textual.
+        """
+
+        search_result = (
+            self.memory_search_service.search(
+                world,
+                normalized_query,
+            )
+        )
+
+        search_result = (
+            self._resolve_parent_objects(
+                world,
+                search_result,
+            )
+        )
+
+        entities = self._expand_entities(
+            world,
+            search_result.get(
+                "entities",
+                [],
+            ),
+            max_depth=self.DEFAULT_MAX_DEPTH,
+        )
+
+        relations = self._related_relations(
+            world,
+            entities,
+        )
+
+        events = self._related_events(
+            world,
+            entities,
+        )
+
+        return {
+            "query": normalized_query,
+            "entities": entities,
+            "items": search_result.get(
+                "items",
+                [],
+            ),
+            "item_instances": search_result.get(
+                "item_instances",
+                [],
+            ),
+            "resources": search_result.get(
+                "resources",
+                [],
+            ),
+            "resource_balances": search_result.get(
+                "resource_balances",
+                [],
+            ),
+            "relations": relations,
+            "events": events,
+        }
+
+    # ============================================================
+    # PARENT OBJECT RESOLUTION
+    # ============================================================
+
+    def _resolve_parent_objects(
+        self,
+        world: WorldState,
+        search_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Completa los resultados con los objetos padre de:
+
+        ItemInstance -> Item
+        ResourceBalance -> Resource
+        """
+
+        result = {
+            key: list(value)
+            if isinstance(value, list)
+            else value
+            for key, value in search_result.items()
+        }
+
+        # --------------------------------------------------------
+        # ITEM INSTANCES -> ITEMS
+        # --------------------------------------------------------
+
+        if not isinstance(
+            result.get("items"),
+            list,
+        ):
+            result["items"] = []
+
+        existing_item_ids = {
+            item.get("id")
+            for item in result["items"]
+            if isinstance(item, dict)
+        }
+
+        for instance in result.get(
+            "item_instances",
+            [],
+        ):
+
+            if not isinstance(
+                instance,
+                dict,
+            ):
+                continue
+
+            item_id = instance.get(
+                "item_id"
+            )
+
+            if item_id is None:
+                continue
+
+            if item_id in existing_item_ids:
+                continue
+
+            item = world.items.get(
+                item_id
+            )
+
+            if item is None:
+                continue
+
+            result["items"].append(
+                WorldSerializer.item_to_dict(
+                    item
+                )
+            )
+
+            existing_item_ids.add(
+                item_id
+            )
+
+        # --------------------------------------------------------
+        # RESOURCE BALANCES -> RESOURCES
+        # --------------------------------------------------------
+
+        if not isinstance(
+            result.get("resources"),
+            list,
+        ):
+            result["resources"] = []
+
+        existing_resource_ids = {
+            resource.get("id")
+            for resource in result["resources"]
+            if isinstance(resource, dict)
+        }
+
+        for balance in result.get(
+            "resource_balances",
+            [],
+        ):
+
+            if not isinstance(
+                balance,
+                dict,
+            ):
+                continue
+
+            resource_id = balance.get(
+                "resource_id"
+            )
+
+            if resource_id is None:
+                continue
+
+            if resource_id in existing_resource_ids:
+                continue
+
+            resource = world.resources.get(
+                resource_id
+            )
+
+            if resource is None:
+                continue
+
+            result["resources"].append(
+                WorldSerializer.resource_to_dict(
+                    resource
+                )
+            )
+
+            existing_resource_ids.add(
+                resource_id
+            )
+
+        return result
+
+    # ============================================================
     # TEXT CONTEXT
     # ============================================================
 
@@ -705,16 +812,11 @@ class ContextBuilder:
         """
         Construye el contexto textual final.
 
-        El proceso es:
-
-            1. Crear candidatos.
-            2. Calcular relevancia.
-            3. Ordenar por score.
-            4. Seleccionar dentro del presupuesto.
-            5. Agrupar por categoría.
-            6. Renderizar.
-
-        El presupuesto incluye también los headers.
+        1. Crear candidatos.
+        2. Calcular relevancia.
+        3. Ordenar por score.
+        4. Seleccionar dentro del presupuesto.
+        5. Renderizar.
         """
 
         query = str(
@@ -724,17 +826,15 @@ class ContextBuilder:
             )
         ).strip().casefold()
 
-        candidates = self._build_context_candidates(
-            result,
-            query,
+        candidates = (
+            self._build_context_candidates(
+                result,
+                query,
+            )
         )
 
         if not candidates:
             return "Sin información relevante."
-
-        # --------------------------------------------------------
-        # ORDEN DE SELECCIÓN
-        # --------------------------------------------------------
 
         candidates.sort(
             key=lambda candidate: (
@@ -743,10 +843,6 @@ class ContextBuilder:
                 candidate["index"],
             )
         )
-
-        # --------------------------------------------------------
-        # SELECCIÓN DENTRO DEL PRESUPUESTO
-        # --------------------------------------------------------
 
         selected: list[dict[str, Any]] = []
 
@@ -764,14 +860,14 @@ class ContextBuilder:
 
             additional_length = len(text)
 
-            # Separador antes de la línea.
             if current_length > 0:
                 additional_length += 1
 
-            # Si todavía no hemos incluido esta categoría,
-            # necesitamos reservar espacio para su header.
             if category not in selected_categories:
-                additional_length += len(header)
+
+                additional_length += len(
+                    header
+                )
 
                 if current_length > 0:
                     additional_length += 1
@@ -787,14 +883,12 @@ class ContextBuilder:
             selected.append(candidate)
 
             current_length = projected_length
-            selected_categories.add(category)
+            selected_categories.add(
+                category
+            )
 
         if not selected:
             return "Sin información relevante."
-
-        # --------------------------------------------------------
-        # AGRUPAR PARA RENDERIZAR
-        # --------------------------------------------------------
 
         selected.sort(
             key=lambda candidate: (
@@ -812,9 +906,8 @@ class ContextBuilder:
     # CONTEXT CANDIDATES
     # ============================================================
 
-    @classmethod
     def _build_context_candidates(
-        cls,
+        self,
         result: dict[str, Any],
         query: str,
     ) -> list[dict[str, Any]]:
@@ -830,8 +923,10 @@ class ContextBuilder:
             category_order
             index
 
-        La relevancia específica de las entidades se conserva
-        mediante _relevance mientras el contexto se construye.
+        Importante:
+
+        Este método es de instancia porque utiliza
+        self.ranker.
         """
 
         candidates: list[dict[str, Any]] = []
@@ -839,45 +934,45 @@ class ContextBuilder:
         category_definitions = [
             (
                 "entities",
-                1.00,
-                0,
-                cls._entity_lines,
+                self.CATEGORY_BASE_SCORES["entities"],
+                self.CATEGORY_PRIORITY["entities"],
+                self._entity_lines,
             ),
             (
                 "relations",
-                0.80,
-                1,
-                cls._relation_lines,
+                self.CATEGORY_BASE_SCORES["relations"],
+                self.CATEGORY_PRIORITY["relations"],
+                self._relation_lines,
             ),
             (
                 "events",
-                0.70,
-                2,
-                cls._event_lines,
+                self.CATEGORY_BASE_SCORES["events"],
+                self.CATEGORY_PRIORITY["events"],
+                self._event_lines,
             ),
             (
                 "items",
-                0.60,
-                3,
-                cls._item_lines,
+                self.CATEGORY_BASE_SCORES["items"],
+                self.CATEGORY_PRIORITY["items"],
+                self._item_lines,
             ),
             (
                 "item_instances",
-                0.50,
-                4,
-                cls._item_instance_lines,
+                self.CATEGORY_BASE_SCORES["item_instances"],
+                self.CATEGORY_PRIORITY["item_instances"],
+                self._item_instance_lines,
             ),
             (
                 "resources",
-                0.40,
-                5,
-                cls._resource_lines,
+                self.CATEGORY_BASE_SCORES["resources"],
+                self.CATEGORY_PRIORITY["resources"],
+                self._resource_lines,
             ),
             (
                 "resource_balances",
-                0.30,
-                6,
-                cls._resource_balance_lines,
+                self.CATEGORY_BASE_SCORES["resource_balances"],
+                self.CATEGORY_PRIORITY["resource_balances"],
+                self._resource_balance_lines,
             ),
         ]
 
@@ -893,32 +988,42 @@ class ContextBuilder:
                 [],
             )
 
-            if not isinstance(values, list):
+            if not isinstance(
+                values,
+                list,
+            ):
                 continue
 
             for index, value in enumerate(values):
 
-                if not isinstance(value, dict):
+                if not isinstance(
+                    value,
+                    dict,
+                ):
                     continue
 
-                lines = line_builder([value])
+                lines = line_builder(
+                    [value]
+                )
 
                 if not lines:
                     continue
 
                 text = lines[0]
 
-                score = base_score
+                score = float(
+                    base_score
+                )
 
                 # ------------------------------------------------
-                # RELEVANCIA PROPIA DE LA ENTIDAD
+                # RELEVANCIA PROPIA DE ENTIDAD
                 # ------------------------------------------------
 
                 if category == "entities":
 
                     relevance = value.get(
                         "_relevance",
-                        cls.DIRECT_ENTITY_RELEVANCE,
+                        self.DIRECT_ENTITY_RELEVANCE,
                     )
 
                     try:
@@ -930,7 +1035,7 @@ class ContextBuilder:
                         ValueError,
                     ):
                         relevance = (
-                            cls.DIRECT_ENTITY_RELEVANCE
+                            self.DIRECT_ENTITY_RELEVANCE
                         )
 
                     score = relevance
@@ -939,9 +1044,11 @@ class ContextBuilder:
                 # COINCIDENCIA DIRECTA
                 # ------------------------------------------------
 
-                score += cls._direct_match_bonus(
-                    value,
-                    query,
+                score += (
+                    self.ranker.direct_match_bonus(
+                        value,
+                        query,
+                    )
                 )
 
                 candidates.append(
@@ -956,99 +1063,6 @@ class ContextBuilder:
 
         return candidates
 
-    @staticmethod
-    def _direct_match_bonus(
-        data: dict[str, Any],
-        query: str,
-    ) -> float:
-        """
-        Añade relevancia cuando la consulta coincide directamente
-        con algún campo narrativo del candidato.
-        """
-
-        if not query:
-            return 0.0
-
-        query_normalized = query.casefold()
-
-        searchable_fields = (
-            "name",
-            "description",
-            "title",
-            "notes",
-            "significance",
-            "relation_type",
-            "event_type",
-            "resource_type",
-            "unit",
-        )
-
-        for field in searchable_fields:
-
-            value = data.get(field)
-
-            if value is None:
-                continue
-
-            normalized_value = str(
-                value
-            ).casefold()
-
-            if query_normalized in normalized_value:
-                return 0.25
-
-        return 0.0
-
-    @staticmethod
-    def _score_context_candidate(
-        text: str,
-        query: str,
-        base_score: float,
-    ) -> float:
-        """
-        Calcula la relevancia de una pieza individual.
-
-        La puntuación base representa la importancia de la
-        categoría.
-
-        Una coincidencia directa con la consulta aumenta
-        la puntuación.
-
-        Se utiliza texto completo de la línea únicamente
-        para el ranking; no se modifica la salida.
-        """
-
-        score = base_score
-
-        if not query:
-            return score
-
-        normalized_text = text.casefold()
-
-        if query in normalized_text:
-            score += 0.50
-
-        # Coincidencia por palabras.
-        query_words = {
-            word
-            for word in query.split()
-            if word
-        }
-
-        if query_words:
-            matched_words = sum(
-                1
-                for word in query_words
-                if word in normalized_text
-            )
-
-            score += (
-                0.10
-                * matched_words
-            )
-
-        return score
-
     # ============================================================
     # CANDIDATE LINE BUILDERS
     # ============================================================
@@ -1057,9 +1071,11 @@ class ContextBuilder:
     def _entity_lines(
         entities: list[dict[str, Any]],
     ) -> list[str]:
+
         lines: list[str] = []
 
         for entity in entities:
+
             name = entity.get(
                 "name",
                 "Sin nombre",
@@ -1135,6 +1151,7 @@ class ContextBuilder:
                 metadata,
                 dict,
             ):
+
                 reason = metadata.get(
                     "reason"
                 )
@@ -1152,9 +1169,11 @@ class ContextBuilder:
     def _event_lines(
         events: list[dict[str, Any]],
     ) -> list[str]:
+
         lines: list[str] = []
 
         for event in events:
+
             title = event.get(
                 "title",
                 "Sin título",
@@ -1191,9 +1210,11 @@ class ContextBuilder:
     def _item_lines(
         items: list[dict[str, Any]],
     ) -> list[str]:
+
         lines: list[str] = []
 
         for item in items:
+
             name = item.get(
                 "name",
                 "Sin nombre",
@@ -1240,9 +1261,11 @@ class ContextBuilder:
     def _item_instance_lines(
         instances: list[dict[str, Any]],
     ) -> list[str]:
+
         lines: list[str] = []
 
         for instance in instances:
+
             instance_id = instance.get(
                 "id",
                 "unknown",
@@ -1290,9 +1313,11 @@ class ContextBuilder:
     def _resource_lines(
         resources: list[dict[str, Any]],
     ) -> list[str]:
+
         lines: list[str] = []
 
         for resource in resources:
+
             name = resource.get(
                 "name",
                 "Sin nombre",
@@ -1338,9 +1363,11 @@ class ContextBuilder:
     def _resource_balance_lines(
         balances: list[dict[str, Any]],
     ) -> list[str]:
+
         lines: list[str] = []
 
         for balance in balances:
+
             balance_id = balance.get(
                 "id",
                 "unknown",
@@ -1394,11 +1421,7 @@ class ContextBuilder:
         category: str,
     ) -> str:
         """
-        Devuelve el encabezado público de una categoría
-        de contexto.
-
-        Las categorías internas no deben filtrarse directamente
-        al formato narrativo.
+        Devuelve el encabezado público de una categoría.
         """
 
         headers = {
@@ -1420,17 +1443,16 @@ class ContextBuilder:
     # CONTEXT RENDERING
     # ============================================================
 
-    @classmethod
     def _render_selected_candidates(
-        cls,
+        self,
         candidates: list[dict[str, Any]],
     ) -> str:
         """
         Renderiza los candidatos seleccionados agrupándolos
         por categoría.
 
-        Los candidatos ya han sido seleccionados por relevancia.
-        Aquí únicamente se les da una estructura legible.
+        Este método es de instancia porque utiliza
+        self._category_header().
         """
 
         if not candidates:
@@ -1445,8 +1467,11 @@ class ContextBuilder:
             category = candidate["category"]
 
             if category != current_category:
+
                 sections.append(
-                    cls._category_header(category)
+                    self._category_header(
+                        category
+                    )
                 )
 
                 current_category = category
@@ -1455,7 +1480,9 @@ class ContextBuilder:
                 candidate["text"]
             )
 
-        return "\n".join(sections)
+        return "\n".join(
+            sections
+        )
 
     # ============================================================
     # EMPTY RESULT
@@ -1463,6 +1490,7 @@ class ContextBuilder:
 
     @staticmethod
     def _empty_result() -> dict[str, Any]:
+
         return {
             "query": "",
             "entities": [],
@@ -1477,112 +1505,9 @@ class ContextBuilder:
             ),
         }
 
-    def _resolve_parent_objects(
-        self,
-        world: WorldState,
-        search_result: dict[str, Any],
-    ) -> dict[str, Any]:
-        """
-        Completa los resultados con los objetos padre de:
-
-        ItemInstance -> Item
-        ResourceBalance -> Resource
-
-        Esto permite que el contexto sea interpretable incluso
-        cuando la búsqueda encuentra solamente la instancia o balance.
-        """
-
-        result = {
-            key: list(value) if isinstance(value, list) else value
-            for key, value in search_result.items()
-        }
-
-        # =========================================================
-        # ITEM INSTANCES -> ITEMS
-        # =========================================================
-
-        existing_item_ids = {
-            item.get("id")
-            for item in result.get("items", [])
-            if isinstance(item, dict)
-        }
-
-        for instance in result.get(
-            "item_instances",
-            [],
-        ):
-            if not isinstance(instance, dict):
-                continue
-
-            item_id = instance.get("item_id")
-
-            if item_id is None:
-                continue
-
-            if item_id in existing_item_ids:
-                continue
-
-            item = world.items.get(item_id)
-
-            if item is None:
-                continue
-
-            result["items"].append(
-                WorldSerializer.item_to_dict(
-                    item
-                )
-            )
-
-            existing_item_ids.add(item_id)
-
-        # =========================================================
-        # RESOURCE BALANCES -> RESOURCES
-        # =========================================================
-
-        existing_resource_ids = {
-            resource.get("id")
-            for resource in result.get(
-                "resources",
-                [],
-            )
-            if isinstance(resource, dict)
-        }
-
-        for balance in result.get(
-            "resource_balances",
-            [],
-        ):
-            if not isinstance(balance, dict):
-                continue
-
-            resource_id = balance.get(
-                "resource_id"
-            )
-
-            if resource_id is None:
-                continue
-
-            if resource_id in existing_resource_ids:
-                continue
-
-            resource = world.resources.get(
-                resource_id
-            )
-
-            if resource is None:
-                continue
-
-            result["resources"].append(
-                WorldSerializer.resource_to_dict(
-                    resource
-                )
-            )
-
-            existing_resource_ids.add(
-                resource_id
-            )
-
-        return result
+    # ============================================================
+    # INTERNAL FIELD CLEANUP
+    # ============================================================
 
     @staticmethod
     def _strip_internal_context_fields(
@@ -1597,7 +1522,11 @@ class ContextBuilder:
             "entities",
             [],
         ):
-            if not isinstance(entity, dict):
+
+            if not isinstance(
+                entity,
+                dict,
+            ):
                 continue
 
             entity.pop(
@@ -1610,75 +1539,50 @@ class ContextBuilder:
                 None,
             )
 
-    @staticmethod
-    def _category_header(
-        category: str,
-    ) -> str:
-        headers = {
-            "entities": "[ENTIDADES]",
-            "relations": "[RELACIONES]",
-            "events": "[EVENTOS]",
-            "items": "[ITEMS]",
-            "item_instances": "[ITEM_INSTANCES]",
-            "resources": "[RESOURCES]",
-            "resource_balances": "[RESOURCE_BALANCES]",
-        }
+    # ============================================================
+    # RANKER COMPATIBILITY HELPERS
+    # ============================================================
 
-        return headers.get(
-            category,
-            f"[{category.upper()}]",
-        )
-
-    def _build_context_data(
+    def _get_relation_relevance(
         self,
-        world: WorldState,
-        normalized_query: str,
-    ) -> dict[str, Any]:
-        """
-        Construye los datos estructurados relevantes para una consulta.
+        relation_type: str,
+    ) -> float:
 
-        Esta fase no genera texto para el LLM ni aplica el presupuesto
-        de contexto. Su responsabilidad es reunir y enriquecer la
-        información relevante del WorldState.
-        """
-
-        search_result = self.memory_search_service.search(
-            world,
-            normalized_query,
+        return self.ranker.get_relation_relevance(
+            relation_type
         )
 
-        search_result = self._resolve_parent_objects(
-            world,
-            search_result,
+    def _entity_context_score(
+        self,
+        entity: dict[str, Any],
+        query: str,
+    ) -> float:
+
+        return self.ranker.entity_context_score(
+            entity,
+            query,
         )
 
-        entities = self._expand_entities(
-            world,
-            search_result["entities"],
-            max_depth=self.DEFAULT_MAX_DEPTH,
+    def _direct_match_bonus(
+        self,
+        data: dict[str, Any],
+        query: str,
+    ) -> float:
+
+        return self.ranker.direct_match_bonus(
+            data,
+            query,
         )
 
-        relations = self._related_relations(
-            world,
-            entities,
-        )
+    def _score_context_candidate(
+        self,
+        text: str,
+        query: str,
+        base_score: float,
+    ) -> float:
 
-        events = self._related_events(
-            world,
-            entities,
+        return self.ranker.score_context_candidate(
+            text,
+            query,
+            base_score,
         )
-
-        return {
-            "query": normalized_query,
-            "entities": entities,
-            "items": search_result["items"],
-            "item_instances": search_result[
-                "item_instances"
-            ],
-            "resources": search_result["resources"],
-            "resource_balances": search_result[
-                "resource_balances"
-            ],
-            "relations": relations,
-            "events": events,
-        }
