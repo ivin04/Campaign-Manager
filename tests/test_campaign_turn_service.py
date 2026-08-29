@@ -150,7 +150,7 @@ class RecordingTurnResolutionService(
         self.error = None
 
         self.last_conn = None
-        self.last_recent_turns = None   
+        self.last_recent_turns = None
 
     def resolve_turn(
         self,
@@ -167,11 +167,13 @@ class RecordingTurnResolutionService(
             )
         )
 
-        self.recent_turns = recent_turns
+        self.last_conn = conn
+        self.last_recent_turns = recent_turns
 
-        return make_result(
-            player_input=player_input,
-        )
+        if self.error is not None:
+            raise self.error
+
+        return self.result
 
 
 # ============================================================
@@ -954,83 +956,55 @@ def test_play_turn_loads_recent_turns_before_resolving():
         ),
     ]
 
-    class RecordingTurnResolutionService(
-        TurnResolutionService
+    class RecordingTurnRepository(
+        TurnRepository
     ):
 
         def __init__(self):
-            self.recent_turns = None
             self.calls = []
-            self.conn = None
+            self.saved_turns = []
+            self.connections = []
 
-        def resolve_turn(
+        def list_recent_turns(
             self,
-            turn_context,
-            player_input,
             *,
-            recent_turns=None,
-            conn=None,
+            session_id=None,
+            limit=10,
         ):
             self.calls.append(
                 (
-                    turn_context,
-                    player_input,
+                    session_id,
+                    limit,
                 )
             )
 
-            self.recent_turns = recent_turns
-            self.conn = conn
+            return recent_turns
 
-            return make_result(
-                player_input=player_input,
-            )
-
-    class RecordingTurnResolutionService(
-        TurnResolutionService
-    ):
-
-        def __init__(
+        def save_turn(
             self,
-            result,
-        ):
-            self.result = result
-
-            self.calls = []
-
-            self.error = None
-
-            self.last_conn = None
-
-            self.last_recent_turns = None
-
-        def resolve_turn(
-            self,
-            world,
-            player_input,
+            turn,
             *,
-            recent_turns=None,
             conn=None,
         ):
-            self.calls.append(
-                (
-                    world,
-                    player_input,
-                )
+            self.saved_turns.append(
+                turn
             )
 
-            self.last_conn = conn
-            self.last_recent_turns = recent_turns
+            self.connections.append(
+                conn
+            )
 
-            if self.error is not None:
-                raise self.error
-
-            return self.result
+            return turn
 
     world_service = RecordingWorldService()
 
     turn_repository = RecordingTurnRepository()
 
-    resolver = RecordingTurnResolutionService()
+    resolver = RecordingTurnResolutionService(
+        make_result(
+            player_input="Pregunto por el camino.",
+        )
+    )
 
     service = CampaignTurnService(
         turn_resolution_service=resolver,
@@ -1046,7 +1020,7 @@ def test_play_turn_loads_recent_turns_before_resolving():
         "Pregunto por el camino."
     )
 
-    assert resolver.recent_turns == recent_turns
+    assert resolver.last_recent_turns == recent_turns
 
     assert turn_repository.calls == [
         (None, 10),
@@ -1086,6 +1060,10 @@ def test_play_turn_passes_same_connection_to_turn_repository():
             *,
             conn=None,
         ):
+            self.connections.append(
+                conn
+            )
+
             return turn
 
     result = make_result()
