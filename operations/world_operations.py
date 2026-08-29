@@ -12,9 +12,8 @@ class WorldOperation:
     Operación de dominio que describe un cambio que debe
     realizarse sobre el estado de la campaña.
 
-    Esta clase sirve como contrato conceptual.
-    Las operaciones concretas de abajo contienen los datos
-    específicos de cada cambio.
+    Las operaciones concretas contienen los datos
+    necesarios para realizar cada cambio.
     """
 
     pass
@@ -29,7 +28,7 @@ class CreateEntityOperation(WorldOperation):
     """
     Crea una entidad persistente dentro del mundo.
 
-    El ID se genera por WorldApplier a partir del estado actual.
+    El ID se genera por WorldApplier.
     El LLM NO debe proporcionar el ID.
     """
 
@@ -43,8 +42,8 @@ class CreateEntityOperation(WorldOperation):
 @dataclass(frozen=True)
 class UpdateEntityOperation(WorldOperation):
     """
-    Modifica únicamente los campos proporcionados de una entidad
-    existente.
+    Modifica únicamente los campos proporcionados de una
+    entidad existente.
 
     None significa "no modificar ese campo".
     """
@@ -63,12 +62,55 @@ class UpdateEntityOperation(WorldOperation):
 # ============================================================
 
 @dataclass(frozen=True)
+class CreateItemOperation(WorldOperation):
+    """
+    Crea la definición de un tipo de objeto.
+
+    Ejemplo:
+
+        Item:
+            Espada de hierro
+
+    Esto NO crea una copia física concreta.
+    """
+
+    name: str
+    description: str = ""
+    significance: str = ""
+    unique: bool = False
+    notes: str = ""
+
+
+@dataclass(frozen=True)
+class CreateItemInstanceOperation(WorldOperation):
+    """
+    Crea una instancia física concreta de un Item existente.
+
+    Ejemplo:
+
+        Item:
+            Espada de hierro
+
+        Instance:
+            #1 -> Fungoso
+    """
+
+    item_id: int
+    instance_number: int = 1
+    owner_id: int | None = None
+    location_id: int | None = None
+    condition: str = ""
+    notes: str = ""
+    active: bool = True
+
+
+@dataclass(frozen=True)
 class TransferItemOperation(WorldOperation):
     """
     Transfiere una instancia física concreta de un objeto
     a otro propietario.
 
-    El ItemInstance ya debe existir en WorldState.
+    La instancia ya debe existir.
     """
 
     instance_id: int
@@ -78,6 +120,25 @@ class TransferItemOperation(WorldOperation):
 # ============================================================
 # RESOURCES
 # ============================================================
+
+@dataclass(frozen=True)
+class CreateResourceOperation(WorldOperation):
+    """
+    Crea un recurso cuantificable de la campaña.
+
+    Ejemplos:
+
+        oro
+        reputación
+        suministros
+        influencia
+    """
+
+    name: str
+    resource_type: str = "generic"
+    unit: str = ""
+    notes: str = ""
+
 
 @dataclass(frozen=True)
 class GainResourceOperation(WorldOperation):

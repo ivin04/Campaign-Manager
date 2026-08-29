@@ -5,6 +5,8 @@ from models.relation import Relation
 from models.event import Event
 from models.resource import ResourceBalance
 from models.entity import Entity
+from models.item import Item, ItemInstance
+from models.resource import Resource
 
 from models.operation_result import (
     OperationResult,
@@ -23,6 +25,9 @@ from operations.world_operations import (
     UpdateRelationOperation,
     RemoveRelationOperation,
     CreateEventOperation,
+    CreateItemOperation,
+    CreateItemInstanceOperation,
+    CreateResourceOperation,
 )
 
 
@@ -74,6 +79,15 @@ class WorldApplier:
 
         if isinstance(operation, CreateEventOperation):
             return self._apply_create_event(world, operation)
+
+        if isinstance(operation, CreateItemOperation):
+            return self._apply_create_item(world, operation)
+
+        if isinstance(operation, CreateItemInstanceOperation):
+            return self._apply_create_item_instance(world, operation)
+
+        if isinstance(operation, CreateResourceOperation):
+            return self._apply_create_resource(world, operation)
 
         return OperationResult(
             status=OperationStatus.UNSUPPORTED,
@@ -218,6 +232,133 @@ class WorldApplier:
     # ITEMS
     # ============================================================
 
+    def _apply_create_item(
+        self,
+        world: WorldState,
+        operation: CreateItemOperation,
+    ) -> OperationResult:
+
+        name = operation.name.strip()
+
+        if not name:
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message="Item name cannot be empty.",
+                operation=operation,
+            )
+
+        for item in world.items.values():
+            if item.name.strip().lower() == name.lower():
+                return OperationResult(
+                    status=OperationStatus.DUPLICATE,
+                    message=f"Item '{name}' already exists.",
+                    operation=operation,
+                )
+
+        item_id = self._next_item_id(world)
+
+        item = Item(
+            id=item_id,
+            name=name,
+            description=operation.description,
+            significance=operation.significance,
+            unique=operation.unique,
+            notes=operation.notes,
+        )
+
+        world.items[item_id] = item
+
+        return OperationResult(
+            status=OperationStatus.SUCCESS,
+            message=f"Item '{name}' created.",
+            operation=operation,
+        )
+
+
+    def _apply_create_item_instance(
+        self,
+        world: WorldState,
+        operation: CreateItemInstanceOperation,
+    ) -> OperationResult:
+
+        if operation.item_id not in world.items:
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"Item '{operation.item_id}' does not exist."
+                ),
+                operation=operation,
+            )
+
+        if operation.owner_id is not None:
+            if operation.owner_id not in world.entities:
+                return OperationResult(
+                    status=OperationStatus.NOT_FOUND,
+                    message=(
+                        f"Owner '{operation.owner_id}' "
+                        f"does not exist."
+                    ),
+                    operation=operation,
+                )
+
+        if operation.location_id is not None:
+            if operation.location_id not in world.entities:
+                return OperationResult(
+                    status=OperationStatus.NOT_FOUND,
+                    message=(
+                        f"Location '{operation.location_id}' "
+                        f"does not exist."
+                    ),
+                    operation=operation,
+                )
+
+        if operation.instance_number < 1:
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message="Instance number must be >= 1.",
+                operation=operation,
+            )
+
+        for instance in world.item_instances.values():
+            if (
+                instance.item_id == operation.item_id
+                and instance.instance_number
+                == operation.instance_number
+            ):
+                return OperationResult(
+                    status=OperationStatus.DUPLICATE,
+                    message=(
+                        f"Item instance "
+                        f"'{operation.item_id}#"
+                        f"{operation.instance_number}' "
+                        f"already exists."
+                    ),
+                    operation=operation,
+                )
+
+        instance_id = self._next_item_instance_id(world)
+
+        instance = ItemInstance(
+            id=instance_id,
+            item_id=operation.item_id,
+            instance_number=operation.instance_number,
+            owner_id=operation.owner_id,
+            location_id=operation.location_id,
+            condition=operation.condition,
+            notes=operation.notes,
+            active=operation.active,
+        )
+
+        world.item_instances[instance_id] = instance
+
+        return OperationResult(
+            status=OperationStatus.SUCCESS,
+            message=(
+                f"Item instance '{instance_id}' created."
+            ),
+            operation=operation,
+        )
+
     def _apply_transfer_item(
         self,
         world: WorldState,
@@ -272,6 +413,49 @@ class WorldApplier:
     # ============================================================
     # RESOURCES
     # ============================================================
+
+    def _apply_create_resource(
+        self,
+        world: WorldState,
+        operation: CreateResourceOperation,
+    ) -> OperationResult:
+
+        name = operation.name.strip()
+
+        if not name:
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message="Resource name cannot be empty.",
+                operation=operation,
+            )
+
+        for resource in world.resources.values():
+            if resource.name.strip().lower() == name.lower():
+                return OperationResult(
+                    status=OperationStatus.DUPLICATE,
+                    message=(
+                        f"Resource '{name}' already exists."
+                    ),
+                    operation=operation,
+                )
+
+        resource_id = self._next_resource_id(world)
+
+        resource = Resource(
+            id=resource_id,
+            name=name,
+            resource_type=operation.resource_type,
+            unit=operation.unit,
+            notes=operation.notes,
+        )
+
+        world.resources[resource_id] = resource
+
+        return OperationResult(
+            status=OperationStatus.SUCCESS,
+            message=f"Resource '{name}' created.",
+            operation=operation,
+        )
 
     def _apply_gain_resource(
         self,
@@ -901,3 +1085,35 @@ class WorldApplier:
         ]
 
         return max(numeric_ids, default=0) + 1
+
+    def _next_item_id(
+        self,
+        world: WorldState,
+    ) -> int:
+
+        if not world.items:
+            return 1
+
+        return max(world.items.keys()) + 1
+
+
+    def _next_item_instance_id(
+        self,
+        world: WorldState,
+    ) -> int:
+
+        if not world.item_instances:
+            return 1
+
+        return max(world.item_instances.keys()) + 1
+
+
+    def _next_resource_id(
+        self,
+        world: WorldState,
+    ) -> int:
+
+        if not world.resources:
+            return 1
+
+        return max(world.resources.keys()) + 1

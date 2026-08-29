@@ -15,7 +15,9 @@ from operations.world_operations import (
     TransferItemOperation,
     TransferResourceOperation,
     UpdateRelationOperation,
-    WorldOperation,
+    CreateItemOperation,
+    CreateItemInstanceOperation,
+    CreateResourceOperation,
 )
 
 from operations.character_operations import (
@@ -55,6 +57,9 @@ class OperationParser:
         "create_event": CreateEventOperation,
 
         "change_character_hp": ChangeCharacterHpOperation,
+        "create_item": CreateItemOperation,
+        "create_item_instance": CreateItemInstanceOperation,
+        "create_resource": CreateResourceOperation,
     }
 
     def parse(
@@ -219,50 +224,65 @@ class OperationParser:
         fields: dict[str, Any],
     ) -> None:
         """
-        Convert entity IDs coming from SillyTavern/LLM from strings to ints.
+        Normalize all ID fields that are represented as integers.
 
-        Example:
+        This performs type normalization only.
 
-            "subject_id": "1"
-
-        becomes:
-
-            "subject_id": 1
-
-        This method intentionally does NOT check whether the entity exists.
+        It does NOT check whether referenced records exist.
+        Semantic validation belongs to the applier layer.
         """
 
-        entity_id_fields = {
+        id_fields = {
             "update_entity": {
                 "entity_id",
             },
+
+            "create_item_instance": {
+                "item_id",
+                "owner_id",
+                "location_id",
+            },
+
             "transfer_item": {
+                "instance_id",
                 "new_owner_id",
             },
+
             "gain_resource": {
+                "resource_id",
                 "owner_id",
             },
+
             "spend_resource": {
+                "resource_id",
                 "owner_id",
             },
+
             "transfer_resource": {
+                "resource_id",
                 "subject_id",
                 "target_id",
             },
+
             "create_relation": {
                 "subject_id",
                 "target_id",
             },
+
             "update_relation": {
                 "target_id",
             },
+
+            "create_event": {
+                "session_id",
+            },
+
             "change_character_hp": {
                 "entity_id",
             },
         }.get(operation_type, set())
 
-        for field_name in entity_id_fields:
-
+        for field_name in id_fields:
             if field_name not in fields:
                 continue
 
