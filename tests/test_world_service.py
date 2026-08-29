@@ -702,3 +702,59 @@ def test_apply_turn_operations_rolls_back_when_world_operation_fails(
 
     assert connection.committed is False
     assert connection.rolled_back is True
+
+def test_apply_turn_operations_rolls_back_when_character_operation_returns_failure(
+    isolated_database,
+):
+    from models.operation_result import (
+        OperationResult,
+        OperationStatus,
+    )
+    from models.world_state import WorldState
+    from operations.character_operations import (
+        ChangeCharacterHpOperation,
+    )
+    from services.character_applier import (
+        CharacterApplier,
+    )
+    from services.world_service import (
+        WorldService,
+    )
+
+    class FailingCharacterApplier:
+
+        def apply(
+            self,
+            operation,
+            *,
+            conn=None,
+        ):
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message="character operation failed",
+                operation=operation,
+            )
+
+    service = WorldService(
+        character_applier=FailingCharacterApplier(),
+    )
+
+    original_world = service.world
+
+    operation = ChangeCharacterHpOperation(
+        entity_id=1,
+        amount=-5,
+    )
+
+    results = service.apply_turn_operations(
+        world_operations=[],
+        character_operations=[
+            operation,
+        ],
+    )
+
+    assert len(results) == 1
+
+    assert results[0].success is False
+
+    assert service.world is original_world

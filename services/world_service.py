@@ -288,6 +288,11 @@ class WorldService:
 
                     results.append(result)
 
+                    if not result.success:
+                        raise _WorldTurnOperationFailure(
+                            results
+                        )
+
                 if world_operations:
                     self.repository.save_world(
                         self.world,
