@@ -3,6 +3,10 @@ import json
 import pytest
 
 from models.world_state import WorldState
+from models.turn_context import TurnContext
+from models.campaign_state import CampaignState
+from models.character_state import CharacterState
+from models.entity import Entity
 from models.operation_result import OperationResult
 from operations.world_operations import CreateEntityOperation, WorldOperation
 from services.llm_world_extractor import (
@@ -70,6 +74,22 @@ def make_extractor(response, operation):
         parser,
     )
 
+def make_context(
+    world=None,
+    active_character=None,
+    active_character_entity=None,
+):
+    if world is None:
+        world = WorldState()
+
+    return TurnContext(
+        campaign=CampaignState(),
+        current_session=None,
+        active_character=active_character,
+        world=world,
+        active_character_entity=active_character_entity,
+    )
+
 
 def test_valid_response_returns_operations():
     operation = FakeOperation()
@@ -94,7 +114,7 @@ def test_valid_response_returns_operations():
 
     result = extractor.extract(
         "Aldric entra en la taberna.",
-        WorldState(),
+        make_context(),
     )
 
     assert result == [operation]
@@ -130,7 +150,7 @@ def test_empty_text_does_not_call_provider():
 
     result = extractor.extract(
         "   ",
-        WorldState(),
+        make_context(),
     )
 
     assert result == []
@@ -154,7 +174,7 @@ def test_invalid_provider_response_type_fails():
     ):
         extractor.extract(
             "algo ocurrió",
-            WorldState(),
+            make_context(),
         )
 
 
@@ -175,7 +195,7 @@ def test_empty_provider_response_fails():
     ):
         extractor.extract(
             "algo ocurrió",
-            WorldState(),
+            make_context(),
         )
 
 
@@ -196,7 +216,7 @@ def test_invalid_json_fails():
     ):
         extractor.extract(
             "algo ocurrió",
-            WorldState(),
+            make_context(),
         )
 
 
@@ -217,7 +237,7 @@ def test_json_array_fails():
     ):
         extractor.extract(
             "algo ocurrió",
-            WorldState(),
+            make_context(),
         )
 
 
@@ -242,7 +262,7 @@ def test_missing_operations_fails():
     ):
         extractor.extract(
             "algo ocurrió",
-            WorldState(),
+            make_context(),
         )
 
 
@@ -267,7 +287,7 @@ def test_operations_must_be_list():
     ):
         extractor.extract(
             "algo ocurrió",
-            WorldState(),
+            make_context(),
         )
 
 
@@ -298,7 +318,7 @@ def test_parser_rejects_invalid_operation():
     ):
         extractor.extract(
             "algo ocurrió",
-            WorldState(),
+            make_context(),
         )
 
 
@@ -331,7 +351,7 @@ def test_parser_failure_becomes_extraction_error():
     ):
         extractor.extract(
             "algo ocurrió",
-            WorldState(),
+            make_context(),
         )
 
 
@@ -362,7 +382,7 @@ def test_parser_result_must_be_world_operation():
     ):
         extractor.extract(
             "algo ocurrió",
-            WorldState(),
+            make_context(),
         )
 
 
@@ -390,7 +410,7 @@ def test_extractor_does_not_modify_world():
 
     extractor.extract(
         "Aldric aparece.",
-        world,
+        make_context(world=world),
     )
 
     after = repr(world)
@@ -418,7 +438,7 @@ def test_callable_interface_matches_extractor():
 
     result = extractor(
         "Aldric aparece.",
-        WorldState(),
+        make_context(),
     )
 
     assert result == [operation]
@@ -460,7 +480,7 @@ def test_parser_receives_complete_payload():
 
     extractor.extract(
         "Aldric aparece en la taberna.",
-        WorldState(),
+        make_context(),
     )
 
     assert len(parser.calls) == 1
@@ -498,7 +518,7 @@ def test_parser_failure_is_wrapped():
     ):
         extractor.extract(
             "Algo ocurre.",
-            WorldState(),
+            make_context(),
         )
 
 def test_multiple_operations_are_returned():
@@ -539,7 +559,7 @@ def test_multiple_operations_are_returned():
 
     result = extractor.extract(
         "Aldric y Mara aparecen.",
-        WorldState(),
+        make_context(),
     )
 
     assert result == [
@@ -561,18 +581,15 @@ def test_prompt_includes_known_entity_ids():
 
     world = WorldState()
 
-    entity = world.entities[1] = type(
-        "Entity",
-        (),
-        {
-            "name": "Aldric",
-            "entity_type": "npc",
-        },
-    )()
+    world.entities[1] = Entity(
+        id=1,
+        name="Aldric",
+        entity_type="npc",
+    )
 
     extractor.extract(
         "Aldric aparece.",
-        world,
+        make_context(world=world),
     )
 
     assert len(provider.calls) == 1
@@ -595,19 +612,16 @@ def test_prompt_does_not_include_unrelated_world_state():
 
     world = WorldState()
 
-    world.entities[1] = type(
-        "Entity",
-        (),
-        {
-            "name": "Aldric",
-            "entity_type": "npc",
-            "description": "Mercader de Vorder's Hold.",
-        },
-    )()
+    world.entities[1] = Entity(
+        id=1,
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader de Vorder's Hold.",
+    )
 
     extractor.extract(
         "Aldric aparece.",
-        world,
+        make_context(world=world),
     )
 
     prompt = provider.calls[0]
@@ -615,97 +629,80 @@ def test_prompt_does_not_include_unrelated_world_state():
     assert "Aldric" in prompt
     assert "Mercader de Vorder's Hold" not in prompt
 
-def test_extractor_accepts_turn_context(
-    monkeypatch,
-):
-    from models.turn_context import TurnContext
-    from services.llm_world_extractor import (
-        LLMWorldExtractor,
+def test_extractor_prompt_includes_active_character():
+    provider = FakeProvider(
+        '{"operations": []}'
     )
 
-    context = make_turn_context()
-
-    captured = {}
-
-    def fake_provider(prompt):
-        captured["prompt"] = prompt
-
-        return """
-        {
-            "operations": []
-        }
-        """
+    parser = FakeParser()
 
     extractor = LLMWorldExtractor(
-        provider=fake_provider,
-        operation_parser=FakeOperationParser(),
+        provider=provider,
+        operation_parser=parser,
     )
 
-    result = extractor.extract(
-        "El personaje descansa.",
+    entity = Entity(
+        id=1,
+        name="Fungoso",
+        entity_type="character",
+    )
+
+    character = CharacterState(
+        entity_id=1,
+        level=3,
+        class_name="fighter",
+        current_hp=12,
+        max_hp=20,
+        armor_class=16,
+    )
+
+    world = WorldState()
+
+    world.entities[1] = entity
+
+    context = make_context(
+        world=world,
+        active_character=character,
+        active_character_entity=entity,
+    )
+
+    extractor.extract(
+        "Fungoso recibe un golpe.",
         context,
     )
 
-    assert result == []
+    prompt = provider.calls[0]
 
-    assert "PERSONAJE ACTIVO" in captured["prompt"]
-    assert "HP actual" in captured["prompt"]
-    assert "HP máximo" in captured["prompt"]
+    assert "PERSONAJE ACTIVO" in prompt
+    assert "Fungoso" in prompt
+    assert "ID de entidad: 1" in prompt
+    assert "Nivel: 3" in prompt
+    assert "Clase: fighter" in prompt
+    assert "HP actual: 12" in prompt
+    assert "HP máximo: 20" in prompt
+    assert "CA: 16" in prompt
 
-def test_extractor_prompt_contains_active_character_id(
-    monkeypatch,
-):
-    from services.llm_world_extractor import (
-        LLMWorldExtractor,
-    )
-
-    context = make_turn_context()
-
-    captured = {}
-
-    def fake_provider(prompt):
-        captured["prompt"] = prompt
-
-        return """
-        {
-            "operations": [
-                {
-                    "type": "change_character_hp",
-                    "entity_id": 1,
-                    "amount": -5
-                }
-            ]
-        }
-        """
-
-    extractor = LLMWorldExtractor(
-        provider=fake_provider,
-        operation_parser=operation_parser,
-    )
-
-    operations = extractor.extract(
-        "El personaje recibe un golpe y pierde 5 puntos de vida.",
-        context,
-    )
-
-    assert len(operations) == 1
-
-    operation = operations[0]
-
-    assert operation.entity_id == 1
-    assert operation.amount == -5
-
-    assert "ID 1:" in captured["prompt"]
-    assert "[PERSONAJE ACTIVO]" in captured["prompt"]
 
 def test_extractor_prompt_handles_missing_active_character():
-    context = make_turn_context(
-        active_character=None,
+    provider = FakeProvider(
+        '{"operations": []}'
     )
 
-    prompt = LLMWorldExtractor._build_prompt(
+    parser = FakeParser()
+
+    extractor = LLMWorldExtractor(
+        provider=provider,
+        operation_parser=parser,
+    )
+
+    context = make_context()
+
+    extractor.extract(
         "La puerta se abre.",
         context,
     )
 
+    prompt = provider.calls[0]
+
+    assert "PERSONAJE ACTIVO" in prompt
     assert "No hay personaje activo." in prompt
