@@ -228,28 +228,21 @@ class WorldService:
         self,
         world_operations,
         character_operations,
+        *,
+        conn=None,
     ) -> tuple:
         """
-        Aplica las operaciones de mundo y personaje de un turno
-        dentro de una única transacción SQLite.
+        Aplica las operaciones de mundo y personaje de un turno.
 
-        Si una operación de mundo devuelve un resultado fallido:
+        Si conn es None:
+            WorldService crea y controla su propia transacción.
 
-            - se fuerza rollback mediante una excepción interna
-            - se conserva el WorldState original
-            - se devuelven los resultados obtenidos hasta el fallo
+        Si conn se proporciona:
+            la transacción pertenece al caller y este método
+            NO hace commit ni rollback por su cuenta.
 
-        Si una operación de personaje lanza una excepción:
-
-            - SQLite hace rollback
-            - se conserva el WorldState original
-            - la excepción se propaga
-
-        Si todas las operaciones tienen éxito:
-
-            - se persiste el WorldState si existen operaciones de mundo
-            - se persisten las operaciones de personaje
-            - SQLite hace commit
+        En ambos casos WorldState se revierte en memoria si
+        alguna operación falla.
         """
 
         original_world = self.world
@@ -262,42 +255,57 @@ class WorldService:
 
         results = []
 
+        def apply_with_connection(connection):
+
+            for operation in world_operations:
+
+                result = self.applier.apply(
+                    self.world,
+                    operation,
+                )
+
+                results.append(result)
+
+                if not result.success:
+                    raise _WorldTurnOperationFailure(
+                        results
+                    )
+
+            for operation in character_operations:
+
+                result = self.character_applier.apply(
+                    operation,
+                    conn=connection,
+                )
+
+                results.append(result)
+
+                if not result.success:
+                    raise _WorldTurnOperationFailure(
+                        results
+                    )
+
+            if world_operations:
+                self.repository.save_world(
+                    self.world,
+                    conn=connection,
+                )
+
         try:
-            with get_conn() as conn:
 
-                for operation in world_operations:
+            if conn is None:
 
-                    result = self.applier.apply(
-                        self.world,
-                        operation,
+                with get_conn() as owned_conn:
+
+                    apply_with_connection(
+                        owned_conn
                     )
 
-                    results.append(result)
+            else:
 
-                    if not result.success:
-                        raise _WorldTurnOperationFailure(
-                            results
-                        )
-
-                for operation in character_operations:
-
-                    result = self.character_applier.apply(
-                        operation,
-                        conn=conn,
-                    )
-
-                    results.append(result)
-
-                    if not result.success:
-                        raise _WorldTurnOperationFailure(
-                            results
-                        )
-
-                if world_operations:
-                    self.repository.save_world(
-                        self.world,
-                        conn=conn,
-                    )
+                apply_with_connection(
+                    conn
+                )
 
         except _WorldTurnOperationFailure as exc:
 

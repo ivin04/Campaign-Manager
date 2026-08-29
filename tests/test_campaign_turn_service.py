@@ -149,22 +149,29 @@ class RecordingTurnResolutionService(
 
         self.error = None
 
+        self.last_conn = None
+        self.last_recent_turns = None   
+
     def resolve_turn(
         self,
-        world,
+        turn_context,
         player_input,
+        *,
+        recent_turns=None,
+        conn=None,
     ):
         self.calls.append(
             (
-                world,
+                turn_context,
                 player_input,
             )
         )
 
-        if self.error is not None:
-            raise self.error
+        self.recent_turns = recent_turns
 
-        return self.result
+        return make_result(
+            player_input=player_input,
+        )
 
 
 # ============================================================
@@ -947,29 +954,6 @@ def test_play_turn_loads_recent_turns_before_resolving():
         ),
     ]
 
-    class RecordingTurnRepository(TurnRepository):
-
-        def __init__(self):
-            self.calls = []
-
-        def list_recent_turns(
-            self,
-            *,
-            session_id=None,
-            limit=10,
-        ):
-            self.calls.append(
-                (
-                    session_id,
-                    limit,
-                )
-            )
-
-            return recent_turns
-
-        def save_turn(self, turn):
-            return turn
-
     class RecordingTurnResolutionService(
         TurnResolutionService
     ):
@@ -977,6 +961,7 @@ def test_play_turn_loads_recent_turns_before_resolving():
         def __init__(self):
             self.recent_turns = None
             self.calls = []
+            self.conn = None
 
         def resolve_turn(
             self,
@@ -984,6 +969,7 @@ def test_play_turn_loads_recent_turns_before_resolving():
             player_input,
             *,
             recent_turns=None,
+            conn=None,
         ):
             self.calls.append(
                 (
@@ -993,10 +979,52 @@ def test_play_turn_loads_recent_turns_before_resolving():
             )
 
             self.recent_turns = recent_turns
+            self.conn = conn
 
             return make_result(
                 player_input=player_input,
             )
+
+    class RecordingTurnResolutionService(
+        TurnResolutionService
+    ):
+
+        def __init__(
+            self,
+            result,
+        ):
+            self.result = result
+
+            self.calls = []
+
+            self.error = None
+
+            self.last_conn = None
+
+            self.last_recent_turns = None
+
+        def resolve_turn(
+            self,
+            world,
+            player_input,
+            *,
+            recent_turns=None,
+            conn=None,
+        ):
+            self.calls.append(
+                (
+                    world,
+                    player_input,
+                )
+            )
+
+            self.last_conn = conn
+            self.last_recent_turns = recent_turns
+
+            if self.error is not None:
+                raise self.error
+
+            return self.result
 
     world_service = RecordingWorldService()
 
@@ -1030,3 +1058,56 @@ def test_play_turn_loads_recent_turns_before_resolving():
         resolver.calls[0][1]
         == "Pregunto por el camino."
     )
+
+def test_play_turn_passes_shared_connection_to_turn_resolution_service():
+    result = make_result()
+
+    service, resolver, _, _ = make_service(
+        result=result,
+    )
+
+    service.play_turn(
+        "Exploro."
+    )
+
+    assert resolver.last_conn is not None
+
+def test_play_turn_passes_same_connection_to_turn_repository():
+    class RecordingTurnRepository(
+        TurnRepository
+    ):
+
+        def __init__(self):
+            self.connections = []
+
+        def save_turn(
+            self,
+            turn,
+            *,
+            conn=None,
+        ):
+            return turn
+
+    result = make_result()
+
+    repository = RecordingTurnRepository()
+
+    service = CampaignTurnService(
+        turn_resolution_service=(
+            RecordingTurnResolutionService(
+                result
+            )
+        ),
+        world_service=RecordingWorldService(),
+        turn_repository=repository,
+    )
+
+    service.play_turn(
+        "Exploro."
+    )
+
+    assert len(
+        repository.connections
+    ) == 1
+
+    assert repository.connections[0] is not None

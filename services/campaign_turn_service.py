@@ -17,6 +17,7 @@ from services.turn_resolution_service import (
 )
 from services.world_service import WorldService
 
+from database import get_conn
 
 class CampaignTurnServiceError(RuntimeError):
     """
@@ -240,81 +241,93 @@ class CampaignTurnService:
         # --------------------------------------------------------
 
         try:
-            if recent_turns is None:
-                result = (
-                    self.turn_resolution_service.resolve_turn(
-                        turn_context,
-                        normalized_input,
+
+            with get_conn() as conn:
+
+                if recent_turns is None:
+
+                    result = (
+                        self.turn_resolution_service.resolve_turn(
+                            turn_context,
+                            normalized_input,
+                            conn=conn,
+                        )
                     )
-                )
-            else:
-                result = (
-                    self.turn_resolution_service.resolve_turn(
-                        turn_context,
-                        normalized_input,
-                        recent_turns=recent_turns,
+
+                else:
+
+                    result = (
+                        self.turn_resolution_service.resolve_turn(
+                            turn_context,
+                            normalized_input,
+                            recent_turns=recent_turns,
+                            conn=conn,
+                        )
                     )
-                )
+
+                if not isinstance(
+                    result,
+                    TurnResolutionResult,
+                ):
+                    raise CampaignTurnServiceError(
+                        "TurnResolutionService returned "
+                        "an invalid TurnResolutionResult"
+                    )
+
+                if self.turn_repository is not None:
+
+                    session_id = None
+
+                    if (
+                        isinstance(
+                            turn_context,
+                            TurnContext,
+                        )
+                        and turn_context.current_session
+                        is not None
+                    ):
+                        session_id = (
+                            turn_context.current_session.session_id
+                        )
+
+                    self.turn_repository.save_turn(
+                        TurnRecord(
+                            session_id=session_id,
+                            player_input=result.player_input,
+                            narrative=result.narrative,
+                            operation_count=(
+                                result.operation_count
+                            ),
+                            successful_operation_count=(
+                                result.successful_operation_count
+                            ),
+                            failed_operation_count=(
+                                result.failed_operation_count
+                            ),
+                            all_operations_succeeded=(
+                                result.all_operations_succeeded
+                            ),
+                            world_changed=(
+                                result.world_changed
+                            ),
+                        ),
+                        conn=conn,
+                    )
 
         except TurnResolutionServiceError as exc:
+
             raise CampaignTurnServiceError(
                 "turn resolution failed"
             ) from exc
 
+        except CampaignTurnServiceError:
+            raise
+
         except Exception as exc:
+
             raise CampaignTurnServiceError(
                 "unexpected error while resolving turn"
             ) from exc
-
-        if not isinstance(
-            result,
-            TurnResolutionResult,
-        ):
-            raise CampaignTurnServiceError(
-                "TurnResolutionService returned "
-                "an invalid TurnResolutionResult"
-            )
-
-        if self.turn_repository is not None:
-
-            session_id = None
-
-            if isinstance(
-                turn_context,
-                TurnContext,
-            ) and turn_context.current_session is not None:
-                session_id = (
-                    turn_context.current_session.session_id
-                )
-
-            try:
-                self.turn_repository.save_turn(
-                    TurnRecord(
-                        session_id=session_id,
-                        player_input=result.player_input,
-                        narrative=result.narrative,
-                        operation_count=(
-                            result.operation_count
-                        ),
-                        successful_operation_count=(
-                            result.successful_operation_count
-                        ),
-                        failed_operation_count=(
-                            result.failed_operation_count
-                        ),
-                        all_operations_succeeded=(
-                            result.all_operations_succeeded
-                        ),
-                        world_changed=(
-                            result.world_changed
-                        ),
-                    )
-                )
-
-            except Exception as exc:
-                raise CampaignTurnServiceError(
-                    "failed to persist turn history"
-                ) from exc
 
         return result
 

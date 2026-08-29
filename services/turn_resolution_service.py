@@ -118,6 +118,7 @@ class TurnResolutionService:
         player_input: str,
         *,
         recent_turns=None,
+        conn=None,
     ) -> TurnResolutionResult:
         """
         Resuelve un turno completo.
@@ -272,6 +273,7 @@ class TurnResolutionService:
                 self.world_service.apply_turn_operations(
                     world_operations,
                     character_operations,
+                    conn=conn,
                 )
             )
         except Exception as exc:
