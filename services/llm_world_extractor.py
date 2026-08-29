@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
-from models.world_state import WorldState
+from models.turn_context import TurnContext
 from operations.turn_operations import TurnOperation
 
 
@@ -17,7 +17,7 @@ class LLMWorldExtractor:
     por el DM.
 
     El extractor:
-        - recibe narrativa + WorldState
+        - recibe narrativa + TurnContext
         - construye el prompt
         - consulta al proveedor LLM
         - parsea el JSON
@@ -52,26 +52,26 @@ class LLMWorldExtractor:
     def __call__(
         self,
         text: str,
-        world: WorldState,
+        context: TurnContext,
     ) -> list[TurnOperation]:
         return self.extract(
             text,
-            world,
+            context,
         )
 
     def extract(
         self,
         text: str,
-        world: WorldState,
+        context: TurnContext,
     ) -> list[TurnOperation]:
         if not isinstance(text, str):
             raise TypeError(
                 "text must be a string"
             )
 
-        if not isinstance(world, WorldState):
+        if not isinstance(context, TurnContext):
             raise TypeError(
-                "world must be a WorldState"
+                "context must be a TurnContext"
             )
 
         text = text.strip()
@@ -81,7 +81,7 @@ class LLMWorldExtractor:
 
         prompt = self._build_prompt(
             text,
-            world,
+            context,
         )
 
         raw_response = self.provider(
@@ -103,7 +103,7 @@ class LLMWorldExtractor:
     @staticmethod
     def _build_prompt(
         text: str,
-        world: WorldState,
+        context: TurnContext,
     ) -> str:
         """
         Construye un prompt determinista para extraer cambios
@@ -112,13 +112,25 @@ class LLMWorldExtractor:
         El LLM no debe ejecutar operaciones ni inventar IDs.
         """
 
+        world = context.world
+
         entity_lines = []
 
         for entity_id, entity in world.entities.items():
+            marker = ""
+
+            if (
+                context.active_character is not None
+                and entity_id
+                == context.active_character.entity_id
+            ):
+                marker = " [PERSONAJE ACTIVO]"
+
             entity_lines.append(
                 f"- ID {entity_id}: "
                 f"{entity.name} "
                 f"({entity.entity_type})"
+                f"{marker}"
             )
 
         if entity_lines:
@@ -127,6 +139,44 @@ class LLMWorldExtractor:
             )
         else:
             known_entities = "- Ninguna"
+
+        active_character = (
+            context.active_character
+        )
+
+        if active_character is None:
+            character_block = (
+                "No hay personaje activo."
+            )
+        else:
+            character_block = (
+                f"ID de entidad: "
+                f"{active_character.entity_id}\n"
+                f"Nivel: "
+                f"{active_character.level}\n"
+                f"Clase: "
+                f"{active_character.class_name}\n"
+                f"HP actual: "
+                f"{active_character.current_hp}\n"
+                f"HP máximo: "
+                f"{active_character.max_hp}\n"
+                f"CA: "
+                f"{active_character.armor_class}\n"
+                f"FUE: "
+                f"{active_character.strength}\n"
+                f"DES: "
+                f"{active_character.dexterity}\n"
+                f"CON: "
+                f"{active_character.constitution}\n"
+                f"INT: "
+                f"{active_character.intelligence}\n"
+                f"SAB: "
+                f"{active_character.wisdom}\n"
+                f"CAR: "
+                f"{active_character.charisma}\n"
+                f"Competencia: "
+                f"{active_character.proficiency_bonus}"
+            )
 
         return (
             "Eres un extractor de estado de un mundo de D&D.\n"
@@ -141,13 +191,25 @@ class LLMWorldExtractor:
             "\n"
             "Puedes devolver operaciones de mundo o de personaje.\n"
             "\n"
-            "Cuando una operación necesite un entity_id, "
-            "usa únicamente los IDs de las entidades conocidas "
-            "que aparecen abajo.\n"
+            "REGLAS DE IDENTIFICADORES:\n"
+            "- Usa únicamente IDs que aparezcan en el contexto.\n"
+            "- NO inventes IDs.\n"
+            "- El personaje activo está marcado explícitamente.\n"
+            "- Para cambiar HP del personaje activo usa su "
+            "entity_id real.\n"
             "\n"
-            "NO inventes IDs.\n"
+            "IMPORTANTE:\n"
+            "- Solo crea una operación si el cambio está "
+            "explícitamente descrito en la narrativa.\n"
+            "- No deduzcas daño, curación, objetos, recursos o "
+            "relaciones que no estén descritos.\n"
+            "- No conviertas intención narrativa en cambio "
+            "persistente si el texto no confirma que ocurrió.\n"
             "\n"
-            "Entidades conocidas:\n"
+            "PERSONAJE ACTIVO:\n"
+            f"{character_block}\n"
+            "\n"
+            "ENTIDADES CONOCIDAS:\n"
             f"{known_entities}\n"
             "\n"
             "Devuelve exclusivamente JSON válido con esta forma:\n"
@@ -186,6 +248,7 @@ class LLMWorldExtractor:
             payload = json.loads(
                 response
             )
+
         except json.JSONDecodeError as exc:
             raise LLMExtractionError(
                 "LLM response is not valid JSON"

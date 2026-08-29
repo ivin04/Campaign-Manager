@@ -614,3 +614,98 @@ def test_prompt_does_not_include_unrelated_world_state():
 
     assert "Aldric" in prompt
     assert "Mercader de Vorder's Hold" not in prompt
+
+def test_extractor_accepts_turn_context(
+    monkeypatch,
+):
+    from models.turn_context import TurnContext
+    from services.llm_world_extractor import (
+        LLMWorldExtractor,
+    )
+
+    context = make_turn_context()
+
+    captured = {}
+
+    def fake_provider(prompt):
+        captured["prompt"] = prompt
+
+        return """
+        {
+            "operations": []
+        }
+        """
+
+    extractor = LLMWorldExtractor(
+        provider=fake_provider,
+        operation_parser=FakeOperationParser(),
+    )
+
+    result = extractor.extract(
+        "El personaje descansa.",
+        context,
+    )
+
+    assert result == []
+
+    assert "PERSONAJE ACTIVO" in captured["prompt"]
+    assert "HP actual" in captured["prompt"]
+    assert "HP máximo" in captured["prompt"]
+
+def test_extractor_prompt_contains_active_character_id(
+    monkeypatch,
+):
+    from services.llm_world_extractor import (
+        LLMWorldExtractor,
+    )
+
+    context = make_turn_context()
+
+    captured = {}
+
+    def fake_provider(prompt):
+        captured["prompt"] = prompt
+
+        return """
+        {
+            "operations": [
+                {
+                    "type": "change_character_hp",
+                    "entity_id": 1,
+                    "amount": -5
+                }
+            ]
+        }
+        """
+
+    extractor = LLMWorldExtractor(
+        provider=fake_provider,
+        operation_parser=operation_parser,
+    )
+
+    operations = extractor.extract(
+        "El personaje recibe un golpe y pierde 5 puntos de vida.",
+        context,
+    )
+
+    assert len(operations) == 1
+
+    operation = operations[0]
+
+    assert operation.entity_id == 1
+    assert operation.amount == -5
+
+    assert "ID 1:" in captured["prompt"]
+    assert "[PERSONAJE ACTIVO]" in captured["prompt"]
+
+def test_extractor_prompt_handles_missing_active_character():
+    context = make_turn_context(
+        active_character=None,
+    )
+
+    prompt = LLMWorldExtractor._build_prompt(
+        "La puerta se abre.",
+        context,
+    )
+
+    assert "No hay personaje activo." in prompt
