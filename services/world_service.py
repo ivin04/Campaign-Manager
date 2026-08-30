@@ -336,7 +336,7 @@ class WorldService:
                 references,
                 self.world,
             )
-            
+
         def apply_character_operation(
             raw_operation,
             connection,
@@ -419,6 +419,28 @@ class WorldService:
             self.world = original_world
 
             raise
+
+        # El TurnContext puede estar utilizando exactamente la misma
+        # instancia de WorldState que tenía WorldService antes de
+        # comenzar el turno.
+        #
+        # Hemos trabajado sobre una copia para mantener la atomicidad,
+        # pero al completar correctamente debemos publicar el nuevo
+        # estado sobre la instancia original para no romper esa
+        # identidad compartida.
+        original_world.entities = self.world.entities
+        original_world.items = self.world.items
+        original_world.item_instances = (
+            self.world.item_instances
+        )
+        original_world.resources = self.world.resources
+        original_world.resource_balances = (
+            self.world.resource_balances
+        )
+        original_world.relations = self.world.relations
+        original_world.events = self.world.events
+
+        self.world = original_world
 
         return tuple(results)
 
