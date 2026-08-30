@@ -226,10 +226,10 @@ class WorldApplier:
 
         return OperationResult(
             status=OperationStatus.SUCCESS,
-            message=f"Entity '{entity.name}' created.",
+            message=f"Entity '{entity.name}' updated.",
             operation=operation,
             data={
-                "entity_id": entity_id,
+                "entity_id": operation.entity_id,
             },
         )
 
