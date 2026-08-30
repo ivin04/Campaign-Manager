@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+
 from models.turn_resolution_result import TurnResolutionResult
 from models.world_state import WorldState
 from models.campaign_state import CampaignState
@@ -109,11 +111,23 @@ class CampaignTurnService:
 
         self.turn_repository = turn_repository
 
+        self._turn_lock = threading.RLock()
+
     # ============================================================
     # PLAY TURN
     # ============================================================
 
     def play_turn(
+        self,
+        player_input: str,
+    ) -> TurnResolutionResult:
+        with self._turn_lock:
+            return self._play_turn_locked(
+                player_input
+            )
+
+
+    def _play_turn_locked(
         self,
         player_input: str,
     ) -> TurnResolutionResult:

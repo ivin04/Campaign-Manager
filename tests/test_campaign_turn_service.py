@@ -1,6 +1,9 @@
 from operations.world_operations import CreateEntityOperation
 import pytest
 
+import threading
+import time
+
 from models.turn_resolution_result import (
     TurnResolutionResult,
 )
@@ -1295,3 +1298,110 @@ def test_play_turn_persists_current_turn_after_loading_recent_history():
     assert turns[1].narrative == (
         "Segunda escena."
     )
+
+def test_play_turn_serializes_concurrent_turns():
+    world_service = RecordingWorldService()
+
+    result = make_result(
+        player_input="Primer turno.",
+    )
+
+    resolution_service = RecordingTurnResolutionService(
+        result=result,
+    )
+
+    service = CampaignTurnService(
+        turn_resolution_service=resolution_service,
+        world_service=world_service,
+    )
+
+    first_entered = threading.Event()
+    release_first = threading.Event()
+
+    original_resolve_turn = (
+        resolution_service.resolve_turn
+    )
+
+    calls = []
+
+    def blocking_resolve_turn(
+        turn_context,
+        player_input,
+        *,
+        recent_turns=None,
+        conn=None,
+    ):
+        calls.append(player_input)
+
+        if player_input == "Primer turno.":
+            first_entered.set()
+
+            if not release_first.wait(
+                timeout=5
+            ):
+                raise RuntimeError(
+                    "Timed out waiting for first turn."
+                )
+
+        return original_resolve_turn(
+            turn_context,
+            player_input,
+            recent_turns=recent_turns,
+            conn=conn,
+        )
+
+    resolution_service.resolve_turn = (
+        blocking_resolve_turn
+    )
+
+    first_thread = threading.Thread(
+        target=service.play_turn,
+        args=("Primer turno.",),
+    )
+
+    second_finished = threading.Event()
+
+    def run_second_turn():
+        service.play_turn(
+            "Segundo turno."
+        )
+        second_finished.set()
+
+    second_thread = threading.Thread(
+        target=run_second_turn,
+    )
+
+    first_thread.start()
+
+    assert first_entered.wait(
+        timeout=5
+    )
+
+    second_thread.start()
+
+    time.sleep(0.1)
+
+    assert (
+        second_finished.is_set()
+        is False
+    )
+
+    release_first.set()
+
+    first_thread.join(
+        timeout=5
+    )
+
+    second_thread.join(
+        timeout=5
+    )
+
+    assert (
+        second_finished.is_set()
+        is True
+    )
+
+    assert calls == [
+        "Primer turno.",
+        "Segundo turno.",
+    ]
