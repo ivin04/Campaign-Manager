@@ -9,13 +9,11 @@ from services.dm_service import DMService
 from services.llm_world_extractor import LLMWorldExtractor
 from services.world_service import WorldService
 
-from models.world_application_result import (
-    WorldApplicationResult,
-)
-
 from operations.character_operations import (
     CharacterOperation,
 )
+
+from operations.referenced_operation import ReferencedOperation
 
 
 class TurnResolutionServiceError(RuntimeError):
@@ -216,7 +214,7 @@ class TurnResolutionService:
         try:
             operations = self.extractor.extract(
                 narrative,
-                world,
+                context,
             )
 
         except Exception as exc:
@@ -232,34 +230,74 @@ class TurnResolutionService:
                 "LLMWorldExtractor returned an invalid operations list"
             )
 
+        normalized_operations = []
+
         for operation in operations:
 
-            if not isinstance(
+            if isinstance(
+                operation,
+                ReferencedOperation,
+            ):
+                inner_operation = operation.operation
+
+                if not isinstance(
+                    inner_operation,
+                    (
+                        WorldOperation,
+                        CharacterOperation,
+                    ),
+                ):
+                    raise TurnResolutionServiceError(
+                        "LLMWorldExtractor returned "
+                        "an invalid referenced operation"
+                    )
+
+                normalized_operations.append(
+                    operation
+                )
+
+            elif isinstance(
                 operation,
                 (
                     WorldOperation,
                     CharacterOperation,
                 ),
             ):
+                normalized_operations.append(
+                    operation
+                )
+
+            else:
                 raise TurnResolutionServiceError(
                     "LLMWorldExtractor returned "
                     "an invalid operation"
                 )
 
-        world_operations = [
-            operation
-            for operation in operations
+
+        def unwrap_operation(operation):
             if isinstance(
                 operation,
+                ReferencedOperation,
+            ):
+                return operation.operation
+
+            return operation
+
+
+        world_operations = [
+            operation
+            for operation in normalized_operations
+            if isinstance(
+                unwrap_operation(operation),
                 WorldOperation,
             )
         ]
 
         character_operations = [
             operation
-            for operation in operations
+            for operation in normalized_operations
             if isinstance(
-                operation,
+                unwrap_operation(operation),
                 CharacterOperation,
             )
         ]

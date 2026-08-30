@@ -6,6 +6,8 @@ from database import get_conn
 
 from operations.operation_reference import OperationReference
 from operations.referenced_operation import ReferencedOperation
+from operations.world_operations import WorldOperation
+from operations.character_operations import CharacterOperation
 
 from models.world_state import WorldState
 from models.operation_result import OperationResult
@@ -261,15 +263,22 @@ class WorldService:
         """
         Aplica las operaciones de mundo y personaje de un turno.
 
-        Si conn es None:
-            WorldService crea y controla su propia transacción.
+        Las operaciones pueden ser ReferencedOperation.
 
-        Si conn se proporciona:
-            la transacción pertenece al caller y este método
-            NO hace commit ni rollback por su cuenta.
+        Las referencias se resuelven en orden de ejecución:
 
-        En ambos casos WorldState se revierte en memoria si
-        alguna operación falla.
+            create_entity(ref="npc")
+            create_relation(target_id="$npc")
+
+        El ID generado por una operación anterior queda disponible
+        para las siguientes operaciones del mismo turno.
+
+        Si una operación falla:
+
+            - se revierte WorldState en memoria
+            - la transacción de SQLite se revierte si esta función
+            es propietaria de la conexión
+            - no se deja ningún cambio parcial
         """
 
         original_world = self.world
@@ -281,15 +290,66 @@ class WorldService:
         self.world = working_world
 
         results = []
+        references = {}
+
+        def unwrap_operation(raw_operation):
+            if isinstance(
+                raw_operation,
+                ReferencedOperation,
+            ):
+                return (
+                    raw_operation.operation,
+                    raw_operation.ref,
+                )
+
+            return (
+                raw_operation,
+                None,
+            )
 
         def apply_with_connection(connection):
 
-            for operation in world_operations:
+            all_operations = [
+                *world_operations,
+                *character_operations,
+            ]
 
-                result = self.applier.apply(
-                    self.world,
-                    operation,
+            for raw_operation in all_operations:
+
+                operation, ref = unwrap_operation(
+                    raw_operation
                 )
+
+                operation = (
+                    self._resolve_operation_references(
+                        operation,
+                        references,
+                    )
+                )
+
+                if isinstance(
+                    operation,
+                    WorldOperation,
+                ):
+                    result = self.applier.apply(
+                        self.world,
+                        operation,
+                    )
+
+                elif isinstance(
+                    operation,
+                    CharacterOperation,
+                ):
+                    result = self.character_applier.apply(
+                        operation,
+                        conn=connection,
+                    )
+
+                else:
+                    raise TypeError(
+                        "Unsupported turn operation: "
+                        f"{type(operation).__name__}"
+                    )
 
                 results.append(result)
 
@@ -298,19 +358,11 @@ class WorldService:
                         results
                     )
 
-            for operation in character_operations:
-
-                result = self.character_applier.apply(
-                    operation,
-                    conn=connection,
+                self._register_operation_reference(
+                    ref,
+                    result,
+                    references,
                 )
-
-                results.append(result)
-
-                if not result.success:
-                    raise _WorldTurnOperationFailure(
-                        results
-                    )
 
             if world_operations:
                 self.repository.save_world(
@@ -338,7 +390,9 @@ class WorldService:
 
             self.world = original_world
 
-            return exc.results
+            return tuple(
+                exc.results
+            )
 
         except Exception:
 
