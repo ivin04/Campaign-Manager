@@ -501,7 +501,7 @@ class WorldService:
         ref,
         result,
         references,
-        world,
+        world=None,
     ):
         """
         Registra el ID generado por una operación.

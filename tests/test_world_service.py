@@ -824,3 +824,81 @@ def test_apply_operations_rejects_unknown_operation_reference():
 
     assert service.world.items == {}
     assert service.world.item_instances == {}
+
+def test_apply_turn_operations_resolves_generated_character_reference(
+    monkeypatch,
+):
+    from models.operation_result import (
+        OperationResult,
+        OperationStatus,
+    )
+
+    from operations.character_operations import (
+        ChangeCharacterHpOperation,
+    )
+
+    class RecordingCharacterApplier:
+        def __init__(self):
+            self.operations = []
+
+        def apply(
+            self,
+            operation,
+            *,
+            conn=None,
+        ):
+            self.operations.append(operation)
+
+            return OperationResult(
+                status=OperationStatus.SUCCESS,
+                message="Character HP changed",
+                operation=operation,
+                data={
+                    "entity_id": operation.entity_id,
+                    "current_hp": 8,
+                },
+            )
+
+    character_applier = RecordingCharacterApplier()
+
+    service = WorldService(
+        character_applier=character_applier,
+    )
+
+    create_operation = CreateEntityOperation(
+        name="Aldric",
+        entity_type="character",
+    )
+
+    referenced_create = ReferencedOperation(
+        operation=create_operation,
+        ref="aldric",
+    )
+
+    hp_operation = ChangeCharacterHpOperation(
+        entity_id=OperationReference("aldric"),
+        amount=-2,
+    )
+
+    result = service.apply_turn_operations(
+        world_operations=[
+            referenced_create,
+        ],
+        character_operations=[
+            hp_operation,
+        ],
+    )
+
+    assert len(result) == 2
+
+    assert result[0].success is True
+    assert result[1].success is True
+
+    assert len(character_applier.operations) == 1
+
+    applied_operation = (
+        character_applier.operations[0]
+    )
+
+    assert applied_operation.entity_id == 1
+    assert applied_operation.amount == -2
