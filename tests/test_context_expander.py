@@ -226,3 +226,338 @@ def test_context_expander_strong_relation_beats_weak_relation():
 
     assert relevance[1] == 1.0
     assert relevance[2] > relevance[3]
+
+def test_expand_entities_follows_active_relations_in_both_directions(
+    empty_world,
+):
+    from models.entity import Entity
+    from models.relation import Relation
+    from services.context_expander import ContextExpander
+
+    aldric = Entity(
+        id=1,
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader.",
+        notes="",
+        active=True,
+    )
+
+    borin = Entity(
+        id=2,
+        name="Borin",
+        entity_type="npc",
+        description="Guardia.",
+        notes="",
+        active=True,
+    )
+
+    empty_world.entities[1] = aldric
+    empty_world.entities[2] = borin
+
+    relation = Relation(
+        id=1,
+        subject_id=1,
+        target_id=2,
+        relation_type="knows",
+        active=True,
+    )
+
+    empty_world.relations[1] = relation
+
+    expander = ContextExpander()
+
+    result = expander.expand_entities(
+        empty_world,
+        [
+            {
+                "id": 1,
+                "name": "Aldric",
+                "entity_type": "npc",
+                "description": "Mercader.",
+                "notes": "",
+                "_relevance": 1.0,
+            }
+        ],
+        max_depth=1,
+    )
+
+    ids = {
+        entity["id"]
+        for entity in result
+    }
+
+    assert ids == {1, 2}
+
+def test_expand_entities_respects_max_depth(
+    empty_world,
+):
+    from models.entity import Entity
+    from models.relation import Relation
+    from services.context_expander import ContextExpander
+
+    empty_world.entities[1] = Entity(
+        id=1,
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader.",
+        notes="",
+        active=True,
+    )
+
+    empty_world.entities[2] = Entity(
+        id=2,
+        name="Borin",
+        entity_type="npc",
+        description="Guardia.",
+        notes="",
+        active=True,
+    )
+
+    empty_world.entities[3] = Entity(
+        id=3,
+        name="Celia",
+        entity_type="npc",
+        description="Tabernera.",
+        notes="",
+        active=True,
+    )
+
+    empty_world.relations[1] = Relation(
+        id=1,
+        subject_id=1,
+        target_id=2,
+        relation_type="knows",
+        active=True,
+    )
+
+    empty_world.relations[2] = Relation(
+        id=2,
+        subject_id=2,
+        target_id=3,
+        relation_type="knows",
+        active=True,
+    )
+
+    expander = ContextExpander()
+
+    result = expander.expand_entities(
+        empty_world,
+        [
+            {
+                "id": 1,
+                "name": "Aldric",
+                "entity_type": "npc",
+                "description": "Mercader.",
+                "notes": "",
+            }
+        ],
+        max_depth=1,
+    )
+
+    ids = {
+        entity["id"]
+        for entity in result
+    }
+
+    assert ids == {1, 2}
+
+    result = expander.expand_entities(
+        empty_world,
+        [
+            {
+                "id": 1,
+                "name": "Aldric",
+                "entity_type": "npc",
+                "description": "Mercader.",
+                "notes": "",
+            }
+        ],
+        max_depth=2,
+    )
+
+    ids = {
+        entity["id"]
+        for entity in result
+    }
+
+    assert ids == {1, 2, 3}
+
+def test_expand_entities_ignores_inactive_relations(
+    empty_world,
+):
+    from models.entity import Entity
+    from models.relation import Relation
+    from services.context_expander import ContextExpander
+
+    empty_world.entities[1] = Entity(
+        id=1,
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader.",
+        notes="",
+        active=True,
+    )
+
+    empty_world.entities[2] = Entity(
+        id=2,
+        name="Borin",
+        entity_type="npc",
+        description="Guardia.",
+        notes="",
+        active=True,
+    )
+
+    empty_world.relations[1] = Relation(
+        id=1,
+        subject_id=1,
+        target_id=2,
+        relation_type="knows",
+        active=False,
+    )
+
+    expander = ContextExpander()
+
+    result = expander.expand_entities(
+        empty_world,
+        [
+            {
+                "id": 1,
+                "name": "Aldric",
+                "entity_type": "npc",
+                "description": "Mercader.",
+                "notes": "",
+            }
+        ],
+        max_depth=1,
+    )
+
+    ids = {
+        entity["id"]
+        for entity in result
+    }
+
+    assert ids == {1}
+
+def test_expand_entities_ignores_inactive_entities(
+    empty_world,
+):
+    from models.entity import Entity
+    from models.relation import Relation
+    from services.context_expander import ContextExpander
+
+    empty_world.entities[1] = Entity(
+        id=1,
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader.",
+        notes="",
+        active=True,
+    )
+
+    empty_world.entities[2] = Entity(
+        id=2,
+        name="Borin",
+        entity_type="npc",
+        description="Guardia.",
+        notes="",
+        active=False,
+    )
+
+    empty_world.relations[1] = Relation(
+        id=1,
+        subject_id=1,
+        target_id=2,
+        relation_type="knows",
+        active=True,
+    )
+
+    expander = ContextExpander()
+
+    result = expander.expand_entities(
+        empty_world,
+        [
+            {
+                "id": 1,
+                "name": "Aldric",
+                "entity_type": "npc",
+                "description": "Mercader.",
+                "notes": "",
+            }
+        ],
+        max_depth=1,
+    )
+
+    ids = {
+        entity["id"]
+        for entity in result
+    }
+
+    assert ids == {1}
+
+def test_expand_entities_does_not_modify_world(
+    empty_world,
+):
+    from models.entity import Entity
+    from models.relation import Relation
+    from services.context_expander import ContextExpander
+
+    empty_world.entities[1] = Entity(
+        id=1,
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader.",
+        notes="",
+        active=True,
+    )
+
+    empty_world.entities[2] = Entity(
+        id=2,
+        name="Borin",
+        entity_type="npc",
+        description="Guardia.",
+        notes="",
+        active=True,
+    )
+
+    empty_world.relations[1] = Relation(
+        id=1,
+        subject_id=1,
+        target_id=2,
+        relation_type="knows",
+        active=True,
+    )
+
+    original_entities = dict(
+        empty_world.entities
+    )
+
+    original_relations = dict(
+        empty_world.relations
+    )
+
+    expander = ContextExpander()
+
+    expander.expand_entities(
+        empty_world,
+        [
+            {
+                "id": 1,
+                "name": "Aldric",
+                "entity_type": "npc",
+                "description": "Mercader.",
+                "notes": "",
+            }
+        ],
+        max_depth=1,
+    )
+
+    assert (
+        empty_world.entities
+        == original_entities
+    )
+
+    assert (
+        empty_world.relations
+        == original_relations
+    )

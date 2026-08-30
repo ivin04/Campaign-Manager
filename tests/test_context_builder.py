@@ -1136,3 +1136,47 @@ def test_context_builder_rejects_non_integer_recent_turn_budget():
         raise AssertionError(
             "Expected TypeError"
         )
+
+def test_context_builder_includes_related_entity_from_world_graph(
+    empty_world,
+):
+    from models.entity import Entity
+    from models.relation import Relation
+    from services.context_builder import ContextBuilder
+
+    empty_world.entities[1] = Entity(
+        id=1,
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader de Vorder's Hold.",
+        notes="",
+        active=True,
+    )
+
+    empty_world.entities[2] = Entity(
+        id=2,
+        name="Borin",
+        entity_type="npc",
+        description="Guardia de la ciudad.",
+        notes="",
+        active=True,
+    )
+
+    empty_world.relations[1] = Relation(
+        id=1,
+        subject_id=1,
+        target_id=2,
+        relation_type="knows",
+        active=True,
+    )
+
+    builder = ContextBuilder()
+
+    result = builder.build(
+        empty_world,
+        "Aldric",
+    )
+
+    assert "Aldric" in result["context"]
+    assert "Borin" in result["context"]
+    assert "knows" in result["context"]
