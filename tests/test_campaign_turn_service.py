@@ -1405,3 +1405,132 @@ def test_play_turn_serializes_concurrent_turns():
         "Primer turno.",
         "Segundo turno.",
     ]
+
+def test_play_turn_serializes_concurrent_turns_and_persists_in_order():
+    import threading
+    import time
+
+    world_service = RecordingWorldService()
+
+    first_result = make_result(
+        player_input="Primer turno.",
+        narrative="Primera escena.",
+    )
+
+    second_result = make_result(
+        player_input="Segundo turno.",
+        narrative="Segunda escena.",
+    )
+
+    resolution_service = RecordingTurnResolutionService(
+        result=first_result,
+    )
+
+    service = CampaignTurnService(
+        turn_resolution_service=resolution_service,
+        world_service=world_service,
+    )
+
+    first_started = threading.Event()
+    release_first = threading.Event()
+
+    calls = []
+
+    original_resolve_turn = (
+        resolution_service.resolve_turn
+    )
+
+    def blocking_resolve_turn(
+        turn_context,
+        player_input,
+        *,
+        recent_turns=None,
+        conn=None,
+    ):
+        calls.append(player_input)
+
+        if player_input == "Primer turno.":
+            first_started.set()
+
+            if not release_first.wait(timeout=5):
+                raise RuntimeError(
+                    "Timed out waiting for first turn."
+                )
+
+        resolution_service.result = (
+            first_result
+            if player_input == "Primer turno."
+            else second_result
+        )
+
+        return original_resolve_turn(
+            turn_context,
+            player_input,
+            recent_turns=recent_turns,
+            conn=conn,
+        )
+
+    resolution_service.resolve_turn = (
+        blocking_resolve_turn
+    )
+
+    first_exception = []
+    second_exception = []
+
+    def run_first():
+        try:
+            service.play_turn(
+                "Primer turno."
+            )
+        except Exception as exc:
+            first_exception.append(exc)
+
+    def run_second():
+        try:
+            service.play_turn(
+                "Segundo turno."
+            )
+        except Exception as exc:
+            second_exception.append(exc)
+
+    first_thread = threading.Thread(
+        target=run_first,
+    )
+
+    second_thread = threading.Thread(
+        target=run_second,
+    )
+
+    first_thread.start()
+
+    assert first_started.wait(
+        timeout=5
+    )
+
+    second_thread.start()
+
+    time.sleep(0.1)
+
+    # El segundo turno no puede entrar en resolución
+    # mientras el primero siga ejecutándose.
+    assert calls == [
+        "Primer turno.",
+    ]
+
+    release_first.set()
+
+    first_thread.join(
+        timeout=5
+    )
+
+    second_thread.join(
+        timeout=5
+    )
+
+    assert not first_exception
+    assert not second_exception
+
+    assert calls == [
+        "Primer turno.",
+        "Segundo turno.",
+    ]
