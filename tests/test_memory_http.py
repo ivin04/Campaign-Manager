@@ -438,3 +438,51 @@ def test_export_does_not_expose_inactive_relations(
     assert relation_ids == {
         "active-001",
     }
+
+def test_memory_context_rejects_missing_query(
+    client,
+):
+    response = client.get(
+        "/memory/context"
+    )
+
+    assert response.status_code == 422
+
+
+def test_memory_context_rejects_empty_query(
+    client,
+):
+    response = client.get(
+        "/memory/context?q="
+    )
+
+    assert response.status_code == 422
+
+def test_memory_context_accepts_query(
+    client,
+    monkeypatch,
+):
+    def fake_build(
+        world,
+        query,
+    ):
+        assert query == "Aldric"
+
+        return {
+            "context": "Aldric es un mercader.",
+        }
+
+    monkeypatch.setattr(
+        "app.context_builder.build",
+        fake_build,
+    )
+
+    response = client.get(
+        "/memory/context?q=Aldric"
+    )
+
+    assert response.status_code == 200
+
+    assert response.json() == {
+        "context": "Aldric es un mercader.",
+    }

@@ -469,8 +469,12 @@ def search_memory(
 
 
 @app.get("/memory/context")
-def memory_context(q: str):
-
+def memory_context(
+    q: str = Query(
+        ...,
+        min_length=1,
+    ),
+):
     world = world_service.get_world()
 
     return context_builder.build(
