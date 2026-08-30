@@ -13,7 +13,10 @@ from models.operation_result import (
     OperationStatus,
 )
 
-from operations.world_operations import CreateEntityOperation, UpdateEntityOperation
+from operations.world_operations import CreateEntityOperation, CreateItemInstanceOperation
+
+from operations.operation_reference import OperationReference
+from operations.referenced_operation import ReferencedOperation
 
 from database import init_db
 
@@ -758,3 +761,62 @@ def test_apply_turn_operations_rolls_back_when_character_operation_returns_failu
     assert results[0].success is False
 
     assert service.world is original_world
+
+def test_apply_operations_resolves_generated_item_reference():
+    service = WorldService()
+
+    result = service.apply_operations(
+        [
+            ReferencedOperation(
+                operation=CreateItemOperation(
+                    name="Espada oxidada",
+                ),
+                ref="sword",
+            ),
+            CreateItemInstanceOperation(
+                item_id=OperationReference(
+                    "sword"
+                ),
+                owner_id=None,
+            ),
+        ]
+    )
+
+    assert result.success is True
+    assert result.changed is True
+    assert len(result.results) == 2
+
+    assert len(service.world.items) == 1
+    assert len(service.world.item_instances) == 1
+
+    item = next(
+        iter(service.world.items.values())
+    )
+
+    instance = next(
+        iter(
+            service.world.item_instances.values()
+        )
+    )
+
+    assert instance.item_id == item.id
+
+def test_apply_operations_rejects_unknown_operation_reference():
+    service = WorldService()
+
+    with pytest.raises(
+        ValueError,
+        match=r"Unknown operation reference: \$missing",
+    ):
+        service.apply_operations(
+            [
+                CreateItemInstanceOperation(
+                    item_id=OperationReference(
+                        "missing"
+                    ),
+                ),
+            ]
+        )
+
+    assert service.world.items == {}
+    assert service.world.item_instances == {}

@@ -26,6 +26,10 @@ from operations.character_operations import (
 
 from operations.turn_operations import TurnOperation
 
+from operations.operation_reference import OperationReference
+
+from operations.referenced_operation import ReferencedOperation
+
 
 class OperationParseError(ValueError):
     """Raised when an LLM response cannot be converted safely to operations."""
@@ -78,11 +82,24 @@ class OperationParser:
         if not isinstance(operations, list):
             raise OperationParseError("'operations' must be a list.")
 
-        result: list[TurnOperation] = []
+        result: list[TurnOperation | ReferencedOperation] = []
 
         for index, raw_operation in enumerate(operations):
             try:
                 operation = self._parse_operation(raw_operation)
+
+                ref = raw_operation.get("ref")
+
+                if ref is not None:
+                    if (
+                        not isinstance(ref, str)
+                        or not ref.strip()
+                    ):
+                        raise OperationParseError(
+                            f"Invalid operation at index {index}: "
+                            "'ref' must be a non-empty string."
+                        )
+
                 result.append(operation)
 
             except OperationParseError as exc:
@@ -144,9 +161,8 @@ class OperationParser:
 
         fields = dict(raw)
 
-        # "type" is used to select the operation class and is not
-        # passed to the dataclass constructor.
         fields.pop("type", None)
+        fields.pop("ref", None)
 
         expected = builder.__dataclass_fields__
 
@@ -291,7 +307,25 @@ class OperationParser:
             if value is None:
                 continue
 
-            fields[field_name] = self._parse_entity_id(value)
+        if (
+            isinstance(value, str)
+            and value.startswith("$")
+        ):
+            reference_name = value[1:].strip()
+
+            if not reference_name:
+                raise OperationParseError(
+                    "Operation reference cannot be empty."
+                )
+
+            fields[field_name] = OperationReference(
+                reference_name
+            )
+
+        else:
+            fields[field_name] = self._parse_entity_id(
+                value
+            )
 
     def _parse_entity_id(self, value: Any) -> int:
         """
@@ -394,6 +428,9 @@ class OperationParser:
             value = fields[name]
 
             if value is None:
+                continue
+
+            if isinstance(value, OperationReference):
                 continue
 
             if isinstance(value, bool):

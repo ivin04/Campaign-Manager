@@ -30,6 +30,8 @@ from operations.world_operations import (
     CreateResourceOperation,
 )
 
+from operations.operation_reference import OperationReference
+
 
 class WorldApplier:
     """
@@ -224,8 +226,11 @@ class WorldApplier:
 
         return OperationResult(
             status=OperationStatus.SUCCESS,
-            message=f"Entity '{entity.id}' updated.",
+            message=f"Entity '{entity.name}' created.",
             operation=operation,
+            data={
+                "entity_id": entity_id,
+            },
         )
 
     # ============================================================
@@ -272,6 +277,9 @@ class WorldApplier:
             status=OperationStatus.SUCCESS,
             message=f"Item '{name}' created.",
             operation=operation,
+            data={
+                "item_id": item_id,
+            },
         )
 
 
@@ -357,6 +365,9 @@ class WorldApplier:
                 f"Item instance '{instance_id}' created."
             ),
             operation=operation,
+            data={
+                "instance_id": instance_id,
+            },
         )
 
     def _apply_transfer_item(
@@ -455,6 +466,9 @@ class WorldApplier:
             status=OperationStatus.SUCCESS,
             message=f"Resource '{name}' created.",
             operation=operation,
+            data={
+                "resource_id": resource_id,
+            },
         )
 
     def _apply_gain_resource(

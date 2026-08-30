@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Any
 
+from operations.operation_reference import OperationReference
+
 
 # ============================================================
 # BASE
@@ -95,7 +97,7 @@ class CreateItemInstanceOperation(WorldOperation):
             #1 -> Fungoso
     """
 
-    item_id: int
+    item_id: int | OperationReference
     instance_number: int = 1
     owner_id: int | None = None
     location_id: int | None = None
@@ -113,7 +115,7 @@ class TransferItemOperation(WorldOperation):
     La instancia ya debe existir.
     """
 
-    instance_id: int
+    instance_id: int | OperationReference
     new_owner_id: int
 
 
@@ -147,7 +149,7 @@ class GainResourceOperation(WorldOperation):
     de una entidad.
     """
 
-    resource_id: int
+    resource_id: int | OperationReference
     owner_id: int
     amount: float
 
@@ -159,7 +161,7 @@ class SpendResourceOperation(WorldOperation):
     una entidad.
     """
 
-    resource_id: int
+    resource_id: int | OperationReference
     owner_id: int
     amount: float
 
@@ -171,7 +173,7 @@ class TransferResourceOperation(WorldOperation):
     hacia otra.
     """
 
-    resource_id: int
+    resource_id: int | OperationReference
     subject_id: int
     target_id: int
     amount: float

@@ -1,6 +1,9 @@
 import copy
 
-from database import get_conn
+from dataclasses import fields, replace
+
+from operations.operation_reference import OperationReference
+from operations.referenced_operation import ReferencedOperation
 
 from models.world_state import WorldState
 from models.operation_result import OperationResult
@@ -136,16 +139,38 @@ class WorldService:
         self.world = working_state
 
         results = []
+        references = {}
 
         try:
 
-            for operation in operations:
+            for raw_operation in operations:
+
+                if isinstance(
+                    raw_operation,
+                    ReferencedOperation,
+                ):
+                    ref = raw_operation.ref
+                    operation = raw_operation.operation
+                else:
+                    ref = None
+                    operation = raw_operation
+
+                operation = self._resolve_operation_references(
+                    operation,
+                    references,
+                )
 
                 result = self.apply(
                     operation
                 )
 
                 results.append(result)
+
+                self._register_operation_reference(
+                    ref,
+                    result,
+                    references,
+                )
 
                 if not result.success:
 
@@ -327,3 +352,82 @@ class WorldService:
         """
 
         return self.world
+
+    @staticmethod
+    def _resolve_operation_references(
+        operation,
+        references,
+    ):
+        """
+        Sustituye OperationReference por los IDs generados por
+        operaciones anteriores.
+        """
+
+        if not hasattr(operation, "__dataclass_fields__"):
+            return operation
+
+        changes = {}
+
+        for field in fields(operation):
+            value = getattr(
+                operation,
+                field.name,
+            )
+
+            if not isinstance(
+                value,
+                OperationReference,
+            ):
+                continue
+
+            if value.name not in references:
+                raise ValueError(
+                    f"Unknown operation reference: "
+                    f"${value.name}"
+                )
+
+            changes[field.name] = references[
+                value.name
+            ]
+
+        if not changes:
+            return operation
+
+        return replace(
+            operation,
+            **changes,
+        )
+
+    @staticmethod
+    def _register_operation_reference(
+        ref,
+        result,
+        references,
+    ):
+        """
+        Registra el ID generado por una operación.
+
+        Una referencia debe producir exactamente un ID.
+        """
+
+        if ref is None:
+            return
+
+        if not result.success:
+            return
+
+        data = result.data or {}
+
+        generated_ids = [
+            value
+            for key, value in data.items()
+            if key.endswith("_id")
+        ]
+
+        if len(generated_ids) != 1:
+            raise ValueError(
+                f"Operation reference '{ref}' did not "
+                "produce exactly one generated ID."
+            )
+
+        references[ref] = generated_ids[0]
