@@ -371,7 +371,7 @@ def play_turn(data: TurnIn):
 
     except CampaignTurnServiceError as exc:
         raise HTTPException(
-            status_code=500,
+            status_code=400,
             detail=str(exc),
         ) from exc
 

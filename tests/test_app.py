@@ -242,7 +242,7 @@ def test_play_turn_returns_turn_result(
     assert data["operation_results"] == []
 
 
-def test_play_turn_returns_500_when_campaign_turn_service_fails(
+def test_play_turn_returns_400_when_campaign_turn_service_fails(
     client,
     monkeypatch,
 ):
@@ -269,7 +269,7 @@ def test_play_turn_returns_500_when_campaign_turn_service_fails(
         },
     )
 
-    assert response.status_code == 500
+    assert response.status_code == 400
 
     assert response.json() == {
         "detail": "Turn resolution failed."
@@ -318,6 +318,48 @@ def test_play_turn_rejects_empty_player_input(
         "/turn",
         json={
             "player_input": "",
+        },
+    )
+
+    assert response.status_code == 422
+
+def test_play_turn_returns_400_when_campaign_turn_service_fails(
+    client,
+    monkeypatch,
+):
+    from services.campaign_turn_service import (
+        CampaignTurnServiceError,
+    )
+
+    def fake_play_turn(player_input):
+        raise CampaignTurnServiceError(
+            "turn resolution failed"
+        )
+
+    monkeypatch.setattr(
+        "app.campaign_turn_service.play_turn",
+        fake_play_turn,
+    )
+
+    response = client.post(
+        "/turn",
+        json={
+            "player_input": "Pregunto por Aldric.",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "turn resolution failed"
+    }
+
+def test_play_turn_rejects_whitespace_only_player_input(
+    client,
+):
+    response = client.post(
+        "/turn",
+        json={
+            "player_input": "   ",
         },
     )
 
