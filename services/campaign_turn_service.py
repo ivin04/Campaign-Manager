@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import threading
 
 from models.turn_resolution_result import TurnResolutionResult
@@ -113,6 +114,31 @@ class CampaignTurnService:
 
         self._turn_lock = threading.RLock()
 
+    @staticmethod
+    def _restore_world_state(
+        target: WorldState,
+        snapshot: WorldState,
+    ) -> None:
+        """
+        Restaura el contenido de un WorldState manteniendo
+        exactamente la misma instancia.
+
+        Esto es importante porque TurnContext y WorldService
+        pueden compartir la misma referencia al WorldState.
+        """
+
+        target.entities = snapshot.entities
+        target.items = snapshot.items
+        target.item_instances = (
+            snapshot.item_instances
+        )
+        target.resources = snapshot.resources
+        target.resource_balances = (
+            snapshot.resource_balances
+        )
+        target.relations = snapshot.relations
+        target.events = snapshot.events
+
     # ============================================================
     # PLAY TURN
     # ============================================================
@@ -219,6 +245,10 @@ class CampaignTurnService:
                 active_character=None,
                 world=world,
             )
+
+        world_snapshot = copy.deepcopy(
+            world
+        )
 
         # --------------------------------------------------------
         # Obtener historial reciente
@@ -330,6 +360,11 @@ class CampaignTurnService:
 
         except TurnResolutionServiceError as exc:
 
+            self._restore_world_state(
+                world,
+                world_snapshot,
+            )
+
             raise CampaignTurnServiceError(
                 "turn resolution failed"
             ) from exc
@@ -338,6 +373,11 @@ class CampaignTurnService:
             raise
 
         except Exception as exc:
+
+            self._restore_world_state(
+                world,
+                world_snapshot,
+            )
 
             raise CampaignTurnServiceError(
                 "unexpected error while resolving turn"

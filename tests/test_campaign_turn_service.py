@@ -1534,3 +1534,73 @@ def test_play_turn_serializes_concurrent_turns_and_persists_in_order():
         "Primer turno.",
         "Segundo turno.",
     ]
+
+def test_play_turn_restores_world_when_turn_persistence_fails(
+    monkeypatch,
+):
+    from services.campaign_turn_service import (
+        CampaignTurnService,
+        CampaignTurnServiceError,
+    )
+
+    world_service = RecordingWorldService()
+
+    original_world = world_service.world
+
+    original_entity_count = len(
+        original_world.entities
+    )
+
+    result = make_result(
+        player_input="Creo a Aldric.",
+        narrative="Aldric aparece.",
+    )
+
+    resolution_service = RecordingTurnResolutionService(
+        result=result,
+    )
+
+    repository = TurnRepository()
+
+    def failing_save_turn(
+        *args,
+        **kwargs,
+    ):
+        raise RuntimeError(
+            "turn persistence failed"
+        )
+
+    monkeypatch.setattr(
+        repository,
+        "save_turn",
+        failing_save_turn,
+    )
+
+    service = CampaignTurnService(
+        turn_resolution_service=resolution_service,
+        world_service=world_service,
+        turn_repository=repository,
+    )
+
+    try:
+        service.play_turn(
+            "Creo a Aldric."
+        )
+    except CampaignTurnServiceError:
+        pass
+    else:
+        raise AssertionError(
+            "Expected CampaignTurnServiceError"
+        )
+
+    assert (
+        world_service.world
+        is original_world
+    )
+
+    assert (
+        len(
+            original_world.entities
+        )
+        == original_entity_count
+    )
