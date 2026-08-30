@@ -453,7 +453,11 @@ def get_turns(
 
 @app.get("/memory/search")
 def search_memory(
-    q: str = Query(..., min_length=1),
+    q: str = Query(
+        ...,
+        min_length=1,
+        max_length=1000,
+    ),
 ):
     """
     Busca información relevante dentro del
@@ -464,7 +468,7 @@ def search_memory(
 
     return memory_search_service.search(
         world,
-        q,
+        q.strip(),
     )
 
 
@@ -473,13 +477,14 @@ def memory_context(
     q: str = Query(
         ...,
         min_length=1,
+        max_length=1000,
     ),
 ):
     world = world_service.get_world()
 
     return context_builder.build(
         world,
-        q,
+        q.strip(),
     )
 
 

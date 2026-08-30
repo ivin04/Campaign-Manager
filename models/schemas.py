@@ -2,11 +2,24 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+
 class CampaignUpdate(BaseModel):
-    name: Optional[str] = None
-    system: Optional[str] = None
-    tone: Optional[str] = None
-    summary: Optional[str] = None
+    name: Optional[str] = Field(
+        default=None,
+        max_length=200,
+    )
+    system: Optional[str] = Field(
+        default=None,
+        max_length=100,
+    )
+    tone: Optional[str] = Field(
+        default=None,
+        max_length=100,
+    )
+    summary: Optional[str] = Field(
+        default=None,
+        max_length=5000,
+    )
 
 
 class CampaignSessionUpdate(BaseModel):
@@ -18,17 +31,33 @@ class SessionIn(BaseModel):
         ...,
         ge=1,
     )
-    title: str = ""
-    summary: str = ""
-    start_location: str = ""
-    end_location: str = ""
-    notes: str = ""
+    title: str = Field(
+        default="",
+        max_length=200,
+    )
+    summary: str = Field(
+        default="",
+        max_length=5000,
+    )
+    start_location: str = Field(
+        default="",
+        max_length=200,
+    )
+    end_location: str = Field(
+        default="",
+        max_length=200,
+    )
+    notes: str = Field(
+        default="",
+        max_length=5000,
+    )
 
 
 class TurnIn(BaseModel):
     player_input: str = Field(
         ...,
         min_length=1,
+        max_length=10000,
     )
 
     @field_validator("player_input")
@@ -45,6 +74,7 @@ class TurnIn(BaseModel):
             )
 
         return value
+
 
 class ActiveCharacterUpdate(BaseModel):
     character_id: int | None = Field(

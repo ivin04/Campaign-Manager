@@ -364,3 +364,82 @@ def test_play_turn_rejects_whitespace_only_player_input(
     )
 
     assert response.status_code == 422
+
+def test_play_turn_rejects_player_input_above_maximum(
+    client,
+):
+    response = client.post(
+        "/turn",
+        json={
+            "player_input": "A" * 10001,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_memory_search_rejects_query_above_maximum(
+    client,
+):
+    response = client.get(
+        "/memory/search",
+        params={
+            "q": "A" * 1001,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_memory_context_rejects_query_above_maximum(
+    client,
+):
+    response = client.get(
+        "/memory/context",
+        params={
+            "q": "A" * 1001,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_play_turn_accepts_player_input_at_maximum_length(
+    client,
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    calls = []
+
+    def fake_play_turn(
+        player_input,
+    ):
+        calls.append(player_input)
+
+        return SimpleNamespace(
+            narrative="Narrativa.",
+            player_input=player_input,
+            operation_count=0,
+            successful_operation_count=0,
+            failed_operation_count=0,
+            all_operations_succeeded=True,
+            world_changed=False,
+            operations=[],
+            operation_results=[],
+        )
+
+    monkeypatch.setattr(
+        "app.campaign_turn_service.play_turn",
+        fake_play_turn,
+    )
+
+    response = client.post(
+        "/turn",
+        json={
+            "player_input": "A" * 10000,
+        },
+    )
+
+    assert response.status_code == 200
+    assert calls == ["A" * 10000]
