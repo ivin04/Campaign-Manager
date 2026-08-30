@@ -514,6 +514,23 @@ class WorldService:
         if ref is None:
             return
 
+        if not isinstance(ref, str):
+            raise TypeError(
+                "Operation reference must be a string or None."
+            )
+
+        ref = ref.strip()
+
+        if not ref:
+            raise ValueError(
+                "Operation reference must not be empty."
+            )
+
+        if ref in references:
+            raise ValueError(
+                f"Operation reference '{ref}' is already defined."
+            )
+
         if not result.success:
             return
 

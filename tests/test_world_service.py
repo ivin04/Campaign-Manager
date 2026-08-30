@@ -902,3 +902,99 @@ def test_apply_turn_operations_resolves_generated_character_reference(
 
     assert applied_operation.entity_id == 1
     assert applied_operation.amount == -2
+
+def test_apply_operations_rejects_empty_operation_reference():
+    service = WorldService()
+
+    operation = CreateEntityOperation(
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader.",
+        notes="",
+        active=True,
+    )
+
+    referenced_operation = ReferencedOperation(
+        operation=operation,
+        ref="",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Operation reference must not be empty",
+    ):
+        service.apply_operations(
+            [
+                referenced_operation,
+            ]
+        )
+
+    assert service.world.entities == {}
+
+
+def test_apply_operations_rejects_whitespace_operation_reference():
+    service = WorldService()
+
+    operation = CreateEntityOperation(
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader.",
+        notes="",
+        active=True,
+    )
+
+    referenced_operation = ReferencedOperation(
+        operation=operation,
+        ref="   ",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Operation reference must not be empty",
+    ):
+        service.apply_operations(
+            [
+                referenced_operation,
+            ]
+        )
+
+    assert service.world.entities == {}
+
+
+def test_apply_operations_rejects_duplicate_operation_reference():
+    service = WorldService()
+
+    first_operation = CreateEntityOperation(
+        name="Aldric",
+        entity_type="npc",
+        description="Primer mercader.",
+        notes="",
+        active=True,
+    )
+
+    second_operation = CreateEntityOperation(
+        name="Brann",
+        entity_type="npc",
+        description="Segundo mercader.",
+        notes="",
+        active=True,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Operation reference 'merchant' is already defined",
+    ):
+        service.apply_operations(
+            [
+                ReferencedOperation(
+                    operation=first_operation,
+                    ref="merchant",
+                ),
+                ReferencedOperation(
+                    operation=second_operation,
+                    ref="merchant",
+                ),
+            ]
+        )
+
+    assert service.world.entities == {}

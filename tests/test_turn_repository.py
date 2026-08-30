@@ -1,3 +1,5 @@
+import pytest
+
 from models.turn_record import TurnRecord
 from repositories.turn_repository import TurnRepository
 from repositories.campaign_repository import CampaignRepository
