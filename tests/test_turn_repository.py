@@ -1,10 +1,6 @@
 from models.turn_record import TurnRecord
 from repositories.turn_repository import TurnRepository
-
-from database import (
-    one,
-)
-
+from repositories.campaign_repository import CampaignRepository
 
 def test_save_turn_and_get_turn(
     isolated_database,
@@ -407,3 +403,216 @@ def test_save_turn_with_existing_connection_does_not_commit_independently():
         ).fetchone()
 
         assert row is None
+
+def test_list_turns_by_session_returns_complete_turn_record(
+    isolated_database,
+):
+    repository = TurnRepository()
+    campaign_repository = CampaignRepository()
+
+    session = campaign_repository.create_session(
+        number=9001,
+        title="Test Session",
+        summary="",
+        start_location="",
+        end_location="",
+        notes="",
+    )
+
+    session_id = session["id"]
+
+    saved = repository.save_turn(
+        TurnRecord(
+            session_id=session_id,
+            player_input="Pregunto por Aldric.",
+            narrative="El tabernero señala una mesa.",
+            operation_count=2,
+            successful_operation_count=2,
+            failed_operation_count=0,
+            all_operations_succeeded=True,
+            world_changed=True,
+        )
+    )
+
+    result = repository.list_turns(
+        session_id=session_id,
+    )
+
+    assert len(result) == 1
+
+    turn = result[0]
+
+    assert turn.id == saved.id
+    assert turn.session_id == session_id
+    assert turn.player_input == "Pregunto por Aldric."
+    assert turn.narrative == "El tabernero señala una mesa."
+
+    assert turn.operation_count == 2
+    assert turn.successful_operation_count == 2
+    assert turn.failed_operation_count == 0
+
+    assert turn.all_operations_succeeded is True
+    assert turn.world_changed is True
+
+
+def test_list_turns_by_session_does_not_return_other_sessions(
+    isolated_database,
+):
+    repository = TurnRepository()
+    campaign_repository = CampaignRepository()
+
+    session_one = campaign_repository.create_session(
+        number=9002,
+        title="Session One",
+        summary="",
+        start_location="",
+        end_location="",
+        notes="",
+    )
+
+    session_two = campaign_repository.create_session(
+        number=9003,
+        title="Session Two",
+        summary="",
+        start_location="",
+        end_location="",
+        notes="",
+    )
+
+    repository.save_turn(
+        TurnRecord(
+            session_id=session_one["id"],
+            player_input="Turno sesión uno.",
+            narrative="Narrativa uno.",
+        )
+    )
+
+    repository.save_turn(
+        TurnRecord(
+            session_id=session_two["id"],
+            player_input="Turno sesión dos.",
+            narrative="Narrativa dos.",
+        )
+    )
+
+    result = repository.list_turns(
+        session_id=session_one["id"],
+    )
+
+    assert len(result) == 1
+
+    assert result[0].session_id == session_one["id"]
+    assert result[0].player_input == (
+        "Turno sesión uno."
+    )
+
+
+def test_list_recent_turns_by_session_preserves_complete_metadata(
+    isolated_database,
+):
+    repository = TurnRepository()
+    campaign_repository = CampaignRepository()
+
+    session = campaign_repository.create_session(
+        number=9004,
+        title="Test Session",
+        summary="",
+        start_location="",
+        end_location="",
+        notes="",
+    )
+
+    session_id = session["id"]
+
+    repository.save_turn(
+        TurnRecord(
+            session_id=session_id,
+            player_input="Primer turno.",
+            narrative="Primera escena.",
+            operation_count=3,
+            successful_operation_count=3,
+            failed_operation_count=0,
+            all_operations_succeeded=True,
+            world_changed=True,
+        )
+    )
+
+    repository.save_turn(
+        TurnRecord(
+            session_id=session_id,
+            player_input="Segundo turno.",
+            narrative="Segunda escena.",
+            operation_count=1,
+            successful_operation_count=0,
+            failed_operation_count=1,
+            all_operations_succeeded=False,
+            world_changed=False,
+        )
+    )
+
+    result = repository.list_recent_turns(
+        session_id=session_id,
+        limit=2,
+    )
+
+    assert len(result) == 2
+
+    first = result[0]
+    second = result[1]
+
+    assert first.player_input == "Primer turno."
+    assert first.operation_count == 3
+    assert first.successful_operation_count == 3
+    assert first.failed_operation_count == 0
+    assert first.all_operations_succeeded is True
+    assert first.world_changed is True
+
+    assert second.player_input == "Segundo turno."
+    assert second.operation_count == 1
+    assert second.successful_operation_count == 0
+    assert second.failed_operation_count == 1
+    assert second.all_operations_succeeded is False
+    assert second.world_changed is False
+
+
+def test_list_turns_returns_turns_in_ascending_order(
+    isolated_database,
+):
+    repository = TurnRepository()
+    campaign_repository = CampaignRepository()
+
+    session = campaign_repository.create_session(
+        number=9005,
+        title="Test Session",
+        summary="",
+        start_location="",
+        end_location="",
+        notes="",
+    )
+
+    session_id = session["id"]
+
+    first = repository.save_turn(
+        TurnRecord(
+            session_id=session_id,
+            player_input="Primero.",
+            narrative="Primero.",
+        )
+    )
+
+    second = repository.save_turn(
+        TurnRecord(
+            session_id=session_id,
+            player_input="Segundo.",
+            narrative="Segundo.",
+        )
+    )
+
+    result = repository.list_turns(
+        session_id=session_id,
+    )
+
+    assert [turn.id for turn in result] == [
+        first.id,
+        second.id,
+    ]

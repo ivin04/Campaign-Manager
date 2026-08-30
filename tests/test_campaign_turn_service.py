@@ -1089,3 +1089,209 @@ def test_play_turn_passes_same_connection_to_turn_repository():
     ) == 1
 
     assert repository.connections[0] is not None
+
+def test_play_turn_persists_turn_record_when_turn_repository_is_configured():
+    result = make_result(
+        player_input="Exploro la taberna.",
+        narrative="El interior está casi vacío.",
+        world_changed=False,
+    )
+
+    world_service = RecordingWorldService()
+
+    turn_repository = TurnRepository()
+
+    turn_resolution_service = RecordingTurnResolutionService(
+        result
+    )
+
+    service = CampaignTurnService(
+        turn_resolution_service=turn_resolution_service,
+        world_service=world_service,
+        turn_repository=turn_repository,
+    )
+
+    returned = service.play_turn(
+        "  Exploro la taberna.  "
+    )
+
+    assert returned is result
+
+    turns = turn_repository.list_turns()
+
+    assert len(turns) == 1
+
+    saved_turn = turns[0]
+
+    assert saved_turn.player_input == (
+        "Exploro la taberna."
+    )
+
+    assert saved_turn.narrative == (
+        "El interior está casi vacío."
+    )
+
+    assert saved_turn.operation_count == (
+        result.operation_count
+    )
+
+    assert saved_turn.successful_operation_count == (
+        result.successful_operation_count
+    )
+
+    assert saved_turn.failed_operation_count == (
+        result.failed_operation_count
+    )
+
+    assert saved_turn.all_operations_succeeded == (
+        result.all_operations_succeeded
+    )
+
+    assert saved_turn.world_changed == (
+        result.world_changed
+    )
+
+
+def test_play_turn_persists_turn_with_same_session_id():
+    result = make_result(
+        player_input="Pregunto por Aldric.",
+        narrative="El tabernero señala una mesa.",
+    )
+
+    world_service = RecordingWorldService()
+
+    turn_repository = TurnRepository()
+
+    turn_resolution_service = RecordingTurnResolutionService(
+        result
+    )
+
+    campaign_state_service = RecordingCampaignStateService(
+        world_service
+    )
+
+    service = CampaignTurnService(
+        turn_resolution_service=turn_resolution_service,
+        world_service=world_service,
+        campaign_state_service=campaign_state_service,
+        turn_repository=turn_repository,
+    )
+
+    returned = service.play_turn(
+        "Pregunto por Aldric."
+    )
+
+    assert returned is result
+
+    turns = turn_repository.list_turns()
+
+    assert len(turns) == 1
+
+    assert turns[0].session_id is None
+
+
+def test_play_turn_loads_recent_turns_before_resolution():
+    first_result = make_result(
+        player_input="Entro en la taberna.",
+        narrative="La taberna está llena.",
+    )
+
+    repository = TurnRepository()
+
+    repository.save_turn(
+        TurnRecord(
+            session_id=None,
+            player_input="Llego a Vorder's Hold.",
+            narrative="La lluvia cae sobre la ciudad.",
+        )
+    )
+
+    world_service = RecordingWorldService()
+
+    turn_resolution_service = RecordingTurnResolutionService(
+        first_result
+    )
+
+    service = CampaignTurnService(
+        turn_resolution_service=turn_resolution_service,
+        world_service=world_service,
+        turn_repository=repository,
+    )
+
+    service.play_turn(
+        "Entro en la taberna."
+    )
+
+    assert (
+        turn_resolution_service.last_recent_turns
+        is not None
+    )
+
+    assert len(
+        turn_resolution_service.last_recent_turns
+    ) == 1
+
+    recent_turn = (
+        turn_resolution_service.last_recent_turns[0]
+    )
+
+    assert recent_turn.player_input == (
+        "Llego a Vorder's Hold."
+    )
+
+    assert recent_turn.narrative == (
+        "La lluvia cae sobre la ciudad."
+    )
+
+
+def test_play_turn_persists_current_turn_after_loading_recent_history():
+    repository = TurnRepository()
+
+    repository.save_turn(
+        TurnRecord(
+            session_id=None,
+            player_input="Primer turno.",
+            narrative="Primera escena.",
+        )
+    )
+
+    result = make_result(
+        player_input="Segundo turno.",
+        narrative="Segunda escena.",
+    )
+
+    world_service = RecordingWorldService()
+
+    resolver = RecordingTurnResolutionService(
+        result
+    )
+
+    service = CampaignTurnService(
+        turn_resolution_service=resolver,
+        world_service=world_service,
+        turn_repository=repository,
+    )
+
+    service.play_turn(
+        "Segundo turno."
+    )
+
+    turns = repository.list_turns()
+
+    assert len(turns) == 2
+
+    assert turns[0].player_input == (
+        "Primer turno."
+    )
+
+    assert turns[1].player_input == (
+        "Segundo turno."
+    )
+
+    assert turns[0].narrative == (
+        "Primera escena."
+    )
+
+    assert turns[1].narrative == (
+        "Segunda escena."
+    )
