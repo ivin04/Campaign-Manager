@@ -520,7 +520,7 @@ class WorldService:
             entity = next(
                 (
                     entity
-                    for entity in self.world.entities.values()
+                    for entity in world.entities.values()
                     if (
                         entity.name == operation.name
                         and entity.entity_type
@@ -532,7 +532,7 @@ class WorldService:
 
             if entity is not None:
                 for entity_id, stored_entity in (
-                    self.world.entities.items()
+                    world.entities.items()
                 ):
                     if stored_entity is entity:
                         references[ref] = entity_id

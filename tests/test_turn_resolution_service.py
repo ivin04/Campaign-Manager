@@ -1053,9 +1053,11 @@ def test_resolve_turn_preserves_operation_reference(
         referenced_operation,
     ]
 
-    world_service.world = empty_world
+    world_service.applier.world = empty_world
 
     context = make_turn_context()
+
+    world_service.applier.world = empty_world
 
     result = service.resolve_turn(
         context,
@@ -1070,17 +1072,17 @@ def test_resolve_turn_preserves_operation_reference(
     )
 
     assert len(
-        world_service.world.entities
+        world_service.applier.world.entities
     ) == 1
 
     entity_id = next(
         iter(
-            world_service.world.entities
+            world_service.applier.world.entities
         )
     )
 
     assert (
-        world_service.world.entities[
+        world_service.applier.world.entities[
             entity_id
         ].name
         == "Aldric"
