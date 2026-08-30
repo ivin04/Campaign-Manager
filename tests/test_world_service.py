@@ -13,7 +13,11 @@ from models.operation_result import (
     OperationStatus,
 )
 
-from operations.world_operations import CreateEntityOperation, CreateItemInstanceOperation
+from operations.world_operations import (
+    CreateEntityOperation,
+    CreateItemOperation,
+    CreateItemInstanceOperation,
+)
 
 from operations.operation_reference import OperationReference
 from operations.referenced_operation import ReferencedOperation
