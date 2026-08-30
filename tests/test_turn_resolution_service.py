@@ -1031,9 +1031,7 @@ def test_turn_resolution_uses_turn_context():
 
     assert extractor.received_context is context
 
-def test_resolve_turn_preserves_operation_reference(
-    empty_world,
-):
+def test_resolve_turn_preserves_operation_reference():
     operation = CreateEntityOperation(
         name="Aldric",
         entity_type="npc",
@@ -1047,17 +1045,29 @@ def test_resolve_turn_preserves_operation_reference(
         ref="aldric",
     )
 
-    service, dm, extractor, world_service = make_service()
+    dm = RecordingDMService()
 
-    extractor.operations = [
-        referenced_operation,
-    ]
+    extractor = RecordingExtractor(
+        operations=[
+            referenced_operation,
+        ],
+    )
 
-    world_service.applier.world = empty_world
+    applier = RecordingApplier()
+
+    world_service = WorldService(
+        applier=applier,
+    )
+
+    service = TurnResolutionService(
+        dm_service=dm,
+        extractor=extractor,
+        world_service=world_service,
+    )
 
     context = make_turn_context()
 
-    world_service.applier.world = empty_world
+    world_service.world = context.world
 
     result = service.resolve_turn(
         context,
@@ -1072,17 +1082,17 @@ def test_resolve_turn_preserves_operation_reference(
     )
 
     assert len(
-        world_service.applier.world.entities
+        world_service.world.entities
     ) == 1
 
     entity_id = next(
         iter(
-            world_service.applier.world.entities
+            world_service.world.entities
         )
     )
 
     assert (
-        world_service.applier.world.entities[
+        world_service.world.entities[
             entity_id
         ].name
         == "Aldric"

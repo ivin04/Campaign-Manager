@@ -177,6 +177,7 @@ class WorldService:
                     ref,
                     result,
                     references,
+                    self.world,
                 )
 
                 if not result.success:
@@ -335,6 +336,7 @@ class WorldService:
                 references,
                 self.world,
             )
+            
         def apply_character_operation(
             raw_operation,
             connection,
