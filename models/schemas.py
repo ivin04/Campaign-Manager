@@ -15,15 +15,22 @@ class CampaignSessionUpdate(BaseModel):
 
 
 class SessionIn(BaseModel):
-    number: int
+    number: int = Field(
+        ...,
+        ge=1,
+    )
     title: str = ""
     summary: str = ""
     start_location: str = ""
     end_location: str = ""
     notes: str = ""
 
+
 class TurnIn(BaseModel):
-    player_input: str
+    player_input: str = Field(
+        ...,
+        min_length=1,
+    )
 
 class ActiveCharacterUpdate(BaseModel):
     character_id: int | None = Field(

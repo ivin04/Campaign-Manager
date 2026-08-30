@@ -174,3 +174,151 @@ def test_get_turns_uses_default_limit(
             "limit": 50,
         }
     ]
+
+
+def test_play_turn_rejects_missing_player_input(
+    client,
+):
+    response = client.post(
+        "/turn",
+        json={},
+    )
+
+    assert response.status_code == 422
+
+
+def test_play_turn_returns_turn_result(
+    client,
+    monkeypatch,
+):
+    class FakeResult:
+        narrative = "Aldric te observa desde la barra."
+        player_input = "Pregunto por Aldric."
+        operation_count = 1
+        successful_operation_count = 1
+        failed_operation_count = 0
+        all_operations_succeeded = True
+        world_changed = True
+        operations = []
+        operation_results = []
+
+    def fake_play_turn(
+        player_input,
+    ):
+        assert player_input == "Pregunto por Aldric."
+        return FakeResult()
+
+    monkeypatch.setattr(
+        "app.campaign_turn_service.play_turn",
+        fake_play_turn,
+    )
+
+    response = client.post(
+        "/turn",
+        json={
+            "player_input": "Pregunto por Aldric.",
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["narrative"] == (
+        "Aldric te observa desde la barra."
+    )
+
+    assert data["player_input"] == (
+        "Pregunto por Aldric."
+    )
+
+    assert data["operation_count"] == 1
+    assert data["successful_operation_count"] == 1
+    assert data["failed_operation_count"] == 0
+    assert data["all_operations_succeeded"] is True
+    assert data["world_changed"] is True
+
+    assert data["operations"] == []
+    assert data["operation_results"] == []
+
+
+def test_play_turn_returns_500_when_campaign_turn_service_fails(
+    client,
+    monkeypatch,
+):
+    from services.campaign_turn_service import (
+        CampaignTurnServiceError,
+    )
+
+    def fake_play_turn(
+        player_input,
+    ):
+        raise CampaignTurnServiceError(
+            "Turn resolution failed."
+        )
+
+    monkeypatch.setattr(
+        "app.campaign_turn_service.play_turn",
+        fake_play_turn,
+    )
+
+    response = client.post(
+        "/turn",
+        json={
+            "player_input": "Pregunto por Aldric.",
+        },
+    )
+
+    assert response.status_code == 500
+
+    assert response.json() == {
+        "detail": "Turn resolution failed."
+    }
+
+def test_play_turn_rejects_missing_player_input(
+    client,
+):
+    response = client.post(
+        "/turn",
+        json={},
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_session_rejects_invalid_number(
+    client,
+):
+    response = client.post(
+        "/sessions",
+        json={
+            "number": 0,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_session_rejects_negative_number(
+    client,
+):
+    response = client.post(
+        "/sessions",
+        json={
+            "number": -1,
+        },
+    )
+
+    assert response.status_code == 422
+
+def test_play_turn_rejects_empty_player_input(
+    client,
+):
+    response = client.post(
+        "/turn",
+        json={
+            "player_input": "",
+        },
+    )
+
+    assert response.status_code == 422
