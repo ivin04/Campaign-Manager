@@ -1,7 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel, Field
-
+from pydantic import BaseModel, Field, field_validator
 
 class CampaignUpdate(BaseModel):
     name: Optional[str] = None
@@ -31,6 +30,21 @@ class TurnIn(BaseModel):
         ...,
         min_length=1,
     )
+
+    @field_validator("player_input")
+    @classmethod
+    def validate_player_input(
+        cls,
+        value: str,
+    ) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError(
+                "player_input must not be empty"
+            )
+
+        return value
 
 class ActiveCharacterUpdate(BaseModel):
     character_id: int | None = Field(
