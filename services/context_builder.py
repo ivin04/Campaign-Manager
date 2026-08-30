@@ -41,6 +41,7 @@ class ContextBuilder:
 
     # Se mide en caracteres, no tokens.
     DEFAULT_MAX_CONTEXT_CHARS = 6000
+    DEFAULT_MAX_RECENT_TURNS_CHARS = 2000
 
     # ============================================================
     # CONTEXT CANDIDATE SCORING
@@ -76,6 +77,7 @@ class ContextBuilder:
         self,
         memory_search_service: MemorySearchService | None = None,
         max_context_chars: int = DEFAULT_MAX_CONTEXT_CHARS,
+        max_recent_turns_chars: int = DEFAULT_MAX_RECENT_TURNS_CHARS,
         ranker: ContextRanker | None = None,
         context_expander: ContextExpander | None = None,
     ) -> None:
@@ -90,12 +92,29 @@ class ContextBuilder:
                 "max_context_chars must be > 0"
             )
 
+        if not isinstance(
+            max_recent_turns_chars,
+            int,
+        ):
+            raise TypeError(
+                "max_recent_turns_chars must be an integer"
+            )
+
+        if max_recent_turns_chars <= 0:
+            raise ValueError(
+                "max_recent_turns_chars must be > 0"
+            )
+
         self.memory_search_service = (
             memory_search_service
             or MemorySearchService()
         )
 
         self.max_context_chars = max_context_chars
+
+        self.max_recent_turns_chars = (
+            max_recent_turns_chars
+        )
 
         if ranker is not None and not isinstance(
             ranker,
@@ -259,11 +278,18 @@ class ContextBuilder:
         """
         Construye el contexto textual final.
 
-        1. Crear candidatos.
-        2. Calcular relevancia.
-        3. Ordenar por score.
-        4. Seleccionar dentro del presupuesto.
-        5. Renderizar.
+        El contexto estructurado y el historial reciente
+        tienen presupuestos independientes.
+
+        Presupuesto estructurado:
+            self.max_context_chars
+
+        Presupuesto historial:
+            self.max_recent_turns_chars
+
+        De esta forma una conversación larga no puede expulsar
+        completamente del contexto a las entidades, relaciones,
+        eventos y demás información persistente del mundo.
         """
 
         query = str(
@@ -280,8 +306,71 @@ class ContextBuilder:
             )
         )
 
-        if not candidates:
+        structured_candidates = [
+            candidate
+            for candidate in candidates
+            if candidate["category"]
+            != "recent_turns"
+        ]
+
+        recent_turn_candidates = [
+            candidate
+            for candidate in candidates
+            if candidate["category"]
+            == "recent_turns"
+        ]
+
+        structured_context = (
+            self._render_candidates_with_budget(
+                structured_candidates,
+                self.max_context_chars,
+            )
+        )
+
+        recent_turns_context = (
+            self._render_candidates_with_budget(
+                recent_turn_candidates,
+                self.max_recent_turns_chars,
+            )
+        )
+
+        sections = []
+
+        if structured_context:
+            sections.append(
+                structured_context
+            )
+
+        if recent_turns_context:
+            sections.append(
+                self._category_header(
+                    "recent_turns"
+                )
+                + "\n"
+                + recent_turns_context
+            )
+
+        if not sections:
             return "Sin información relevante."
+
+        return "\n\n".join(sections)
+
+    def _render_candidates_with_budget(
+        self,
+        candidates: list[dict[str, Any]],
+        max_chars: int,
+    ) -> str:
+        """
+        Selecciona y renderiza candidatos respetando
+        un presupuesto independiente.
+
+        El método no modifica los candidatos originales.
+        """
+
+        if not candidates:
+            return ""
+
+        candidates = list(candidates)
 
         candidates.sort(
             key=lambda candidate: (
@@ -312,9 +401,7 @@ class ContextBuilder:
 
             if category not in selected_categories:
 
-                additional_length += len(
-                    header
-                )
+                additional_length += len(header)
 
                 if current_length > 0:
                     additional_length += 1
@@ -324,18 +411,19 @@ class ContextBuilder:
                 + additional_length
             )
 
-            if projected_length > self.max_context_chars:
+            if projected_length > max_chars:
                 continue
 
             selected.append(candidate)
 
             current_length = projected_length
+
             selected_categories.add(
                 category
             )
 
         if not selected:
-            return "Sin información relevante."
+            return ""
 
         selected.sort(
             key=lambda candidate: (
@@ -345,11 +433,9 @@ class ContextBuilder:
             )
         )
 
-        rendered_context = self._render_selected_candidates(
+        return self._render_selected_candidates(
             selected
         )
-
-        return rendered_context
 
     # ============================================================
     # CONTEXT CANDIDATES

@@ -929,3 +929,210 @@ def test_context_builder_rejects_invalid_recent_turns(
         raise AssertionError(
             "Expected TypeError"
         )
+
+def test_context_builder_preserves_recent_turns_in_text_context(
+    empty_world,
+):
+    from models.turn_record import TurnRecord
+    from services.context_builder import ContextBuilder
+
+    turn = TurnRecord(
+        player_input="Pregunto por Aldric.",
+        narrative="El mercader señala la puerta.",
+    )
+
+    builder = ContextBuilder(
+        max_context_chars=6000,
+    )
+
+    result = builder.build(
+        empty_world,
+        "Aldric",
+        recent_turns=[turn],
+    )
+
+    assert "Pregunto por Aldric." in result["context"]
+    assert "El mercader señala la puerta." in result["context"]
+
+
+def test_context_builder_does_not_mutate_recent_turns(
+    empty_world,
+):
+    from models.turn_record import TurnRecord
+    from services.context_builder import ContextBuilder
+
+    turn = TurnRecord(
+        player_input="Pregunto por Aldric.",
+        narrative="El mercader señala la puerta.",
+    )
+
+    recent_turns = [turn]
+    original_recent_turns = list(recent_turns)
+
+    builder = ContextBuilder()
+
+    builder.build(
+        empty_world,
+        "Aldric",
+        recent_turns=recent_turns,
+    )
+
+    assert recent_turns == original_recent_turns
+
+
+def test_context_builder_enforces_context_budget_with_recent_turns(
+    empty_world,
+):
+    from models.turn_record import TurnRecord
+    from services.context_builder import ContextBuilder
+
+    turn = TurnRecord(
+        player_input="A" * 500,
+        narrative="B" * 500,
+    )
+
+    builder = ContextBuilder(
+        max_context_chars=100,
+        max_recent_turns_chars=100,
+    )
+
+    result = builder.build(
+        empty_world,
+        "Aldric",
+        recent_turns=[turn],
+    )
+
+    # El presupuesto se aplica a los candidatos,
+    # pero los encabezados pertenecen al formato final.
+    #
+    # Lo importante en este contrato es que el contenido
+    # del turno haya sido truncado y no pueda crecer
+    # indefinidamente.
+    assert len(
+        result["context"]
+    ) <= 100 + len("HISTORIAL RECIENTE\n")
+
+
+def test_context_builder_rejects_invalid_recent_turns_item(
+    empty_world,
+):
+    from services.context_builder import ContextBuilder
+
+    builder = ContextBuilder()
+
+    try:
+        builder.build(
+            empty_world,
+            "Aldric",
+            recent_turns=[object()],
+        )
+    except TypeError as exc:
+        assert (
+            "recent_turns must contain only TurnRecord objects"
+            in str(exc)
+        )
+    else:
+        raise AssertionError(
+            "Expected TypeError for invalid recent_turns item"
+        )
+
+def test_context_builder_uses_separate_budget_for_recent_turns(
+    empty_world,
+):
+    from models.turn_record import TurnRecord
+    from services.context_builder import ContextBuilder
+
+    turn = TurnRecord(
+        player_input="A" * 500,
+        narrative="B" * 500,
+    )
+
+    builder = ContextBuilder(
+        max_context_chars=100,
+        max_recent_turns_chars=2000,
+    )
+
+    result = builder.build(
+        empty_world,
+        "Aldric",
+        recent_turns=[turn],
+    )
+
+    assert len(result["context"]) > 100
+    assert "Jugador:" in result["context"]
+    assert "DM:" in result["context"]
+
+
+def test_context_builder_structured_budget_is_independent_from_history(
+    empty_world,
+):
+    from models.entity import Entity
+    from models.turn_record import TurnRecord
+    from services.context_builder import ContextBuilder
+
+    empty_world.entities[1] = Entity(
+        id=1,
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader de Vorder's Hold.",
+        notes="",
+        active=True,
+    )
+
+    turn = TurnRecord(
+        player_input="A" * 500,
+        narrative="B" * 500,
+    )
+
+    builder = ContextBuilder(
+        max_context_chars=1000,
+        max_recent_turns_chars=2000,
+    )
+
+    result = builder.build(
+        empty_world,
+        "Aldric",
+        recent_turns=[turn],
+    )
+
+    assert "Aldric" in result["context"]
+    assert "Jugador:" in result["context"]
+    assert "DM:" in result["context"]
+
+
+def test_context_builder_validates_recent_turn_budget(
+    empty_world,
+):
+    from services.context_builder import ContextBuilder
+
+    try:
+        ContextBuilder(
+            max_recent_turns_chars=0,
+        )
+    except ValueError as exc:
+        assert (
+            "max_recent_turns_chars must be > 0"
+            in str(exc)
+        )
+    else:
+        raise AssertionError(
+            "Expected ValueError"
+        )
+
+
+def test_context_builder_rejects_non_integer_recent_turn_budget():
+    from services.context_builder import ContextBuilder
+
+    try:
+        ContextBuilder(
+            max_recent_turns_chars=100.5,
+        )
+    except TypeError as exc:
+        assert (
+            "max_recent_turns_chars must be an integer"
+            in str(exc)
+        )
+    else:
+        raise AssertionError(
+            "Expected TypeError"
+        )
