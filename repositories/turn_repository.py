@@ -162,47 +162,110 @@ class TurnRepository:
         self,
         *,
         session_id: int | None = None,
+        limit: int | None = None,
     ) -> list[TurnRecord]:
 
+        if limit is not None:
+            if not isinstance(limit, int):
+                raise TypeError(
+                    "limit must be an integer"
+                )
+
+            if limit < 1:
+                raise ValueError(
+                    "limit must be greater than zero"
+                )
+
+            if limit > 100:
+                raise ValueError(
+                    "limit must not be greater than 100"
+                )
+
         if session_id is None:
-            result = rows(
-                """
-                SELECT
-                    id,
-                    session_id,
-                    player_input,
-                    narrative,
-                    operation_count,
-                    successful_operation_count,
-                    failed_operation_count,
-                    all_operations_succeeded,
-                    world_changed,
-                    created_at
-                FROM turns
-                ORDER BY id ASC
-                """
-            )
+            if limit is None:
+                result = rows(
+                    """
+                    SELECT
+                        id,
+                        session_id,
+                        player_input,
+                        narrative,
+                        operation_count,
+                        successful_operation_count,
+                        failed_operation_count,
+                        all_operations_succeeded,
+                        world_changed,
+                        created_at
+                    FROM turns
+                    ORDER BY id ASC
+                    """
+                )
+            else:
+                result = rows(
+                    """
+                    SELECT
+                        id,
+                        session_id,
+                        player_input,
+                        narrative,
+                        operation_count,
+                        successful_operation_count,
+                        failed_operation_count,
+                        all_operations_succeeded,
+                        world_changed,
+                        created_at
+                    FROM turns
+                    ORDER BY id ASC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                )
 
         else:
-            result = rows(
-                """
-                SELECT
-                    id,
-                    session_id,
-                    player_input,
-                    narrative,
-                    operation_count,
-                    successful_operation_count,
-                    failed_operation_count,
-                    all_operations_succeeded,
-                    world_changed,
-                    created_at
-                FROM turns
-                WHERE session_id=?
-                ORDER BY id ASC
-                """,
-                (session_id,),
-            )
+            if limit is None:
+                result = rows(
+                    """
+                    SELECT
+                        id,
+                        session_id,
+                        player_input,
+                        narrative,
+                        operation_count,
+                        successful_operation_count,
+                        failed_operation_count,
+                        all_operations_succeeded,
+                        world_changed,
+                        created_at
+                    FROM turns
+                    WHERE session_id=?
+                    ORDER BY id ASC
+                    """,
+                    (session_id,),
+                )
+            else:
+                result = rows(
+                    """
+                    SELECT
+                        id,
+                        session_id,
+                        player_input,
+                        narrative,
+                        operation_count,
+                        successful_operation_count,
+                        failed_operation_count,
+                        all_operations_succeeded,
+                        world_changed,
+                        created_at
+                    FROM turns
+                    WHERE session_id=?
+                    ORDER BY id ASC
+                    LIMIT ?
+                    """,
+                    (
+                        session_id,
+                        limit,
+                    ),
+                )
 
         return [
             self._row_to_model(row)

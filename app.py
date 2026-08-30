@@ -408,9 +408,15 @@ def get_turns(
         default=None,
         ge=1,
     ),
+    limit: int = Query(
+        default=50,
+        ge=1,
+        le=100,
+    ),
 ):
     turns = turn_repository.list_turns(
         session_id=session_id,
+        limit=limit,
     )
 
     return [

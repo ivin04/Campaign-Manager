@@ -1,7 +1,6 @@
 import pytest
 
 from app import create_campaign_turn_service
-from models.world_state import WorldState
 from repositories.campaign_repository import CampaignRepository
 from repositories.character_repository import CharacterRepository
 from repositories.entity_repository import EntityRepository
@@ -68,3 +67,110 @@ def test_create_campaign_turn_service_rejects_invalid_context_builder():
             context_builder="invalid",
             campaign_state_service=campaign_state_service,
         )
+
+def test_get_turns_accepts_limit(client):
+    response = client.get(
+        "/turns?limit=5"
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert isinstance(data, list)
+    assert len(data) <= 5
+
+
+def test_get_turns_rejects_invalid_limit(client):
+    response = client.get(
+        "/turns?limit=0"
+    )
+
+    assert response.status_code == 422
+
+
+def test_get_turns_rejects_limit_above_maximum(client):
+    response = client.get(
+        "/turns?limit=101"
+    )
+
+    assert response.status_code == 422
+
+
+def test_get_turns_filters_by_session_and_limit(
+    client,
+    monkeypatch,
+):
+    calls = []
+
+    def fake_list_turns(
+        *,
+        session_id=None,
+        limit=None,
+    ):
+        calls.append(
+            {
+                "session_id": session_id,
+                "limit": limit,
+            }
+        )
+
+        return []
+
+    monkeypatch.setattr(
+        "app.turn_repository.list_turns",
+        fake_list_turns,
+    )
+
+    response = client.get(
+        "/turns?session_id=7&limit=5"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+    assert calls == [
+        {
+            "session_id": 7,
+            "limit": 5,
+        }
+    ]
+
+
+def test_get_turns_uses_default_limit(
+    client,
+    monkeypatch,
+):
+    calls = []
+
+    def fake_list_turns(
+        *,
+        session_id=None,
+        limit=None,
+    ):
+        calls.append(
+            {
+                "session_id": session_id,
+                "limit": limit,
+            }
+        )
+
+        return []
+
+    monkeypatch.setattr(
+        "app.turn_repository.list_turns",
+        fake_list_turns,
+    )
+
+    response = client.get(
+        "/turns"
+    )
+
+    assert response.status_code == 200
+
+    assert calls == [
+        {
+            "session_id": None,
+            "limit": 50,
+        }
+    ]

@@ -2,6 +2,7 @@ import pytest
 
 from models.world_state import WorldState
 
+from fastapi.testclient import TestClient
 
 @pytest.fixture
 def empty_world():
@@ -46,3 +47,9 @@ def isolated_database(tmp_path, monkeypatch):
     )
 
     yield
+
+@pytest.fixture
+def client():
+    import app
+
+    return TestClient(app.app)
