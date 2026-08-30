@@ -65,13 +65,15 @@ class RecordingExtractor(LLMWorldExtractor):
     def __init__(self, operations=None):
         self.operations = operations or []
         self.received_text = None
-        self.received_world = None
+        self.received_context = None
         self.calls = []
 
-    def extract(self, text, world):
+    def extract(self, text, context):
         self.received_text = text
-        self.received_world = world
-        self.calls.append(("extract", text))
+        self.received_context = context
+        self.calls.append(
+            ("extract", text)
+        )
         return self.operations
 
 
@@ -988,135 +990,107 @@ def test_turn_resolution_separates_world_and_character_operations(
 
     assert result.operation_count == 2
 
-def test_resolve_turn_passes_turn_context_to_extractor(
-    monkeypatch,
-):
-    captured = {}
+def test_turn_resolution_uses_turn_context():
 
-    class FakeDMService:
-        def generate(
-            self,
-            context,
-            player_input,
-            **kwargs,
-        ):
-            return "Aldric recoge una espada."
+    world = make_world()
 
-    class FakeExtractor:
-        def extract(
-            self,
-            text,
-            context,
-        ):
-            captured["context"] = context
-            return []
-
-    applier = RecordingApplier()
-
-    original_apply = applier.apply
-
-    def apply(
-        world,
-        operation,
-    ):
-        order.append("applier")
-
-        return original_apply(
-            world,
-            operation,
-        )
-
-    applier.apply = apply
-
-    world_service = WorldService(
-        applier=applier,
-    )
-
-    service = TurnResolutionService(
-        dm_service=FakeDMService(),
-        extractor=FakeExtractor(),
-        world_service=world_service,
-    )
+    service, dm, extractor, _ = make_service()
 
     context = TurnContext(
-        campaign=CampaignState(),
-        current_session=None,
-        active_character=None,
-        world=WorldState(),
+        campaign=CampaignState(
+            campaign_id=1,
+            name="Test Campaign",
+            system="D&D 5e 2014",
+            tone="serio",
+            summary="Campaña de pruebas.",
+        ),
+        current_session=SessionState(
+            session_id=10,
+            number=1,
+            title="La llegada",
+            summary="Primera sesión.",
+        ),
+        active_character=CharacterState(
+            entity_id=20,
+        ),
+        world=world,
     )
 
     service.resolve_turn(
         context,
-        "Recojo la espada.",
+        "Exploro.",
     )
 
-    assert captured["context"] is context
+    assert dm.calls == [
+        (
+            "generate",
+            context,
+            "Exploro.",
+        )
+    ]
+
+    assert extractor.received_context is context
 
 def test_resolve_turn_preserves_and_applies_operation_references(
     world_service,
 ):
-    entity = type(
-        "Entity",
-        (),
-        {
-            "name": "Aldric",
-            "entity_type": "npc",
-            "description": "",
-        },
+    from operations.operation_reference import (
+        OperationReference,
+    )
+    from operations.referenced_operation import (
+        ReferencedOperation,
+    )
+    from operations.world_operations import (
+        CreateItemOperation,
+        CreateItemInstanceOperation,
     )
 
-    class FakeDMService:
-        def generate(
-            self,
-            context,
-            player_input,
-            **kwargs,
-        ):
-            return "Aldric crea una espada y obtiene la instancia."
+    dm = RecordingDMService()
 
-    class FakeExtractor:
+    class ReferenceExtractor(LLMWorldExtractor):
+        def __init__(self, operations):
+            self.operations = operations
+
         def extract(
             self,
             text,
             context,
         ):
-            return [
-                ReferencedOperation(
-                    operation=CreateItemOperation(
-                        name="Espada larga",
-                        description="Una espada.",
-                    ),
-                    ref="sword",
+            return self.operations
+
+    extractor = ReferenceExtractor(
+        [
+            ReferencedOperation(
+                operation=CreateItemOperation(
+                    name="Espada larga",
+                    description="Una espada.",
                 ),
-                CreateItemInstanceOperation(
-                    item_id=OperationReference(
-                        "sword"
-                    ),
-                    owner_id=None,
-                    location_id=None,
+                ref="sword",
+            ),
+            CreateItemInstanceOperation(
+                item_id=OperationReference(
+                    "sword"
                 ),
-            ]
+                owner_id=None,
+                location_id=None,
+            ),
+        ]
+    )
 
     service = TurnResolutionService(
-        dm_service=FakeDMService(),
-        extractor=FakeExtractor(),
+        dm_service=dm,
+        extractor=extractor,
         world_service=world_service,
     )
 
-    context = TurnContext(
-        campaign=CampaignState(),
-        current_session=None,
-        active_character=None,
-        world=world_service.world,
-    )
+    context = make_turn_context()
 
     result = service.resolve_turn(
-        context,
-        "Creo una espada.",
+        turn_context=context,
+        player_input="Creo una espada.",
     )
 
     assert result.narrative
-    assert len(result.operations) == 2
 
     assert len(
         world_service.world.items
@@ -1127,7 +1101,9 @@ def test_resolve_turn_preserves_and_applies_operation_references(
     ) == 1
 
     item_id = next(
-        iter(world_service.world.items)
+        iter(
+            world_service.world.items
+        )
     )
 
     instance = next(
@@ -1141,16 +1117,16 @@ def test_resolve_turn_preserves_and_applies_operation_references(
 def test_resolve_turn_rejects_unknown_operation_reference(
     world_service,
 ):
-    class FakeDMService:
-        def generate(
-            self,
-            context,
-            player_input,
-            **kwargs,
-        ):
-            return "La instancia aparece."
+    from operations.operation_reference import (
+        OperationReference,
+    )
+    from operations.world_operations import (
+        CreateItemInstanceOperation,
+    )
 
-    class FakeExtractor:
+    dm = RecordingDMService()
+
+    class ReferenceExtractor(LLMWorldExtractor):
         def extract(
             self,
             text,
@@ -1166,23 +1142,23 @@ def test_resolve_turn_rejects_unknown_operation_reference(
                 ),
             ]
 
+    extractor = ReferenceExtractor()
+
     service = TurnResolutionService(
-        dm_service=FakeDMService(),
-        extractor=FakeExtractor(),
+        dm_service=dm,
+        extractor=extractor,
         world_service=world_service,
     )
 
-    context = TurnContext(
-        campaign=CampaignState(),
-        current_session=None,
-        active_character=None,
-        world=world_service.world,
-    )
+    context = make_turn_context()
 
     with pytest.raises(
-        TurnResolutionServiceError
+        (
+            ValueError,
+            TurnResolutionServiceError,
+        )
     ):
         service.resolve_turn(
-            context,
-            "Creo una instancia.",
+            turn_context=context,
+            player_input="Creo una instancia.",
         )

@@ -265,20 +265,12 @@ class WorldService:
 
         Las operaciones pueden ser ReferencedOperation.
 
-        Las referencias se resuelven en orden de ejecución:
+        Las referencias se resuelven en orden dentro de cada grupo
+        de operaciones y los IDs generados quedan disponibles para
+        operaciones posteriores.
 
-            create_entity(ref="npc")
-            create_relation(target_id="$npc")
-
-        El ID generado por una operación anterior queda disponible
-        para las siguientes operaciones del mismo turno.
-
-        Si una operación falla:
-
-            - se revierte WorldState en memoria
-            - la transacción de SQLite se revierte si esta función
-            es propietaria de la conexión
-            - no se deja ningún cambio parcial
+        Si una operación falla, se restaura el WorldState original y
+        la transacción de SQLite se revierte mediante el context manager.
         """
 
         original_world = self.world
@@ -307,61 +299,84 @@ class WorldService:
                 None,
             )
 
+        def apply_world_operation(
+            raw_operation,
+            connection,
+        ):
+            operation, ref = unwrap_operation(
+                raw_operation
+            )
+
+            operation = (
+                self._resolve_operation_references(
+                    operation,
+                    references,
+                )
+            )
+
+            result = self.applier.apply(
+                self.world,
+                operation,
+            )
+
+            results.append(result)
+
+            if not result.success:
+                raise _WorldTurnOperationFailure(
+                    results
+                )
+
+            self._register_operation_reference(
+                ref,
+                result,
+                references,
+            )
+
+        def apply_character_operation(
+            raw_operation,
+            connection,
+        ):
+            operation, ref = unwrap_operation(
+                raw_operation
+            )
+
+            operation = (
+                self._resolve_operation_references(
+                    operation,
+                    references,
+                )
+            )
+
+            result = self.character_applier.apply(
+                operation,
+                conn=connection,
+            )
+
+            results.append(result)
+
+            if not result.success:
+                raise _WorldTurnOperationFailure(
+                    results
+                )
+
+            self._register_operation_reference(
+                ref,
+                result,
+                references,
+            )
+
         def apply_with_connection(connection):
 
-            all_operations = [
-                *world_operations,
-                *character_operations,
-            ]
-
-            for raw_operation in all_operations:
-
-                operation, ref = unwrap_operation(
-                    raw_operation
+            for operation in world_operations:
+                apply_world_operation(
+                    operation,
+                    connection,
                 )
 
-                operation = (
-                    self._resolve_operation_references(
-                        operation,
-                        references,
-                    )
-                )
-
-                if isinstance(
+            for operation in character_operations:
+                apply_character_operation(
                     operation,
-                    WorldOperation,
-                ):
-                    result = self.applier.apply(
-                        self.world,
-                        operation,
-                    )
-
-                elif isinstance(
-                    operation,
-                    CharacterOperation,
-                ):
-                    result = self.character_applier.apply(
-                        operation,
-                        conn=connection,
-                    )
-
-                else:
-                    raise TypeError(
-                        "Unsupported turn operation: "
-                        f"{type(operation).__name__}"
-                    )
-
-                results.append(result)
-
-                if not result.success:
-                    raise _WorldTurnOperationFailure(
-                        results
-                    )
-
-                self._register_operation_reference(
-                    ref,
-                    result,
-                    references,
+                    connection,
                 )
 
             if world_operations:
