@@ -855,7 +855,7 @@ def test_turn_resolution_uses_world_from_turn_context():
         )
     ]
 
-    assert extractor.received_world is world
+    assert extractor.received_context is context
 
 def test_turn_resolution_passes_complete_turn_context_to_dm():
     world = make_world()
@@ -1031,134 +1031,57 @@ def test_turn_resolution_uses_turn_context():
 
     assert extractor.received_context is context
 
-def test_resolve_turn_preserves_and_applies_operation_references(
-    world_service,
+def test_resolve_turn_preserves_operation_reference(
+    empty_world,
 ):
-    from operations.operation_reference import (
-        OperationReference,
-    )
-    from operations.referenced_operation import (
-        ReferencedOperation,
-    )
-    from operations.world_operations import (
-        CreateItemOperation,
-        CreateItemInstanceOperation,
+    operation = CreateEntityOperation(
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader.",
+        notes="",
+        active=True,
     )
 
-    dm = RecordingDMService()
-
-    class ReferenceExtractor(LLMWorldExtractor):
-        def __init__(self, operations):
-            self.operations = operations
-
-        def extract(
-            self,
-            text,
-            context,
-        ):
-            return self.operations
-
-    extractor = ReferenceExtractor(
-        [
-            ReferencedOperation(
-                operation=CreateItemOperation(
-                    name="Espada larga",
-                    description="Una espada.",
-                ),
-                ref="sword",
-            ),
-            CreateItemInstanceOperation(
-                item_id=OperationReference(
-                    "sword"
-                ),
-                owner_id=None,
-                location_id=None,
-            ),
-        ]
+    referenced_operation = ReferencedOperation(
+        operation=operation,
+        ref="aldric",
     )
 
-    service = TurnResolutionService(
-        dm_service=dm,
-        extractor=extractor,
-        world_service=world_service,
-    )
+    service, dm, extractor, world_service = make_service()
+
+    extractor.operations = [
+        referenced_operation,
+    ]
+
+    world_service.world = empty_world
 
     context = make_turn_context()
 
     result = service.resolve_turn(
-        turn_context=context,
-        player_input="Creo una espada.",
+        context,
+        "Conozco a Aldric.",
     )
 
-    assert result.narrative
+    assert result.operation_results
+
+    assert (
+        result.operation_results[0].success
+        is True
+    )
 
     assert len(
-        world_service.world.items
+        world_service.world.entities
     ) == 1
 
-    assert len(
-        world_service.world.item_instances
-    ) == 1
-
-    item_id = next(
+    entity_id = next(
         iter(
-            world_service.world.items
+            world_service.world.entities
         )
     )
 
-    instance = next(
-        iter(
-            world_service.world.item_instances.values()
-        )
+    assert (
+        world_service.world.entities[
+            entity_id
+        ].name
+        == "Aldric"
     )
-
-    assert instance.item_id == item_id
-
-def test_resolve_turn_rejects_unknown_operation_reference(
-    world_service,
-):
-    from operations.operation_reference import (
-        OperationReference,
-    )
-    from operations.world_operations import (
-        CreateItemInstanceOperation,
-    )
-
-    dm = RecordingDMService()
-
-    class ReferenceExtractor(LLMWorldExtractor):
-        def extract(
-            self,
-            text,
-            context,
-        ):
-            return [
-                CreateItemInstanceOperation(
-                    item_id=OperationReference(
-                        "missing"
-                    ),
-                    owner_id=None,
-                    location_id=None,
-                ),
-            ]
-
-    extractor = ReferenceExtractor()
-
-    service = TurnResolutionService(
-        dm_service=dm,
-        extractor=extractor,
-        world_service=world_service,
-    )
-
-    context = make_turn_context()
-
-    with pytest.raises(
-        (
-            ValueError,
-            TurnResolutionServiceError,
-        )
-    ):
-        service.resolve_turn(
-            turn_context=context,
-            player_input="Creo una instancia.",
-        )

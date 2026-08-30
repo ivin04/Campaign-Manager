@@ -6,11 +6,14 @@ from database import get_conn
 
 from operations.operation_reference import OperationReference
 from operations.referenced_operation import ReferencedOperation
-from operations.world_operations import WorldOperation
-from operations.character_operations import CharacterOperation
 
 from models.world_state import WorldState
 from models.operation_result import OperationResult
+
+from operations.world_operations import (
+    WorldOperation,
+    CreateEntityOperation,
+)
 
 from repositories.world_repository import (
     WorldRepository,
@@ -325,13 +328,13 @@ class WorldService:
                 raise _WorldTurnOperationFailure(
                     results
                 )
-
+            
             self._register_operation_reference(
                 ref,
                 result,
                 references,
+                self.world,
             )
-
         def apply_character_operation(
             raw_operation,
             connection,
@@ -474,11 +477,14 @@ class WorldService:
         ref,
         result,
         references,
+        world,
     ):
         """
         Registra el ID generado por una operación.
 
-        Una referencia debe producir exactamente un ID.
+        Las operaciones que crean entidades pueden no devolver el ID
+        en result.data. En ese caso, se intenta localizar el objeto
+        recién creado utilizando el estado contenido en result.operation.
         """
 
         if ref is None:
@@ -495,10 +501,44 @@ class WorldService:
             if key.endswith("_id")
         ]
 
-        if len(generated_ids) != 1:
+        if len(generated_ids) == 1:
+            references[ref] = generated_ids[0]
+            return
+
+        if len(generated_ids) > 1:
             raise ValueError(
-                f"Operation reference '{ref}' did not "
-                "produce exactly one generated ID."
+                f"Operation reference '{ref}' produced "
+                "multiple generated IDs."
             )
 
-        references[ref] = generated_ids[0]
+        operation = result.operation
+
+        if isinstance(
+            operation,
+            CreateEntityOperation,
+        ):
+            entity = next(
+                (
+                    entity
+                    for entity in self.world.entities.values()
+                    if (
+                        entity.name == operation.name
+                        and entity.entity_type
+                        == operation.entity_type
+                    )
+                ),
+                None,
+            )
+
+            if entity is not None:
+                for entity_id, stored_entity in (
+                    self.world.entities.items()
+                ):
+                    if stored_entity is entity:
+                        references[ref] = entity_id
+                        return
+
+        raise ValueError(
+            f"Operation reference '{ref}' did not "
+            "produce exactly one generated ID."
+        )
