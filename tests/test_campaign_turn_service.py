@@ -2011,3 +2011,129 @@ def test_play_turn_releases_lock_after_resolution_failure():
 
     assert result.player_input == "Segundo turno."
     assert resolution_service.calls == 2
+
+def test_mixed_turn_operations_are_atomic_when_character_operation_fails(
+    isolated_database,
+):
+    from database import execute, one
+    from models.operation_result import (
+        OperationResult,
+        OperationStatus,
+    )
+    from models.turn_resolution_result import (
+        TurnResolutionResult,
+    )
+    from operations.character_operations import (
+        ChangeCharacterHpOperation,
+    )
+    from operations.world_operations import (
+        CreateEntityOperation,
+    )
+    from repositories.character_repository import (
+        CharacterRepository,
+    )
+    from models.character_state import CharacterState
+
+    execute(
+        """
+        INSERT INTO entities (
+            name,
+            entity_type,
+            description,
+            notes,
+            active
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            "Aldric",
+            "character",
+            "Personaje de prueba.",
+            "",
+            1,
+        ),
+    )
+
+    CharacterRepository().save_character(
+        CharacterState(
+            entity_id=1,
+            level=1,
+            class_name="Fighter",
+            current_hp=10,
+            max_hp=10,
+            armor_class=16,
+            strength=15,
+            dexterity=14,
+            constitution=14,
+            intelligence=10,
+            wisdom=10,
+            charisma=10,
+            proficiency_bonus=2,
+            metadata={},
+        )
+    )
+
+    world_service = RecordingWorldService()
+
+    world_operation = CreateEntityOperation(
+        name="Temporal",
+        entity_type="npc",
+        description="NPC temporal.",
+        notes="",
+        active=True,
+    )
+
+    character_operation = ChangeCharacterHpOperation(
+        entity_id=1,
+        amount=-5,
+    )
+
+    class FailingCharacterApplier:
+        def apply(
+            self,
+            operation,
+            *,
+            conn=None,
+        ):
+            return OperationResult(
+                status=OperationStatus.INVALID,
+                message="Forced character failure.",
+                operation=operation,
+            )
+
+    world_service.character_applier = (
+        FailingCharacterApplier()
+    )
+
+    result = world_service.apply_turn_operations(
+        [world_operation],
+        [character_operation],
+    )
+
+    assert len(result) == 2
+
+    assert result[0].success is True
+    assert result[1].success is False
+
+    assert world_service.world.entities == {}
+
+    character = one(
+        """
+        SELECT current_hp
+        FROM character_states
+        WHERE entity_id=1
+        """
+    )
+
+    assert character["current_hp"] == 10
+
+    temporal = one(
+        """
+        SELECT id
+        FROM entities
+        WHERE name=?
+        """,
+        ("Temporal",),
+    )
+
+    assert temporal is None
