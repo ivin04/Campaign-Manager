@@ -15,6 +15,10 @@ from operations.world_operations import (
     CreateEntityOperation,
 )
 
+from operations.character_operations import (
+    CharacterOperation,
+)
+
 from repositories.world_repository import (
     WorldRepository,
 )
@@ -279,6 +283,34 @@ class WorldService:
         Si una operación falla, se restaura el WorldState original y
         la transacción de SQLite se revierte mediante el context manager.
         """
+
+        if world_operations is None:
+            raise TypeError(
+                "world_operations must not be None"
+            )
+
+        if character_operations is None:
+            raise TypeError(
+                "character_operations must not be None"
+            )
+
+        try:
+            world_operations = tuple(
+                world_operations
+            )
+        except TypeError as exc:
+            raise TypeError(
+                "world_operations must be iterable"
+            ) from exc
+
+        try:
+            character_operations = tuple(
+                character_operations
+            )
+        except TypeError as exc:
+            raise TypeError(
+                "character_operations must be iterable"
+            ) from exc
 
         original_world = self.world
 
