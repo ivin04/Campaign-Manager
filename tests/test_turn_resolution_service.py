@@ -1116,7 +1116,12 @@ def test_referenced_world_operation_keeps_reference():
         operation
         for operation in normalized_operations
         if isinstance(
-            TurnResolutionService.get_operation(operation),
+            operation.operation
+            if isinstance(
+                operation,
+                ReferencedOperation,
+            )
+            else operation,
             WorldOperation,
         )
     )
@@ -1160,7 +1165,12 @@ def test_referenced_operation_survives_turn_resolution():
         operation
         for operation in normalized_operations
         if isinstance(
-            TurnResolutionService.get_operation(operation),
+            operation.operation
+            if isinstance(
+                operation,
+                ReferencedOperation,
+            )
+            else operation,
             WorldOperation,
         )
     )
@@ -1175,6 +1185,11 @@ def test_referenced_operation_survives_turn_resolution():
     )
 
     assert first.ref == "npc"
+
+    assert isinstance(
+        first.operation,
+        CreateEntityOperation,
+    )
 
     second = world_operations[1]
 
