@@ -998,3 +998,67 @@ def test_apply_operations_rejects_duplicate_operation_reference():
         )
 
     assert service.world.entities == {}
+
+def test_apply_operations_accepts_no_change_as_success_without_marking_world_changed():
+    from models.operation_result import OperationStatus
+    from operations.world_operations import UpdateEntityOperation
+    from models.entity import Entity
+
+    service = WorldService()
+
+    service.world.entities[1] = Entity(
+        id=1,
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader.",
+        notes="",
+        active=True,
+    )
+
+    result = service.apply_operations(
+        [
+            UpdateEntityOperation(
+                entity_id=1,
+                name="Aldric",
+            )
+        ]
+    )
+
+    assert result.success is True
+    assert result.changed is False
+    assert result.results[0].status == OperationStatus.NO_CHANGE
+
+    assert service.world.entities[1].name == "Aldric"
+
+def test_apply_operations_marks_world_changed_when_operation_changes_state():
+    from operations.world_operations import UpdateEntityOperation
+    from models.entity import Entity
+
+    service = WorldService()
+
+    service.world.entities[1] = Entity(
+        id=1,
+        name="Aldric",
+        entity_type="npc",
+        description="Mercader.",
+        notes="",
+        active=True,
+    )
+
+    result = service.apply_operations(
+        [
+            UpdateEntityOperation(
+                entity_id=1,
+                name="Aldric el Mercader",
+            )
+        ]
+    )
+
+    assert result.success is True
+    assert result.changed is True
+    assert result.results[0].changed is True
+
+    assert (
+        service.world.entities[1].name
+        == "Aldric el Mercader"
+    )

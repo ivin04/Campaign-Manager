@@ -191,7 +191,10 @@ class WorldService:
                         world=original_state,
                     )
 
-            changed = bool(results)
+            changed = any(
+                result.changed
+                for result in results
+            )
 
             return WorldApplicationResult(
                 success=True,

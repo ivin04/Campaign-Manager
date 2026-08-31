@@ -22,7 +22,10 @@ class OperationResult:
 
     @property
     def success(self) -> bool:
-        return self.status == OperationStatus.SUCCESS
+        return self.status in (
+            OperationStatus.SUCCESS,
+            OperationStatus.NO_CHANGE,
+        )
 
     @property
     def changed(self) -> bool:
