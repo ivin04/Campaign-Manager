@@ -21,6 +21,7 @@ from operations.world_operations import (
 
 from operations.operation_reference import OperationReference
 from operations.referenced_operation import ReferencedOperation
+from operations.world_operations import UpdateEntityOperation
 
 from database import init_db
 
@@ -1062,3 +1063,19 @@ def test_apply_operations_marks_world_changed_when_operation_changes_state():
         service.world.entities[1].name
         == "Aldric el Mercader"
     )
+
+def test_apply_operations_rejects_unknown_operation_reference():
+    service = WorldService()
+
+    operation = UpdateEntityOperation(
+        entity_id=OperationReference("missing_entity"),
+        description="Should never be applied",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"Unknown operation reference: \$missing_entity",
+    ):
+        service.apply_operations(
+            [operation]
+        )
