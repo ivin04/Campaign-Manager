@@ -23,7 +23,9 @@ class CharacterApplier:
         self,
         character_service: CharacterService,
     ):
-        self.character_service = character_service
+        self.character_service = (
+            character_service
+        )
 
     def apply(
         self,
@@ -54,9 +56,21 @@ class CharacterApplier:
                     )
 
             except CharacterServiceError as exc:
-                raise CharacterApplierError(
-                    str(exc)
-                ) from exc
+                message = str(exc)
+
+                if "not found" in message.lower():
+                    status = OperationStatus.NOT_FOUND
+                else:
+                    status = OperationStatus.INVALID
+
+                return OperationResult(
+                    status=status,
+                    message=message,
+                    operation=operation,
+                    data={
+                        "entity_id": operation.entity_id,
+                    },
+                )
 
             return OperationResult(
                 status=OperationStatus.SUCCESS,

@@ -10,6 +10,8 @@ from services.character_applier import (
     CharacterApplier,
     CharacterApplierError,
 )
+from models.operation_result import OperationStatus
+from services.character_applier import CharacterServiceError
 
 
 class RecordingCharacterService:
@@ -94,7 +96,7 @@ def test_unsupported_character_operation_is_rejected():
         )
 
 
-def test_character_service_error_is_wrapped():
+def test_character_service_error_returns_failed_operation_result():
 
     class FailingCharacterService:
 
@@ -108,10 +110,6 @@ def test_character_service_error_is_wrapped():
                 "character failure"
             )
 
-    from services.character_service import (
-        CharacterServiceError,
-    )
-
     applier = CharacterApplier(
         FailingCharacterService()
     )
@@ -121,14 +119,12 @@ def test_character_service_error_is_wrapped():
         amount=-4,
     )
 
-    try:
-        applier.apply(operation)
-    except CharacterApplierError as exc:
-        assert str(exc) == "character failure"
-    else:
-        raise AssertionError(
-            "Expected CharacterApplierError"
-        )
+    result = applier.apply(operation)
+
+    assert result.success is False
+    assert result.status == OperationStatus.INVALID
+    assert result.operation == operation
+    assert result.message == "character failure"
 
 
 def test_apply_change_character_hp_passes_connection():
@@ -208,3 +204,76 @@ def test_apply_change_character_hp_passes_connection():
         "entity_id": 7,
         "current_hp": 15,
     }
+
+def test_apply_returns_failure_when_character_service_fails():
+    from operations.character_operations import (
+        ChangeCharacterHpOperation,
+    )
+    from services.character_applier import (
+        CharacterApplier,
+    )
+    from services.character_service import (
+        CharacterServiceError,
+    )
+
+    class FakeCharacterService:
+        def change_hp(self, **kwargs):
+            raise CharacterServiceError(
+                "character not found",
+                status=OperationStatus.NOT_FOUND,
+            )
+
+    applier = CharacterApplier(
+        FakeCharacterService()
+    )
+
+    operation = ChangeCharacterHpOperation(
+        entity_id=999,
+        amount=-5,
+    )
+
+    result = applier.apply(operation)
+
+    assert result.success is False
+    assert result.operation == operation
+    assert result.message == "character not found"
+    assert result.data["entity_id"] == 999
+
+def test_apply_returns_failure_when_character_service_fails_with_connection():
+    from operations.character_operations import (
+        ChangeCharacterHpOperation,
+    )
+    from services.character_applier import (
+        CharacterApplier,
+    )
+    from services.character_service import (
+        CharacterServiceError,
+    )
+
+    class FakeCharacterService:
+        def change_hp(self, **kwargs):
+            assert kwargs["conn"] == "fake-connection"
+
+            raise CharacterServiceError(
+                "character not found",
+                status=OperationStatus.NOT_FOUND,
+            )
+
+    applier = CharacterApplier(
+        FakeCharacterService()
+    )
+
+    operation = ChangeCharacterHpOperation(
+        entity_id=999,
+        amount=-5,
+    )
+
+    result = applier.apply(
+        operation,
+        conn="fake-connection",
+    )
+
+    assert result.success is False
+    assert result.operation == operation
+    assert result.message == "character not found"
+    assert result.data["entity_id"] == 999

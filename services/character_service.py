@@ -1,11 +1,20 @@
 from models.character_state import CharacterState
+from models.operation_result import OperationStatus
 from repositories.character_repository import (
     CharacterRepository,
 )
 
 
 class CharacterServiceError(Exception):
-    pass
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: OperationStatus = OperationStatus.INVALID,
+    ):
+        super().__init__(message)
+        self.status = status
 
 
 class CharacterService:
@@ -35,7 +44,8 @@ class CharacterService:
 
         if character is None:
             raise CharacterServiceError(
-                f"Character {entity_id} not found"
+                f"Character {entity_id} not found",
+                status=OperationStatus.NOT_FOUND,
             )
 
         new_hp = character.current_hp + amount
@@ -75,5 +85,6 @@ class CharacterService:
 
         except Exception as exc:
             raise CharacterServiceError(
-                "failed to save character"
+                "failed to save character",
+                status=OperationStatus.INVALID,
             ) from exc
