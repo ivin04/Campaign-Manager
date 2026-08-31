@@ -81,6 +81,110 @@ class MemorySearchService:
         }
 
     # ------------------------------------------------------------------
+    # VALIDATION
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_world(
+        world: WorldState,
+    ) -> None:
+        if not isinstance(world, WorldState):
+            raise TypeError(
+                "world must be a WorldState"
+            )
+
+    # ------------------------------------------------------------------
+    # EXPORT
+    # ------------------------------------------------------------------
+
+    def export(
+        self,
+        world: WorldState,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """
+        Exporta únicamente el estado público del mundo.
+
+        Reglas:
+        - entidades inactivas no se exportan;
+        - relaciones inactivas no se exportan;
+        - eventos secretos no se exportan;
+        - los objetos restantes se serializan sin modificar WorldState.
+        """
+
+        self._validate_world(world)
+
+        return {
+            "entities": [
+                self._serialize(entity)
+                for entity in world.entities.values()
+                if getattr(
+                    entity,
+                    "active",
+                    True,
+                )
+            ],
+            "items": [
+                self._serialize(item)
+                for item in world.items.values()
+                if getattr(
+                    item,
+                    "active",
+                    True,
+                )
+            ],
+            "item_instances": [
+                self._serialize(instance)
+                for instance in world.item_instances.values()
+                if getattr(
+                    instance,
+                    "active",
+                    True,
+                )
+            ],
+            "resources": [
+                self._serialize(resource)
+                for resource in world.resources.values()
+                if getattr(
+                    resource,
+                    "active",
+                    True,
+                )
+            ],
+            "resource_balances": [
+                self._serialize(balance)
+                for balance in world.resource_balances.values()
+                if getattr(
+                    balance,
+                    "active",
+                    True,
+                )
+            ],
+            "relations": [
+                self._serialize(relation)
+                for relation in world.relations.values()
+                if getattr(
+                    relation,
+                    "active",
+                    True,
+                )
+            ],
+            "events": [
+                self._serialize(event)
+                for event in world.events.values()
+                if not getattr(
+                    event,
+                    "secret",
+                    False,
+                )
+                and getattr(
+                    event,
+                    "active",
+                    True,
+                )
+            ],
+        }
+
+    # ------------------------------------------------------------------
     # ENTITIES
     # ------------------------------------------------------------------
 

@@ -498,15 +498,150 @@ class ContextExpander:
         search_result: dict[str, Any],
     ) -> dict[str, Any]:
         """
-        Completa:
+        Completa el resultado con objetos relacionados con las entidades
+        encontradas y resuelve sus objetos padre.
 
-            ItemInstance -> Item
-            ResourceBalance -> Resource
+        Relaciones de propiedad:
+
+            Entity
+                -> ItemInstance
+                -> ResourceBalance
+
+        Relaciones de parentesco:
+
+            ItemInstance
+                -> Item
+
+            ResourceBalance
+                -> Resource
+
+        No modifica WorldState.
         """
 
         result = self._copy_search_result(
             search_result
         )
+
+        # ============================================================
+        # ENTIDADES RELEVANTES
+        # ============================================================
+
+        entity_ids = {
+            entity.get("id")
+            for entity in result.get(
+                "entities",
+                [],
+            )
+            if isinstance(entity, dict)
+            and isinstance(
+                entity.get("id"),
+                int,
+            )
+        }
+
+        # ============================================================
+        # OWNED ITEM INSTANCES
+        # ============================================================
+
+        existing_instance_ids = {
+            instance.get("id")
+            for instance in result.get(
+                "item_instances",
+                [],
+            )
+            if isinstance(instance, dict)
+        }
+
+        for instance in world.item_instances.values():
+
+            if not getattr(
+                instance,
+                "active",
+                True,
+            ):
+                continue
+
+            owner_id = getattr(
+                instance,
+                "owner_id",
+                None,
+            )
+
+            if owner_id not in entity_ids:
+                continue
+
+            instance_id = getattr(
+                instance,
+                "id",
+                None,
+            )
+
+            if instance_id in existing_instance_ids:
+                continue
+
+            result["item_instances"].append(
+                WorldSerializer.item_instance_to_dict(
+                    instance
+                )
+            )
+
+            existing_instance_ids.add(
+                instance_id
+            )
+
+        # ============================================================
+        # OWNED RESOURCE BALANCES
+        # ============================================================
+
+        existing_balance_ids = {
+            balance.get("id")
+            for balance in result.get(
+                "resource_balances",
+                [],
+            )
+            if isinstance(balance, dict)
+        }
+
+        for balance in world.resource_balances.values():
+
+            if not getattr(
+                balance,
+                "active",
+                True,
+            ):
+                continue
+
+            owner_id = getattr(
+                balance,
+                "owner_id",
+                None,
+            )
+
+            if owner_id not in entity_ids:
+                continue
+
+            balance_id = getattr(
+                balance,
+                "id",
+                None,
+            )
+
+            if balance_id in existing_balance_ids:
+                continue
+
+            result["resource_balances"].append(
+                WorldSerializer.resource_balance_to_dict(
+                    balance
+                )
+            )
+
+            existing_balance_ids.add(
+                balance_id
+            )
+
+        # ============================================================
+        # ITEM PARENTS
+        # ============================================================
 
         existing_item_ids = {
             item.get("id")
@@ -521,7 +656,10 @@ class ContextExpander:
             "item_instances",
             [],
         ):
-            if not isinstance(instance, dict):
+            if not isinstance(
+                instance,
+                dict,
+            ):
                 continue
 
             item_id = instance.get(
@@ -541,6 +679,13 @@ class ContextExpander:
             if item is None:
                 continue
 
+            if not getattr(
+                item,
+                "active",
+                True,
+            ):
+                continue
+
             result["items"].append(
                 WorldSerializer.item_to_dict(
                     item
@@ -550,6 +695,10 @@ class ContextExpander:
             existing_item_ids.add(
                 item_id
             )
+
+        # ============================================================
+        # RESOURCE PARENTS
+        # ============================================================
 
         existing_resource_ids = {
             resource.get("id")
@@ -564,7 +713,10 @@ class ContextExpander:
             "resource_balances",
             [],
         ):
-            if not isinstance(balance, dict):
+            if not isinstance(
+                balance,
+                dict,
+            ):
                 continue
 
             resource_id = balance.get(
@@ -582,6 +734,13 @@ class ContextExpander:
             )
 
             if resource is None:
+                continue
+
+            if not getattr(
+                resource,
+                "active",
+                True,
+            ):
                 continue
 
             result["resources"].append(
