@@ -370,6 +370,11 @@ class CampaignTurnService:
             ) from exc
 
         except CampaignTurnServiceError:
+            self._restore_world_state(
+                world,
+                world_snapshot,
+            )
+
             raise
 
         except Exception as exc:

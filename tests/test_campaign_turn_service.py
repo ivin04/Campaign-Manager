@@ -20,6 +20,8 @@ from services.turn_resolution_service import (
     TurnResolutionServiceError,
 )
 from services.world_service import WorldService
+from services.dm_service import DMService
+from services.llm_world_extractor import LLMWorldExtractor
 from models.operation_result import OperationResult, OperationStatus
 from repositories.turn_repository import TurnRepository
 
@@ -1603,4 +1605,55 @@ def test_play_turn_restores_world_when_turn_persistence_fails(
             original_world.entities
         )
         == original_entity_count
+    )
+
+def test_invalid_resolution_result_restores_world():
+    class MutatingInvalidResultService(
+        TurnResolutionService
+    ):
+        def resolve_turn(
+            self,
+            turn_context,
+            player_input,
+            *,
+            recent_turns=None,
+            conn=None,
+        ):
+            turn_context.world.entities[1] = "temporary"
+
+            return object()
+
+    world_service = RecordingWorldService()
+
+    world_service.world.entities[1] = (
+        "original"
+    )
+
+    original_world = world_service.world
+
+    dm_service = object.__new__(DMService)
+    extractor = object.__new__(LLMWorldExtractor)
+
+    resolver = MutatingInvalidResultService(
+        dm_service=dm_service,
+        extractor=extractor,
+        world_service=world_service,
+    )
+
+    service = CampaignTurnService(
+        turn_resolution_service=resolver,
+        world_service=world_service,
+    )
+
+    with pytest.raises(
+        CampaignTurnServiceError,
+        match="invalid TurnResolutionResult",
+    ):
+        service.play_turn(
+            "Exploro."
+        )
+
+    assert (
+        world_service.world.entities[1]
+        == "original"
     )
