@@ -278,7 +278,9 @@ class TurnResolutionService:
                 )
 
 
-        def unwrap_operation(operation):
+        def unwrap_operation(
+            operation,
+        ):
             if isinstance(
                 operation,
                 ReferencedOperation,
@@ -288,23 +290,30 @@ class TurnResolutionService:
             return operation
 
 
-        world_operations = [
-            operation
+        unwrapped_operations = tuple(
+            unwrap_operation(
+                operation
+            )
             for operation in normalized_operations
+        )
+
+        world_operations = tuple(
+            operation
+            for operation in unwrapped_operations
             if isinstance(
-                unwrap_operation(operation),
+                operation,
                 WorldOperation,
             )
-        ]
+        )
 
-        character_operations = [
+        character_operations = tuple(
             operation
-            for operation in normalized_operations
+            for operation in unwrapped_operations
             if isinstance(
-                unwrap_operation(operation),
+                operation,
                 CharacterOperation,
             )
-        ]
+        )
 
         # ========================================================
         # 3. APLICAR OPERACIONES DE FORMA ATÓMICA
