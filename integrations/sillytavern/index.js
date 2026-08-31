@@ -2,6 +2,12 @@ import {
     extension_settings,
 } from '../../extensions.js';
 
+import {
+    chat,
+    eventSource,
+    event_types,
+} from '../../../script.js';
+
 const extensionName = 'campaign-manager';
 
 const defaultSettings = {
@@ -373,6 +379,133 @@ async function testConnection() {
     }
 }
 
+function registerTurnDetection() {
+    if (
+        !eventSource ||
+        !event_types
+    ) {
+        warn(
+            'SillyTavern event system is unavailable.',
+        );
+
+        return;
+    }
+
+    const messageReceivedEvent =
+        event_types.MESSAGE_RECEIVED;
+
+    if (!messageReceivedEvent) {
+        warn(
+            'MESSAGE_RECEIVED event is unavailable.',
+        );
+
+        return;
+    }
+
+    eventSource.on(
+        messageReceivedEvent,
+        onMessageReceived,
+    );
+
+    log(
+        'Turn detection registered:',
+        messageReceivedEvent,
+    );
+}
+
+function onMessageReceived() {
+    const currentSettings =
+        getSettings();
+
+    if (!currentSettings.enabled) {
+        return;
+    }
+
+    if (!Array.isArray(chat)) {
+        warn(
+            'SillyTavern chat is unavailable.',
+        );
+
+        return;
+    }
+
+    if (chat.length < 2) {
+        warn(
+            'Not enough messages to process a turn.',
+        );
+
+        return;
+    }
+
+    const narrative =
+        chat[chat.length - 1];
+
+    if (!narrative) {
+        return;
+    }
+
+    if (narrative.is_user) {
+        warn(
+            'Last message is not an assistant message. Skipping.',
+        );
+
+        return;
+    }
+
+    const playerMessage =
+        chat[chat.length - 2];
+
+    if (!playerMessage) {
+        warn(
+            'Player message not found.',
+        );
+
+        return;
+    }
+
+    if (!playerMessage.is_user) {
+        warn(
+            'Previous message is not a user message. Skipping.',
+        );
+
+        return;
+    }
+
+    const playerInput =
+        typeof playerMessage.mes === 'string'
+            ? playerMessage.mes.trim()
+            : '';
+
+    const narrativeText =
+        typeof narrative.mes === 'string'
+            ? narrative.mes.trim()
+            : '';
+
+    if (!playerInput) {
+        warn(
+            'Player input is empty. Skipping.',
+        );
+
+        return;
+    }
+
+    if (!narrativeText) {
+        warn(
+            'Narrative is empty. Skipping.',
+        );
+
+        return;
+    }
+
+    log(
+        'Turn detected:',
+        {
+            player_input: playerInput,
+            narrative: narrativeText,
+        },
+    );
+}
+
 function initializeExtension() {
     const currentSettings =
         getSettings();
@@ -383,6 +516,8 @@ function initializeExtension() {
     );
 
     createSettingsUi();
+
+    registerTurnDetection();
 }
 
 initializeExtension();
