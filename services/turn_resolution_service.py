@@ -278,39 +278,35 @@ class TurnResolutionService:
                 )
 
 
-        def unwrap_operation(
-            operation,
-        ):
-            if isinstance(
-                operation,
-                ReferencedOperation,
-            ):
+        def unwrap_operation(operation):
+            return operation
+
+        
+        def get_operation(operation):
+            if isinstance(operation, ReferencedOperation):
                 return operation.operation
 
             return operation
 
-
-        unwrapped_operations = tuple(
-            unwrap_operation(
-                operation
-            )
-            for operation in normalized_operations
+        normalized_operations = tuple(
+            normalize_operation(operation)
+            for operation in operations
         )
 
         world_operations = tuple(
             operation
-            for operation in unwrapped_operations
+            for operation in normalized_operations
             if isinstance(
-                operation,
+                get_operation(operation),
                 WorldOperation,
             )
         )
 
         character_operations = tuple(
             operation
-            for operation in unwrapped_operations
+            for operation in normalized_operations
             if isinstance(
-                operation,
+                get_operation(operation),
                 CharacterOperation,
             )
         )

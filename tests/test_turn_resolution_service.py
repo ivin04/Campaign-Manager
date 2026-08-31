@@ -24,8 +24,9 @@ from services.llm_world_extractor import LLMWorldExtractor
 from services.world_service import WorldService
 
 from operations.referenced_operation import ReferencedOperation
-from operations.world_operations import CreateItemInstanceOperation, CreateItemOperation
+from operations.world_operations import UpdateEntityOperation
 from operations.operation_reference import OperationReference
+from operations.world_operations import WorldOperation
 
 class RecordingDMService(DMService):
 
@@ -1097,3 +1098,94 @@ def test_resolve_turn_preserves_operation_reference():
         ].name
         == "Aldric"
     )
+
+def test_referenced_world_operation_keeps_reference():
+    referenced_operation = ReferencedOperation(
+        operation=CreateEntityOperation(
+            name="Aldren",
+            entity_type="npc",
+        ),
+        ref="npc",
+    )
+
+    normalized_operations = (
+        referenced_operation,
+    )
+
+    world_operations = tuple(
+        operation
+        for operation in normalized_operations
+        if isinstance(
+            TurnResolutionService.get_operation(operation),
+            WorldOperation,
+        )
+    )
+
+    assert len(world_operations) == 1
+
+    operation = world_operations[0]
+
+    assert isinstance(
+        operation,
+        ReferencedOperation,
+    )
+
+    assert operation.ref == "npc"
+
+    assert isinstance(
+        operation.operation,
+        CreateEntityOperation,
+    )
+
+def test_referenced_operation_survives_turn_resolution():
+    operations = [
+        ReferencedOperation(
+            operation=CreateEntityOperation(
+                name="Aldren",
+                entity_type="npc",
+            ),
+            ref="npc",
+        ),
+        UpdateEntityOperation(
+            entity_id=OperationReference("npc"),
+            description="Guerrero veterano.",
+        ),
+    ]
+
+    normalized_operations = tuple(
+        operations
+    )
+
+    world_operations = tuple(
+        operation
+        for operation in normalized_operations
+        if isinstance(
+            TurnResolutionService.get_operation(operation),
+            WorldOperation,
+        )
+    )
+
+    assert len(world_operations) == 2
+
+    first = world_operations[0]
+
+    assert isinstance(
+        first,
+        ReferencedOperation,
+    )
+
+    assert first.ref == "npc"
+
+    second = world_operations[1]
+
+    assert isinstance(
+        second,
+        UpdateEntityOperation,
+    )
+
+    assert isinstance(
+        second.entity_id,
+        OperationReference,
+    )
+
+    assert second.entity_id.name == "npc"

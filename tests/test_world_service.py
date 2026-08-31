@@ -1333,3 +1333,62 @@ def test_update_entity_resolves_reference_end_to_end():
     assert entity.entity_type == "npc"
     assert entity.description == "Un guerrero veterano."
     assert entity.notes == "Conoce los caminos de Vorder's Hold."
+
+def test_operation_reference_requires_generated_id():
+    service = WorldService()
+
+    operation = CreateEntityOperation(
+        name="Aldric",
+        entity_type="npc",
+    )
+
+    result = OperationResult(
+        status=OperationStatus.SUCCESS,
+        message="Success",
+        operation=operation,
+        data=None,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"Operation reference 'npc' did not "
+            r"produce exactly one generated ID."
+        ),
+    ):
+        service._register_operation_reference(
+            "npc",
+            result,
+            {},
+            service.world,
+        )
+
+def test_operation_reference_uses_generated_id_from_result_data():
+    service = WorldService()
+
+    operation = CreateEntityOperation(
+        name="Aldric",
+        entity_type="npc",
+    )
+
+    result = OperationResult(
+        status=OperationStatus.SUCCESS,
+        message="Success",
+        operation=operation,
+        data={
+            "entity_id": 42,
+        },
+    )
+
+    references = {}
+
+    service._register_operation_reference(
+        "npc",
+        result,
+        references,
+        service.world,
+    )
+
+    assert references == {
+        "npc": 42,
+    }
