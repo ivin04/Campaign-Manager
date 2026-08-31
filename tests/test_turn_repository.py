@@ -618,3 +618,95 @@ def test_list_turns_returns_turns_in_ascending_order(
         first.id,
         second.id,
     ]
+
+def test_get_turn_rejects_invalid_turn_id_type(
+    isolated_database,
+):
+    repository = TurnRepository()
+
+    with pytest.raises(TypeError):
+        repository.get_turn("1")
+
+
+def test_get_turn_rejects_non_positive_turn_id(
+    isolated_database,
+):
+    repository = TurnRepository()
+
+    with pytest.raises(ValueError):
+        repository.get_turn(0)
+
+
+def test_get_turn_rejects_boolean_turn_id(
+    isolated_database,
+):
+    repository = TurnRepository()
+
+    with pytest.raises(TypeError):
+        repository.get_turn(True)
+
+
+def test_list_turns_rejects_invalid_session_id_type(
+    isolated_database,
+):
+    repository = TurnRepository()
+
+    with pytest.raises(TypeError):
+        repository.list_turns(
+            session_id="1",
+        )
+
+
+def test_list_turns_rejects_non_positive_session_id(
+    isolated_database,
+):
+    repository = TurnRepository()
+
+    with pytest.raises(ValueError):
+        repository.list_turns(
+            session_id=0,
+        )
+
+
+def test_list_turns_rejects_boolean_session_id(
+    isolated_database,
+):
+    repository = TurnRepository()
+
+    with pytest.raises(TypeError):
+        repository.list_turns(
+            session_id=True,
+        )
+
+
+def test_list_recent_turns_rejects_invalid_session_id_type(
+    isolated_database,
+):
+    repository = TurnRepository()
+
+    with pytest.raises(TypeError):
+        repository.list_recent_turns(
+            session_id="1",
+        )
+
+
+def test_list_recent_turns_rejects_non_positive_session_id(
+    isolated_database,
+):
+    repository = TurnRepository()
+
+    with pytest.raises(ValueError):
+        repository.list_recent_turns(
+            session_id=0,
+        )
+
+
+def test_list_recent_turns_rejects_boolean_session_id(
+    isolated_database,
+):
+    repository = TurnRepository()
+
+    with pytest.raises(TypeError):
+        repository.list_recent_turns(
+            session_id=True,
+        )

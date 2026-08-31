@@ -17,6 +17,37 @@ class TurnRepository:
     Este repository no conoce el LLM ni el WorldState.
     """
 
+    @staticmethod
+    def _validate_positive_int(
+        value,
+        field_name: str,
+    ) -> None:
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+        ):
+            raise TypeError(
+                f"{field_name} must be an integer"
+            )
+
+        if value < 1:
+            raise ValueError(
+                f"{field_name} must be greater than zero"
+            )
+
+    @staticmethod
+    def _validate_optional_positive_int(
+        value,
+        field_name: str,
+    ) -> None:
+        if value is None:
+            return
+
+        TurnRepository._validate_positive_int(
+            value,
+            field_name,
+        )
+
     def save_turn(
         self,
         turn: TurnRecord,
@@ -134,6 +165,11 @@ class TurnRepository:
         turn_id: int,
     ) -> TurnRecord | None:
 
+        self._validate_positive_int(
+            turn_id,
+            "turn_id",
+        )
+
         row = one(
             """
             SELECT
@@ -164,6 +200,11 @@ class TurnRepository:
         session_id: int | None = None,
         limit: int | None = None,
     ) -> list[TurnRecord]:
+
+        self._validate_optional_positive_int(
+            session_id,
+            "session_id",
+        )
 
         if limit is not None:
             if not isinstance(limit, int):
@@ -284,6 +325,11 @@ class TurnRepository:
         Los resultados se devuelven en orden cronológico ascendente,
         del más antiguo al más reciente.
         """
+
+        self._validate_optional_positive_int(
+            session_id,
+            "session_id",
+        )
 
         if not isinstance(limit, int):
             raise TypeError(
