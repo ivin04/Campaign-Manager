@@ -161,6 +161,10 @@ class TurnResolutionService:
 
         world = context.world
 
+        self._validate_world(
+            world
+        )
+
         normalized_input = self._validate_player_input(
             player_input
         )
