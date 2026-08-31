@@ -1019,3 +1019,169 @@ def test_integration_service_created_entity_is_available_in_context():
     assert aldren.description == (
         "Propietario de la taberna."
     )
+
+
+def test_integration_service_preserves_operation_order(
+    monkeypatch,
+):
+    from services.silly_tavern_integration_service import (
+        SillyTavernIntegrationService,
+    )
+    from services.campaign_state_service import (
+        CampaignStateService,
+    )
+    from services.context_builder import (
+        ContextBuilder,
+    )
+    from services.llm_world_extractor import (
+        LLMWorldExtractor,
+    )
+    from services.operation_parser import (
+        OperationParser,
+    )
+    from services.world_service import (
+        WorldService,
+    )
+    from repositories.turn_repository import (
+        TurnRepository,
+    )
+    from repositories.campaign_repository import (
+        CampaignRepository,
+    )
+    from repositories.character_repository import (
+        CharacterRepository,
+    )
+    from repositories.entity_repository import (
+        EntityRepository,
+    )
+    from operations.world_operations import (
+        WorldOperation,
+    )
+    from operations.character_operations import (
+        CharacterOperation,
+    )
+    from operations.referenced_operation import (
+        ReferencedOperation,
+    )
+
+    world_service = WorldService()
+
+    campaign_state_service = (
+        CampaignStateService(
+            campaign_repository=CampaignRepository(),
+            character_repository=CharacterRepository(),
+            entity_repository=EntityRepository(),
+            world_service=world_service,
+        )
+    )
+
+    extractor = LLMWorldExtractor(
+        provider=lambda prompt: (
+            '{"operations": []}'
+        ),
+        operation_parser=OperationParser(),
+    )
+
+    turn_repository = TurnRepository()
+
+    service = (
+        SillyTavernIntegrationService(
+            campaign_state_service=(
+                campaign_state_service
+            ),
+            context_builder=ContextBuilder(),
+            extractor=extractor,
+            world_service=world_service,
+            turn_repository=turn_repository,
+        )
+    )
+
+    world_operation = object.__new__(
+        WorldOperation
+    )
+
+    character_operation = object.__new__(
+        CharacterOperation
+    )
+
+    operations = [
+        ReferencedOperation(
+            ref="first",
+            operation=world_operation,
+        ),
+        ReferencedOperation(
+            ref="second",
+            operation=character_operation,
+        ),
+        ReferencedOperation(
+            ref="third",
+            operation=world_operation,
+        ),
+    ]
+
+    monkeypatch.setattr(
+        extractor,
+        "extract",
+        lambda narrative, context: operations,
+    )
+
+    monkeypatch.setattr(
+        turn_repository,
+        "list_recent_turns",
+        lambda session_id=None, limit=10: [],
+    )
+
+    received = {}
+
+    def fake_apply_turn_operations(
+        world_operations,
+        character_operations,
+        *,
+        conn=None,
+        ordered_operations=None,
+    ):
+        received["world_operations"] = tuple(
+            world_operations
+        )
+
+        received["character_operations"] = tuple(
+            character_operations
+        )
+
+        received["ordered_operations"] = tuple(
+            ordered_operations
+        )
+
+        return ()
+
+    monkeypatch.setattr(
+        world_service,
+        "apply_turn_operations",
+        fake_apply_turn_operations,
+    )
+
+    monkeypatch.setattr(
+        turn_repository,
+        "save_turn",
+        lambda turn, *, conn=None: turn,
+    )
+
+    service.process_turn(
+        player_input="Hago algo.",
+        narrative="Ocurre algo.",
+    )
+
+    assert received["world_operations"] == (
+        operations[0],
+        operations[2],
+    )
+
+    assert received["character_operations"] == (
+        operations[1],
+    )
+
+    assert received["ordered_operations"] == (
+        operations[0],
+        operations[1],
+        operations[2],
+    )

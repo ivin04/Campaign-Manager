@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from database import get_conn
+
 from models.turn_context import TurnContext
 from models.turn_record import TurnRecord
 from models.turn_resolution_result import TurnResolutionResult
@@ -413,71 +415,80 @@ class SillyTavernIntegrationService:
                 )
 
         # --------------------------------------------------------
-        # APLICAR OPERACIONES
+        # APLICAR OPERACIONES + PERSISTIR TURNO
         # --------------------------------------------------------
+        #
+        # El mundo y el TurnRecord deben formar una única
+        # transacción de SQLite.
+        #
+        # Además, ordered_operations conserva exactamente
+        # el orden producido por el extractor.
 
-        try:
-            operation_results = (
-                self.world_service.apply_turn_operations(
-                    world_operations,
-                    character_operations,
-                )
-            )
-
-        except Exception as exc:
-            raise SillyTavernIntegrationServiceError(
-                "WorldService failed to apply operations"
-            ) from exc
-
-        # --------------------------------------------------------
-        # CREAR RESULTADO
-        # --------------------------------------------------------
-
-        result = TurnResolutionResult(
-            player_input=normalized_input,
-            narrative=normalized_narrative,
-            operations=tuple(
-                world_operations
-            ),
-            character_operations=tuple(
-                character_operations
-            ),
-            operation_results=tuple(
-                operation_results
-            ),
+        normalized_operations = tuple(
+            operations
         )
 
-        # --------------------------------------------------------
-        # PERSISTIR TURNO
-        # --------------------------------------------------------
-
         try:
-            self.turn_repository.save_turn(
-                TurnRecord(
-                    session_id=session_id,
-                    player_input=result.player_input,
-                    narrative=result.narrative,
-                    operation_count=(
-                        result.operation_count
+            with get_conn() as conn:
+
+                operation_results = (
+                    self.world_service.apply_turn_operations(
+                        world_operations,
+                        character_operations,
+                        conn=conn,
+                        ordered_operations=normalized_operations,
+                    )
+                )
+
+                # ------------------------------------------------
+                # CREAR RESULTADO
+                # ------------------------------------------------
+
+                result = TurnResolutionResult(
+                    player_input=normalized_input,
+                    narrative=normalized_narrative,
+                    operations=tuple(
+                        world_operations
                     ),
-                    successful_operation_count=(
-                        result.successful_operation_count
+                    character_operations=tuple(
+                        character_operations
                     ),
-                    failed_operation_count=(
-                        result.failed_operation_count
-                    ),
-                    all_operations_succeeded=(
-                        result.all_operations_succeeded
-                    ),
-                    world_changed=(
-                        result.world_changed
+                    operation_results=tuple(
+                        operation_results
                     ),
                 )
-            )
+
+                # ------------------------------------------------
+                # PERSISTIR TURNO EN LA MISMA TRANSACCIÓN
+                # ------------------------------------------------
+
+                self.turn_repository.save_turn(
+                    TurnRecord(
+                        session_id=session_id,
+                        player_input=result.player_input,
+                        narrative=result.narrative,
+                        operation_count=(
+                            result.operation_count
+                        ),
+                        successful_operation_count=(
+                            result.successful_operation_count
+                        ),
+                        failed_operation_count=(
+                            result.failed_operation_count
+                        ),
+                        all_operations_succeeded=(
+                            result.all_operations_succeeded
+                        ),
+                        world_changed=(
+                            result.world_changed
+                        ),
+                    ),
+                    conn=conn,
+                )
 
         except Exception as exc:
             raise SillyTavernIntegrationServiceError(
-                "failed to persist SillyTavern turn"
+                "failed to process and persist SillyTavern turn"
             ) from exc
 
         return result
