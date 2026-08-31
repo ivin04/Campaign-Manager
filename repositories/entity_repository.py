@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from database import execute, one, rows
+from database import (
+    execute,
+    one,
+    rows,
+    one_in_conn,
+)
 from models.entity import Entity
 
 
@@ -10,10 +15,11 @@ class EntityRepository:
     def get_entity(
         self,
         entity_id: int,
+        *,
+        conn=None,
     ) -> Entity | None:
 
-        row = one(
-            """
+        query = """
             SELECT
                 id,
                 name,
@@ -23,9 +29,19 @@ class EntityRepository:
                 active
             FROM entities
             WHERE id=?
-            """,
-            (entity_id,),
-        )
+        """
+
+        if conn is None:
+            row = one(
+                query,
+                (entity_id,),
+            )
+        else:
+            row = one_in_conn(
+                conn,
+                query,
+                (entity_id,),
+            )
 
         if row is None:
             return None

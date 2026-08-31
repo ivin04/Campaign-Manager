@@ -1,15 +1,33 @@
-from database import one, execute
+from database import (
+    execute,
+    one,
+    one_in_conn,
+)
 
 
 class CampaignRepository:
 
-    def get_campaign(self, campaign_id: int = 1):
-        return one(
-            """
+    def get_campaign(
+        self,
+        campaign_id: int = 1,
+        *,
+        conn=None,
+    ):
+        query = """
             SELECT *
             FROM campaign
             WHERE id=?
-            """,
+        """
+
+        if conn is None:
+            return one(
+                query,
+                (campaign_id,),
+            )
+
+        return one_in_conn(
+            conn,
+            query,
             (campaign_id,),
         )
 
@@ -108,31 +126,52 @@ class CampaignRepository:
     def get_session(
         self,
         session_id: int,
+        *,
+        conn=None,
     ):
-        return one(
-            """
+        query = """
             SELECT *
             FROM sessions
             WHERE id=?
-            """,
+        """
+
+        if conn is None:
+            return one(
+                query,
+                (session_id,),
+            )
+
+        return one_in_conn(
+            conn,
+            query,
             (session_id,),
         )
 
     def get_current_session(
         self,
         campaign_id: int = 1,
+        *,
+        conn=None,
     ):
-        campaign = self.get_campaign(campaign_id)
+        campaign = self.get_campaign(
+            campaign_id,
+            conn=conn,
+        )
 
         if campaign is None:
             return None
 
-        session_id = campaign["current_session_id"]
+        session_id = campaign[
+            "current_session_id"
+        ]
 
         if session_id is None:
             return None
 
-        return self.get_session(session_id)
+        return self.get_session(
+            session_id,
+            conn=conn,
+        )
 
     def update_active_character(
         self,
@@ -158,10 +197,17 @@ class CampaignRepository:
     def get_active_character_id(
         self,
         campaign_id: int = 1,
+        *,
+        conn=None,
     ) -> int | None:
-        campaign = self.get_campaign(campaign_id)
+        campaign = self.get_campaign(
+            campaign_id,
+            conn=conn,
+        )
 
         if campaign is None:
             return None
 
-        return campaign["active_character_id"]
+        return campaign[
+            "active_character_id"
+        ]

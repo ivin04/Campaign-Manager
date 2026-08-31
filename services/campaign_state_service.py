@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from database import get_conn
+
 from models.campaign_state import CampaignState
 from models.character_state import CharacterState
 from models.session_state import SessionState
@@ -277,6 +279,27 @@ class CampaignStateService:
     def get_turn_context(
         self,
         campaign_id: int = 1,
+        *,
+        conn=None,
+    ) -> TurnContext:
+
+        if conn is None:
+            with get_conn() as owned_conn:
+                return self._get_turn_context(
+                    campaign_id,
+                    conn=owned_conn,
+                )
+
+        return self._get_turn_context(
+            campaign_id,
+            conn=conn,
+        )
+
+    def _get_turn_context(
+        self,
+        campaign_id: int,
+        *,
+        conn,
     ) -> TurnContext:
         """
         Construye el contexto completo necesario para
@@ -284,7 +307,8 @@ class CampaignStateService:
         """
 
         campaign = self.campaign_repository.get_campaign(
-            campaign_id
+            campaign_id,
+            conn=conn,
         )
 
         if campaign is None:
@@ -311,7 +335,8 @@ class CampaignStateService:
 
         current_session = (
             self.campaign_repository.get_current_session(
-                campaign_id
+                campaign_id,
+                conn=conn,
             )
         )
 
@@ -336,7 +361,8 @@ class CampaignStateService:
 
         active_character_id = (
             self.campaign_repository.get_active_character_id(
-                campaign_id
+                campaign_id,
+                conn=conn,
             )
         )
 
@@ -346,7 +372,8 @@ class CampaignStateService:
         if active_character_id is not None:
             active_character = (
                 self.character_repository.get_character(
-                    active_character_id
+                    active_character_id,
+                    conn=conn,
                 )
             )
 
@@ -365,7 +392,8 @@ class CampaignStateService:
 
             active_character_entity = (
                 self.entity_repository.get_entity(
-                    active_character.entity_id
+                    active_character.entity_id,
+                    conn=conn,
                 )
             )
 
