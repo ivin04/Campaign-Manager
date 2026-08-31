@@ -76,3 +76,70 @@ def test_parser_accepts_operation_reference():
         OperationReference,
     )
     assert second.item_id.name == "sword"
+
+def test_parser_rejects_non_string_create_item_significance():
+    parser = OperationParser()
+
+    with pytest.raises(OperationParseError):
+        parser.parse(
+            {
+                "operations": [
+                    {
+                        "type": "create_item",
+                        "name": "Espada",
+                        "significance": 123,
+                    }
+                ]
+            }
+        )
+
+
+def test_parser_rejects_non_string_create_resource_type():
+    parser = OperationParser()
+
+    with pytest.raises(OperationParseError):
+        parser.parse(
+            {
+                "operations": [
+                    {
+                        "type": "create_resource",
+                        "name": "Oro",
+                        "resource_type": 123,
+                    }
+                ]
+            }
+        )
+
+
+def test_parser_rejects_non_string_create_resource_unit():
+    parser = OperationParser()
+
+    with pytest.raises(OperationParseError):
+        parser.parse(
+            {
+                "operations": [
+                    {
+                        "type": "create_resource",
+                        "name": "Oro",
+                        "unit": 123,
+                    }
+                ]
+            }
+        )
+
+
+def test_parser_rejects_non_string_item_instance_condition():
+    parser = OperationParser()
+
+    with pytest.raises(OperationParseError):
+        parser.parse(
+            {
+                "operations": [
+                    {
+                        "type": "create_item_instance",
+                        "item_id": 1,
+                        "condition": 123,
+                    }
+                ]
+            }
+        )
