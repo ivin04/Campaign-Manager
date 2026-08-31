@@ -318,6 +318,7 @@ class TurnResolutionService:
                     world_operations,
                     character_operations,
                     conn=conn,
+                    ordered_operations=normalized_operations,
                 )
             )
         except Exception as exc:

@@ -267,6 +267,7 @@ class WorldService:
         character_operations,
         *,
         conn=None,
+        ordered_operations=None,
     ) -> tuple:
         """
         Aplica las operaciones de mundo y personaje de un turno.
@@ -300,14 +301,15 @@ class WorldService:
                 "world_operations must be iterable"
             ) from exc
 
-        try:
-            character_operations = tuple(
-                character_operations
-            )
-        except TypeError as exc:
-            raise TypeError(
-                "character_operations must be iterable"
-            ) from exc
+        if ordered_operations is not None:
+            try:
+                ordered_operations = tuple(
+                    ordered_operations
+                )
+            except TypeError as exc:
+                raise TypeError(
+                    "ordered_operations must be iterable"
+                ) from exc
 
         original_world = self.world
 
@@ -405,7 +407,16 @@ class WorldService:
 
         def apply_with_connection(connection):
 
-            for operation in operations:
+            if ordered_operations is not None:
+                operations_to_apply = ordered_operations
+            else:
+                operations_to_apply = (
+                    tuple(world_operations)
+                    + tuple(character_operations)
+                )
+
+            for operation in operations_to_apply:
+
                 operation_to_apply = operation
 
                 if isinstance(
@@ -418,7 +429,7 @@ class WorldService:
                     operation_to_apply,
                     WorldOperation,
                 ):
-                    self._apply_world_operation(
+                    apply_world_operation(
                         operation,
                         connection,
                     )
@@ -427,7 +438,7 @@ class WorldService:
                     operation_to_apply,
                     CharacterOperation,
                 ):
-                    self._apply_character_operation(
+                    apply_character_operation(
                         operation,
                         connection,
                     )
