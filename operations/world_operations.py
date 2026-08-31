@@ -169,22 +169,27 @@ class GainResourceOperation(WorldOperation):
     """
     Añade una cantidad de un recurso al balance
     de una entidad.
+
+    Los IDs pueden utilizar OperationReference para
+    referenciar objetos creados por operaciones anteriores.
     """
 
     resource_id: int | OperationReference
-    owner_id: int
+    owner_id: int | OperationReference
     amount: float
-
 
 @dataclass(frozen=True)
 class SpendResourceOperation(WorldOperation):
     """
     Reduce una cantidad de un recurso que posee
     una entidad.
+
+    Los IDs pueden utilizar OperationReference para
+    referenciar objetos creados por operaciones anteriores.
     """
 
     resource_id: int | OperationReference
-    owner_id: int
+    owner_id: int | OperationReference
     amount: float
 
 
@@ -193,11 +198,14 @@ class TransferResourceOperation(WorldOperation):
     """
     Transfiere una cantidad de un recurso desde una entidad
     hacia otra.
+
+    Los IDs pueden utilizar OperationReference para
+    referenciar objetos creados por operaciones anteriores.
     """
 
     resource_id: int | OperationReference
-    subject_id: int
-    target_id: int
+    subject_id: int | OperationReference
+    target_id: int | OperationReference
     amount: float
 
 
@@ -209,12 +217,15 @@ class TransferResourceOperation(WorldOperation):
 class CreateRelationOperation(WorldOperation):
     """
     Crea una relación entre dos entidades existentes.
+
+    Los IDs pueden utilizar OperationReference para
+    referenciar entidades creadas por operaciones anteriores.
     """
 
     relation_id: str
-    subject_id: int
+    subject_id: int | OperationReference
     relation_type: str
-    target_id: int
+    target_id: int | OperationReference
     metadata: dict[str, Any] | None = None
 
 
@@ -222,16 +233,15 @@ class CreateRelationOperation(WorldOperation):
 class UpdateRelationOperation(WorldOperation):
     """
     Modifica una relación existente.
+
+    target_id puede utilizar OperationReference para
+    referenciar una entidad creada por una operación anterior.
     """
 
     relation_id: str
-
     relation_type: str | None = None
-
-    target_id: int | None = None
-
+    target_id: int | OperationReference | None = None
     metadata: dict[str, Any] | None = None
-
     active: bool | None = None
 
 

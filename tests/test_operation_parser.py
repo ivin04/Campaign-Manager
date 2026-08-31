@@ -3,6 +3,13 @@ import pytest
 from services.operation_parser import OperationParser, OperationParseError
 
 from operations.operation_reference import OperationReference
+from operations.world_operations import (
+    CreateRelationOperation,
+    GainResourceOperation,
+    SpendResourceOperation,
+    TransferResourceOperation,
+    UpdateRelationOperation,
+)
 from operations.referenced_operation import ReferencedOperation
 
 def test_operation_parser_normalizes_update_entity_id_from_string():
@@ -143,3 +150,186 @@ def test_parser_rejects_non_string_item_instance_condition():
                 ]
             }
         )
+
+def test_gain_resource_accepts_owner_reference():
+    parser = OperationParser()
+
+    operations = parser.parse(
+        {
+            "operations": [
+                {
+                    "type": "gain_resource",
+                    "resource_id": "$gold",
+                    "owner_id": "$character",
+                    "amount": 50,
+                }
+            ]
+        }
+    )
+
+    operation = operations[0]
+
+    assert isinstance(
+        operation,
+        GainResourceOperation,
+    )
+
+    assert isinstance(
+        operation.resource_id,
+        OperationReference,
+    )
+
+    assert operation.resource_id.name == "gold"
+
+    assert isinstance(
+        operation.owner_id,
+        OperationReference,
+    )
+
+    assert operation.owner_id.name == "character"
+
+def test_spend_resource_accepts_owner_reference():
+    parser = OperationParser()
+
+    operations = parser.parse(
+        {
+            "operations": [
+                {
+                    "type": "spend_resource",
+                    "resource_id": "$gold",
+                    "owner_id": "$character",
+                    "amount": 25,
+                }
+            ]
+        }
+    )
+
+    operation = operations[0]
+
+    assert isinstance(
+        operation,
+        SpendResourceOperation,
+    )
+
+    assert isinstance(
+        operation.resource_id,
+        OperationReference,
+    )
+
+    assert isinstance(
+        operation.owner_id,
+        OperationReference,
+    )
+
+    assert operation.resource_id.name == "gold"
+    assert operation.owner_id.name == "character"
+
+def test_transfer_resource_accepts_references():
+    parser = OperationParser()
+
+    operations = parser.parse(
+        {
+            "operations": [
+                {
+                    "type": "transfer_resource",
+                    "resource_id": "$gold",
+                    "subject_id": "$from",
+                    "target_id": "$to",
+                    "amount": 10,
+                }
+            ]
+        }
+    )
+
+    operation = operations[0]
+
+    assert isinstance(
+        operation,
+        TransferResourceOperation,
+    )
+
+    assert isinstance(
+        operation.resource_id,
+        OperationReference,
+    )
+
+    assert isinstance(
+        operation.subject_id,
+        OperationReference,
+    )
+
+    assert isinstance(
+        operation.target_id,
+        OperationReference,
+    )
+
+    assert operation.resource_id.name == "gold"
+    assert operation.subject_id.name == "from"
+    assert operation.target_id.name == "to"
+
+def test_create_relation_accepts_entity_references():
+    parser = OperationParser()
+
+    operations = parser.parse(
+        {
+            "operations": [
+                {
+                    "type": "create_relation",
+                    "relation_id": "guard_aldren",
+                    "subject_id": "$guard",
+                    "relation_type": "miembro_de",
+                    "target_id": "$faction",
+                }
+            ]
+        }
+    )
+
+    operation = operations[0]
+
+    assert isinstance(
+        operation,
+        CreateRelationOperation,
+    )
+
+    assert isinstance(
+        operation.subject_id,
+        OperationReference,
+    )
+
+    assert isinstance(
+        operation.target_id,
+        OperationReference,
+    )
+
+    assert operation.subject_id.name == "guard"
+    assert operation.target_id.name == "faction"
+
+def test_update_relation_accepts_target_reference():
+    parser = OperationParser()
+
+    operations = parser.parse(
+        {
+            "operations": [
+                {
+                    "type": "update_relation",
+                    "relation_id": "guard_aldren",
+                    "target_id": "$new_target",
+                }
+            ]
+        }
+    )
+
+    operation = operations[0]
+
+    assert isinstance(
+        operation,
+        UpdateRelationOperation,
+    )
+
+    assert isinstance(
+        operation.target_id,
+        OperationReference,
+    )
+
+    assert operation.target_id.name == "new_target"
+

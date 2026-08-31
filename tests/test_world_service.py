@@ -17,6 +17,11 @@ from operations.world_operations import (
     CreateEntityOperation,
     CreateItemOperation,
     CreateItemInstanceOperation,
+    CreateRelationOperation,
+    GainResourceOperation,
+    SpendResourceOperation,
+    TransferResourceOperation,
+    CreateResourceOperation,
 )
 
 from operations.operation_reference import OperationReference
@@ -1151,3 +1156,144 @@ def test_create_item_instance_resolves_references_end_to_end():
     assert instance.owner_id == npc.id
     assert instance.location_id == location.id
     assert instance.condition == "intacto"
+
+def test_resource_operations_resolve_references_end_to_end():
+    service = WorldService()
+
+    result = service.apply_operations(
+        [
+            ReferencedOperation(
+                operation=CreateResourceOperation(
+                    name="Oro",
+                    resource_type="currency",
+                    unit="gp",
+                ),
+                ref="gold",
+            ),
+            ReferencedOperation(
+                operation=CreateEntityOperation(
+                    name="Aldren",
+                    entity_type="npc",
+                ),
+                ref="npc1",
+            ),
+            ReferencedOperation(
+                operation=CreateEntityOperation(
+                    name="Neria",
+                    entity_type="npc",
+                ),
+                ref="npc2",
+            ),
+            GainResourceOperation(
+                resource_id=OperationReference("gold"),
+                owner_id=OperationReference("npc1"),
+                amount=100,
+            ),
+            TransferResourceOperation(
+                resource_id=OperationReference("gold"),
+                subject_id=OperationReference("npc1"),
+                target_id=OperationReference("npc2"),
+                amount=40,
+            ),
+            SpendResourceOperation(
+                resource_id=OperationReference("gold"),
+                owner_id=OperationReference("npc2"),
+                amount=10,
+            ),
+        ]
+    )
+
+    assert result.success is True
+    assert result.changed is True
+
+    world = service.get_world()
+
+    gold = next(
+        resource
+        for resource in world.resources.values()
+        if resource.name == "Oro"
+    )
+
+    aldren = next(
+        entity
+        for entity in world.entities.values()
+        if entity.name == "Aldren"
+    )
+
+    neria = next(
+        entity
+        for entity in world.entities.values()
+        if entity.name == "Neria"
+    )
+
+    aldren_balance = next(
+        balance
+        for balance in world.resource_balances.values()
+        if (
+            balance.resource_id == gold.id
+            and balance.owner_id == aldren.id
+        )
+    )
+
+    neria_balance = next(
+        balance
+        for balance in world.resource_balances.values()
+        if (
+            balance.resource_id == gold.id
+            and balance.owner_id == neria.id
+        )
+    )
+
+    assert aldren_balance.amount == 60
+    assert neria_balance.amount == 30
+
+def test_create_relation_resolves_entity_references_end_to_end():
+    service = WorldService()
+
+    result = service.apply_operations(
+        [
+            ReferencedOperation(
+                operation=CreateEntityOperation(
+                    name="Aldren",
+                    entity_type="npc",
+                ),
+                ref="npc",
+            ),
+            ReferencedOperation(
+                operation=CreateEntityOperation(
+                    name="Guardia",
+                    entity_type="faction",
+                ),
+                ref="faction",
+            ),
+            CreateRelationOperation(
+                relation_id="aldren_guardia",
+                subject_id=OperationReference("npc"),
+                relation_type="miembro_de",
+                target_id=OperationReference("faction"),
+            ),
+        ]
+    )
+
+    assert result.success is True
+    assert result.changed is True
+
+    world = service.get_world()
+
+    aldren = next(
+        entity
+        for entity in world.entities.values()
+        if entity.name == "Aldren"
+    )
+
+    guardia = next(
+        entity
+        for entity in world.entities.values()
+        if entity.name == "Guardia"
+    )
+
+    relation = world.relations["aldren_guardia"]
+
+    assert relation.subject_id == aldren.id
+    assert relation.target_id == guardia.id
+    assert relation.relation_type == "miembro_de"
