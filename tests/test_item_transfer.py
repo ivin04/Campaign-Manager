@@ -2,8 +2,11 @@ from models.entity import Entity
 from models.item import Item, ItemInstance
 from models.world_state import WorldState
 
-from operations.world_operations import TransferItemOperation
+from operations.world_operations import TransferItemOperation, CreateEntityOperation, CreateItemOperation, CreateItemInstanceOperation
+from operations.referenced_operation import ReferencedOperation
+from operations.operation_reference import OperationReference  
 
+from services.world_service import WorldService
 from services.world_applier import WorldApplier
 
 
@@ -116,3 +119,61 @@ def test_applier_ignores_unknown_item_instance():
 
     assert world.item_instances[100].owner_id == 1
     assert world.item_instances[101].owner_id is None
+
+def test_transfer_item_resolves_new_owner_reference():
+    service = WorldService()
+
+    results = service.apply_operations(
+        [
+            ReferencedOperation(
+                operation=CreateItemOperation(
+                    name="Espada de hierro",
+                ),
+                ref="sword",
+            ),
+            ReferencedOperation(
+                operation=CreateEntityOperation(
+                    name="Aldren",
+                    entity_type="npc",
+                ),
+                ref="npc1",
+            ),
+            ReferencedOperation(
+                operation=CreateEntityOperation(
+                    name="Neria",
+                    entity_type="npc",
+                ),
+                ref="npc2",
+            ),
+            ReferencedOperation(
+                operation=CreateItemInstanceOperation(
+                    item_id=OperationReference("sword"),
+                    owner_id=OperationReference("npc1"),
+                ),
+                ref="instance",
+            ),
+            TransferItemOperation(
+                instance_id=OperationReference("instance"),
+                new_owner_id=OperationReference("npc2"),
+            ),
+        ]
+    )
+
+    assert results.success
+    assert results.changed
+
+    world = service.get_world()
+
+    neria = next(
+        entity
+        for entity in world.entities.values()
+        if entity.name == "Neria"
+    )
+
+    instance = next(
+        instance
+        for instance in world.item_instances.values()
+        if instance.instance_number == 1
+    )
+
+    assert instance.owner_id == neria.id

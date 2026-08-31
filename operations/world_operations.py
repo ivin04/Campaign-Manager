@@ -84,51 +84,48 @@ class CreateItemOperation(WorldOperation):
 
 
 @dataclass(frozen=True)
-class CreateItemInstanceOperation(WorldOperation):
-    """
-    Crea una instancia física concreta de un Item existente.
-
-    Ejemplo:
-
-        Item:
-            Espada de hierro
-
-        Instance:
-            #1 -> Fungoso
-    """
-
-    item_id: int | OperationReference
-    instance_number: int = 1
-    owner_id: int | None = None
-    location_id: int | None = None
-    condition: str = ""
-    notes: str = ""
-    active: bool = True
-
-
-@dataclass(frozen=True)
 class TransferItemOperation(WorldOperation):
     """
     Transfiere una instancia física concreta de un objeto
     a otro propietario.
 
-    La instancia ya debe existir.
+    Los IDs pueden utilizar OperationReference para
+    referenciar objetos creados por operaciones anteriores.
     """
 
     instance_id: int | OperationReference
-    new_owner_id: int
 
+    new_owner_id: int | OperationReference
+
+
+@dataclass(frozen=True)
+class CreateItemInstanceOperation(WorldOperation):
+    """
+    Crea una instancia física concreta de un Item existente.
+
+    Los IDs pueden utilizar OperationReference para
+    referenciar objetos creados por operaciones anteriores.
+    """
+
+    item_id: int | OperationReference
+
+    instance_number: int = 1
+
+    owner_id: int | OperationReference | None = None
+
+    location_id: int | OperationReference | None = None
+
+    condition: str = ""
+
+    notes: str = ""
+
+    active: bool = True
 
 @dataclass(frozen=True)
 class UpdateItemInstanceOperation(WorldOperation):
     """
     Modifica únicamente los campos proporcionados de una
     instancia física existente.
-
-    None significa "no modificar ese campo".
-
-    Los campos de ID pueden utilizar OperationReference para
-    referenciar objetos creados por operaciones anteriores.
     """
 
     instance_id: int | OperationReference

@@ -6,6 +6,7 @@ from models.world_state import WorldState
 
 from operations.operation_reference import OperationReference
 from operations.world_operations import (
+    CreateItemInstanceOperation,
     UpdateItemInstanceOperation,
 )
 
@@ -398,3 +399,48 @@ def test_parser_rejects_unknown_field():
                 ]
             }
         )
+
+def test_create_item_instance_accepts_references():
+    parser = OperationParser()
+
+    operations = parser.parse(
+        {
+            "operations": [
+                {
+                    "type": "create_item_instance",
+                    "item_id": "$sword",
+                    "instance_number": 1,
+                    "owner_id": "$npc",
+                    "location_id": "$location",
+                }
+            ]
+        }
+    )
+
+    operation = operations[0]
+
+    assert isinstance(
+        operation,
+        CreateItemInstanceOperation,
+    )
+
+    assert isinstance(
+        operation.item_id,
+        OperationReference,
+    )
+
+    assert operation.item_id.name == "sword"
+
+    assert isinstance(
+        operation.owner_id,
+        OperationReference,
+    )
+
+    assert operation.owner_id.name == "npc"
+
+    assert isinstance(
+        operation.location_id,
+        OperationReference,
+    )
+
+    assert operation.location_id.name == "location"

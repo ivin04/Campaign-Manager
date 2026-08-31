@@ -1079,3 +1079,75 @@ def test_apply_operations_rejects_unknown_operation_reference():
         service.apply_operations(
             [operation]
         )
+
+def test_create_item_instance_resolves_references_end_to_end():
+    service = WorldService()
+
+    results = service.apply_operations(
+        [
+            ReferencedOperation(
+                operation=CreateItemOperation(
+                    name="Espada de hierro",
+                ),
+                ref="sword",
+            ),
+            ReferencedOperation(
+                operation=CreateEntityOperation(
+                    name="Aldren",
+                    entity_type="npc",
+                ),
+                ref="npc",
+            ),
+            ReferencedOperation(
+                operation=CreateEntityOperation(
+                    name="La cripta",
+                    entity_type="location",
+                ),
+                ref="location",
+            ),
+            ReferencedOperation(
+                operation=CreateItemInstanceOperation(
+                    item_id=OperationReference("sword"),
+                    instance_number=1,
+                    owner_id=OperationReference("npc"),
+                    location_id=OperationReference("location"),
+                    condition="intacto",
+                ),
+                ref="sword_instance",
+            ),
+        ]
+    )
+
+    assert results.success
+    assert results.changed
+
+    world = service.get_world()
+
+    item = next(
+        item
+        for item in world.items.values()
+        if item.name == "Espada de hierro"
+    )
+
+    npc = next(
+        entity
+        for entity in world.entities.values()
+        if entity.name == "Aldren"
+    )
+
+    location = next(
+        entity
+        for entity in world.entities.values()
+        if entity.name == "La cripta"
+    )
+
+    instance = next(
+        instance
+        for instance in world.item_instances.values()
+        if instance.item_id == item.id
+    )
+
+    assert instance.item_id == item.id
+    assert instance.owner_id == npc.id
+    assert instance.location_id == location.id
+    assert instance.condition == "intacto"
