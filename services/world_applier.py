@@ -28,6 +28,7 @@ from operations.world_operations import (
     CreateItemOperation,
     CreateItemInstanceOperation,
     CreateResourceOperation,
+    UpdateItemInstanceOperation,
 )
 
 from operations.operation_reference import OperationReference
@@ -90,6 +91,9 @@ class WorldApplier:
 
         if isinstance(operation, CreateResourceOperation):
             return self._apply_create_resource(world, operation)
+
+        if isinstance(operation, UpdateItemInstanceOperation):
+            return self._apply_update_item_instance(world, operation)
 
         return OperationResult(
             status=OperationStatus.UNSUPPORTED,
@@ -419,6 +423,117 @@ class WorldApplier:
                 f"transferred successfully."
             ),
             operation=operation,
+        )
+
+    def _apply_update_item_instance(
+        self,
+        world: WorldState,
+        operation: UpdateItemInstanceOperation,
+    ) -> OperationResult:
+        instance = world.item_instances.get(
+            operation.instance_id
+        )
+
+        if instance is None:
+            return OperationResult(
+                status=OperationStatus.NOT_FOUND,
+                message=(
+                    f"Item instance "
+                    f"'{operation.instance_id}' "
+                    f"does not exist."
+                ),
+                operation=operation,
+            )
+
+        # Validate owner before modifying anything.
+        if operation.owner_id is not None:
+            if operation.owner_id not in world.entities:
+                return OperationResult(
+                    status=OperationStatus.NOT_FOUND,
+                    message=(
+                        f"Owner "
+                        f"'{operation.owner_id}' "
+                        f"does not exist."
+                    ),
+                    operation=operation,
+                )
+
+        # Validate location before modifying anything.
+        if operation.location_id is not None:
+            if operation.location_id not in world.entities:
+                return OperationResult(
+                    status=OperationStatus.NOT_FOUND,
+                    message=(
+                        f"Location "
+                        f"'{operation.location_id}' "
+                        f"does not exist."
+                    ),
+                    operation=operation,
+                )
+
+        changed = False
+
+        # Update owner.
+        if (
+            operation.owner_id is not None
+            and instance.owner_id != operation.owner_id
+        ):
+            instance.owner_id = operation.owner_id
+            changed = True
+
+        # Update location.
+        if (
+            operation.location_id is not None
+            and instance.location_id != operation.location_id
+        ):
+            instance.location_id = operation.location_id
+            changed = True
+
+        # Update condition.
+        if (
+            operation.condition is not None
+            and instance.condition != operation.condition
+        ):
+            instance.condition = operation.condition
+            changed = True
+
+        # Update notes.
+        if (
+            operation.notes is not None
+            and instance.notes != operation.notes
+        ):
+            instance.notes = operation.notes
+            changed = True
+
+        # Update active state.
+        if (
+            operation.active is not None
+            and instance.active != operation.active
+        ):
+            instance.active = operation.active
+            changed = True
+
+        if not changed:
+            return OperationResult(
+                status=OperationStatus.NO_CHANGE,
+                message=(
+                    "Item instance already had "
+                    "the requested state."
+                ),
+                operation=operation,
+            )
+
+        return OperationResult(
+            status=OperationStatus.SUCCESS,
+            message=(
+                f"Item instance "
+                f"'{instance.id}' "
+                f"updated successfully."
+            ),
+            operation=operation,
+            data={
+                "instance_id": instance.id,
+            },
         )
 
     # ============================================================

@@ -126,14 +126,21 @@ class UpdateItemInstanceOperation(WorldOperation):
     instancia física existente.
 
     None significa "no modificar ese campo".
+
+    Los campos de ID pueden utilizar OperationReference para
+    referenciar objetos creados por operaciones anteriores.
     """
 
-    instance_id: int
+    instance_id: int | OperationReference
 
-    owner_id: int | None = None
-    location_id: int | None = None
+    owner_id: int | OperationReference | None = None
+
+    location_id: int | OperationReference | None = None
+
     condition: str | None = None
+
     notes: str | None = None
+
     active: bool | None = None
 
 

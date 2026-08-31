@@ -18,6 +18,7 @@ from operations.world_operations import (
     CreateItemOperation,
     CreateItemInstanceOperation,
     CreateResourceOperation,
+    UpdateItemInstanceOperation,
 )
 
 from operations.character_operations import (
@@ -51,19 +52,24 @@ class OperationParser:
     _BUILDERS = {
         "create_entity": CreateEntityOperation,
         "update_entity": UpdateEntityOperation,
+
+        "create_item": CreateItemOperation,
+        "create_item_instance": CreateItemInstanceOperation,
+        "update_item_instance": UpdateItemInstanceOperation,
         "transfer_item": TransferItemOperation,
+
+        "create_resource": CreateResourceOperation,
         "gain_resource": GainResourceOperation,
         "spend_resource": SpendResourceOperation,
         "transfer_resource": TransferResourceOperation,
+
         "create_relation": CreateRelationOperation,
         "update_relation": UpdateRelationOperation,
         "remove_relation": RemoveRelationOperation,
+
         "create_event": CreateEventOperation,
 
         "change_character_hp": ChangeCharacterHpOperation,
-        "create_item": CreateItemOperation,
-        "create_item_instance": CreateItemInstanceOperation,
-        "create_resource": CreateResourceOperation,
     }
 
     def parse(
@@ -294,6 +300,11 @@ class OperationParser:
             "change_character_hp": {
                 "entity_id",
             },
+            "update_item_instance": {
+                "instance_id",
+                "owner_id",
+                "location_id",
+            },
         }.get(operation_type, set())
 
         for field_name in id_fields:
@@ -409,6 +420,11 @@ class OperationParser:
             },
             "change_character_hp": {
                 "entity_id",
+            },
+            "update_item_instance": {
+                "instance_id",
+                "owner_id",
+                "location_id",
             },
         }.get(operation_type, set())
 
