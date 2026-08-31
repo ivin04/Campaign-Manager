@@ -8,6 +8,7 @@ from models.campaign_state import CampaignState
 from models.character_state import CharacterState
 from models.entity import Entity
 from models.operation_result import OperationResult
+from models.item import Item, ItemInstance
 from operations.world_operations import CreateEntityOperation, WorldOperation
 from services.llm_world_extractor import (
     LLMExtractionError,
@@ -706,3 +707,114 @@ def test_extractor_prompt_handles_missing_active_character():
 
     assert "PERSONAJE ACTIVO" in prompt
     assert "No hay personaje activo." in prompt
+
+def test_prompt_includes_known_items_and_item_instances():
+    provider = FakeProvider(
+        '{"operations": []}'
+    )
+
+    parser = FakeParser()
+
+    extractor = LLMWorldExtractor(
+        provider=provider,
+        operation_parser=parser,
+    )
+
+    world = WorldState()
+
+    world.items[10] = Item(
+        id=10,
+        name="Espada de hierro",
+        description="Una espada sencilla.",
+    )
+
+    world.item_instances[25] = ItemInstance(
+        id=25,
+        item_id=10,
+        instance_number=1,
+        owner_id=1,
+        location_id=2,
+        condition="intacto",
+        notes="Tiene una runa.",
+        active=True,
+    )
+
+    extractor.extract(
+        "La espada tiene una runa.",
+        make_context(world=world),
+    )
+
+    prompt = provider.calls[0]
+
+    assert "ITEMS CONOCIDOS" in prompt
+    assert "Espada de hierro" in prompt
+    assert "ID 10" in prompt
+
+    assert "INSTANCIAS DE ITEMS CONOCIDAS" in prompt
+    assert "ID 25" in prompt
+    assert "owner_id=1" in prompt
+    assert "location_id=2" in prompt
+    assert "condition=intacto" in prompt
+
+def test_prompt_documents_update_item_instance():
+    provider = FakeProvider(
+        '{"operations": []}'
+    )
+
+    parser = FakeParser()
+
+    extractor = LLMWorldExtractor(
+        provider=provider,
+        operation_parser=parser,
+    )
+
+    extractor.extract(
+        "La espada está dañada.",
+        make_context(),
+    )
+
+    prompt = provider.calls[0]
+
+    assert "update_item_instance" in prompt
+    assert "instance_id" in prompt
+    assert "condition" in prompt
+
+def test_prompt_documents_all_supported_operations():
+    provider = FakeProvider(
+        '{"operations": []}'
+    )
+
+    parser = FakeParser()
+
+    extractor = LLMWorldExtractor(
+        provider=provider,
+        operation_parser=parser,
+    )
+
+    extractor.extract(
+        "Algo ocurre.",
+        make_context(),
+    )
+
+    prompt = provider.calls[0]
+
+    expected_operations = [
+        "create_entity",
+        "update_entity",
+        "create_item",
+        "create_item_instance",
+        "transfer_item",
+        "update_item_instance",
+        "create_resource",
+        "gain_resource",
+        "spend_resource",
+        "transfer_resource",
+        "create_relation",
+        "update_relation",
+        "remove_relation",
+        "create_event",
+        "change_character_hp",
+    ]
+
+    for operation_type in expected_operations:
+        assert operation_type in prompt

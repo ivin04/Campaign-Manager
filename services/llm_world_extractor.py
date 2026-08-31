@@ -142,6 +142,48 @@ class LLMWorldExtractor:
         else:
             known_entities = "- Ninguna"
 
+        item_lines = []
+
+        for item_id, item in world.items.items():
+            item_lines.append(
+                f"- ID {item_id}: "
+                f"{item.name}"
+            )
+
+        if item_lines:
+            known_items = "\n".join(item_lines)
+        else:
+            known_items = "- Ninguno"
+
+
+        item_instance_lines = []
+
+        for instance_id, instance in world.item_instances.items():
+            item = world.items.get(instance.item_id)
+
+            item_name = (
+                item.name
+                if item is not None
+                else f"Item {instance.item_id}"
+            )
+
+            item_instance_lines.append(
+                f"- ID {instance_id}: "
+                f"{item_name} "
+                f"(instancia #{instance.instance_number}, "
+                f"owner_id={instance.owner_id}, "
+                f"location_id={instance.location_id}, "
+                f"condition={instance.condition}, "
+                f"active={instance.active})"
+            )
+
+        if item_instance_lines:
+            known_item_instances = "\n".join(
+                item_instance_lines
+            )
+        else:
+            known_item_instances = "- Ninguna"
+
         active_character = (
             context.active_character
         )
@@ -210,12 +252,18 @@ class LLMWorldExtractor:
             "ya aparezca en ENTIDADES CONOCIDAS.\n"
             "\n"
             "REGLAS DE IDENTIFICADORES:\n"
-            "- Para modificar una entidad existente usa "
-            "únicamente su ID mostrado en ENTIDADES CONOCIDAS.\n"
+            "- Usa únicamente IDs que aparezcan en el contexto "
+            "proporcionado por el backend.\n"
             "- NO inventes IDs.\n"
+            "- entity_id identifica entidades.\n"
+            "- item_id identifica definiciones de objetos.\n"
+            "- instance_id identifica instancias físicas de objetos.\n"
+            "- resource_id identifica recursos.\n"
+            "- relation_id identifica relaciones existentes.\n"
+            "- event_id identifica eventos históricos.\n"
             "- El personaje activo está marcado explícitamente.\n"
-            "- Para change_character_hp usa el entity_id real "
-            "del personaje correspondiente.\n"
+            "- Para change_character_hp utiliza el entity_id "
+            "real del personaje correspondiente.\n"
             "\n"
             "IMPORTANTE:\n"
             "- Solo crea una operación si el hecho está "
@@ -230,30 +278,201 @@ class LLMWorldExtractor:
             "\n"
             "OPERACIONES DISPONIBLES:\n"
             "\n"
-            "Crear entidad nueva:\n"
+            "1. CREAR ENTIDAD:\n"
             "{\n"
             '  "type": "create_entity",\n'
             '  "name": "Aldren",\n'
             '  "entity_type": "npc",\n'
-            '  "description": "Propietario de la taberna."\n'
+            '  "description": "Propietario de la taberna.",\n'
+            '  "notes": "Vive en Vorder\'s Hold.",\n'
+            '  "active": true\n'
             "}\n"
             "\n"
-            "Modificar entidad existente:\n"
+            "Usa create_entity cuando aparezca una entidad "
+            "nueva que deba formar parte del estado persistente "
+            "del mundo.\n"
+            "\n"
+
+            "2. MODIFICAR ENTIDAD:\n"
             "{\n"
             '  "type": "update_entity",\n'
             '  "entity_id": 2,\n'
-            '  "description": "Nueva información '
-            'explícitamente revelada."\n'
+            '  "description": "Nueva información revelada.",\n'
+            '  "notes": "Ahora sabemos que pertenece a la guardia."\n'
             "}\n"
             "\n"
-            "Cambiar HP de un personaje:\n"
+            "Usa únicamente el ID de una entidad incluida en "
+            "ENTIDADES CONOCIDAS.\n"
+            "\n"
+
+            "3. CREAR TIPO DE OBJETO:\n"
+            "{\n"
+            '  "type": "create_item",\n'
+            '  "name": "Espada de hierro",\n'
+            '  "description": "Una espada sencilla de hierro.",\n'
+            '  "significance": "Arma común.",\n'
+            '  "unique": false,\n'
+            '  "notes": ""\n'
+            "}\n"
+            "\n"
+            "create_item crea la definición del objeto, "
+            "no una copia física concreta.\n"
+            "\n"
+
+            "4. CREAR INSTANCIA FÍSICA DE OBJETO:\n"
+            "{\n"
+            '  "type": "create_item_instance",\n'
+            '  "item_id": 10,\n'
+            '  "instance_number": 1,\n'
+            '  "owner_id": 2,\n'
+            '  "location_id": 3,\n'
+            '  "condition": "intacto",\n'
+            '  "notes": "Tiene una inscripción en la empuñadura.",\n'
+            '  "active": true\n'
+            "}\n"
+            "\n"
+            "create_item_instance crea una copia física concreta "
+            "de un Item existente.\n"
+            "\n"
+
+            "IMPORTANTE: item_id debe corresponder a un Item "
+            "existente. No inventes IDs.\n"
+            "\n"
+
+            "5. TRANSFERIR OBJETO:\n"
+            "{\n"
+            '  "type": "transfer_item",\n'
+            '  "instance_id": 25,\n'
+            '  "new_owner_id": 7\n'
+            "}\n"
+            "\n"
+            "Usa transfer_item cuando una instancia física "
+            "existente cambia de propietario.\n"
+            "\n"
+
+            "6. ACTUALIZAR INSTANCIA DE OBJETO:\n"
+            "{\n"
+            '  "type": "update_item_instance",\n'
+            '  "instance_id": 25,\n'
+            '  "condition": "dañado",\n'
+            '  "notes": "La hoja tiene una grieta.",\n'
+            '  "active": true\n'
+            "}\n"
+            "\n"
+            "update_item_instance modifica únicamente los campos "
+            "proporcionados de una instancia física existente.\n"
+            "Los campos no proporcionados no deben modificarse.\n"
+            "\n"
+
+            "7. CREAR RECURSO:\n"
+            "{\n"
+            '  "type": "create_resource",\n'
+            '  "name": "Oro",\n'
+            '  "resource_type": "currency",\n'
+            '  "unit": "gp",\n'
+            '  "notes": ""\n'
+            "}\n"
+            "\n"
+
+            "8. OBTENER RECURSO:\n"
+            "{\n"
+            '  "type": "gain_resource",\n'
+            '  "resource_id": 10,\n'
+            '  "owner_id": 2,\n'
+            '  "amount": 50\n'
+            "}\n"
+            "\n"
+            "Usa gain_resource cuando una entidad recibe "
+            "una cantidad de un recurso.\n"
+            "\n"
+
+            "9. GASTAR RECURSO:\n"
+            "{\n"
+            '  "type": "spend_resource",\n'
+            '  "resource_id": 10,\n'
+            '  "owner_id": 2,\n'
+            '  "amount": 20\n'
+            "}\n"
+            "\n"
+            "Usa spend_resource cuando una entidad pierde "
+            "una cantidad de un recurso como consecuencia "
+            "de un hecho confirmado.\n"
+            "\n"
+
+            "10. TRANSFERIR RECURSO:\n"
+            "{\n"
+            '  "type": "transfer_resource",\n'
+            '  "resource_id": 10,\n'
+            '  "subject_id": 2,\n'
+            '  "target_id": 7,\n'
+            '  "amount": 15\n'
+            "}\n"
+            "\n"
+
+            "11. CREAR RELACIÓN:\n"
+            "{\n"
+            '  "type": "create_relation",\n'
+            '  "relation_id": "aldren_guardia",\n'
+            '  "subject_id": 2,\n'
+            '  "relation_type": "miembro_de",\n'
+            '  "target_id": 7,\n'
+            '  "metadata": {}\n'
+            "}\n"
+            "\n"
+
+            "12. MODIFICAR RELACIÓN:\n"
+            "{\n"
+            '  "type": "update_relation",\n'
+            '  "relation_id": "aldren_guardia",\n'
+            '  "relation_type": "aliado_de",\n'
+            '  "target_id": 7,\n'
+            '  "metadata": {},\n'
+            '  "active": true\n'
+            "}\n"
+            "\n"
+
+            "13. ELIMINAR RELACIÓN:\n"
+            "{\n"
+            '  "type": "remove_relation",\n'
+            '  "relation_id": "aldren_guardia"\n'
+            "}\n"
+            "\n"
+            "remove_relation no borra físicamente la relación. "
+            "La desactiva.\n"
+            "\n"
+
+            "14. CREAR EVENTO:\n"
+            "{\n"
+            '  "type": "create_event",\n'
+            '  "event_id": "puerta_cripta_abierta",\n'
+            '  "event_type": "world_event",\n'
+            '  "title": "La puerta de la cripta se abre",\n'
+            '  "description": "La antigua puerta fue abierta.",\n'
+            '  "consequences": "La cripta vuelve a ser accesible.",\n'
+            '  "session_id": 1,\n'
+            '  "secret": false,\n'
+            '  "metadata": {}\n'
+            "}\n"
+            "\n"
+
+            "15. CAMBIAR HP:\n"
             "{\n"
             '  "type": "change_character_hp",\n'
             '  "entity_id": 1,\n'
             '  "amount": -5\n'
             "}\n"
             "\n"
-            "FORMATO DE RESPUESTA:\n"
+            "Usa change_character_hp únicamente cuando el "
+            "daño o la curación hayan ocurrido realmente "
+            "en la narrativa.\n"
+            "\n"
+            "REGLA GENERAL:\n"
+            "Cada operación debe representar un hecho que haya "
+            "ocurrido realmente o que haya sido revelado "
+            "explícitamente en la narrativa.\n"
+            "No conviertas intenciones, posibilidades, amenazas "
+            "o acciones hipotéticas en cambios persistentes.\n"
+            "\n"
             "Devuelve exclusivamente un objeto JSON válido "
             "con esta estructura:\n"
             "{\n"
@@ -277,6 +496,12 @@ class LLMWorldExtractor:
             "\n"
             "ENTIDADES CONOCIDAS:\n"
             f"{known_entities}\n"
+            "\n"
+            "ITEMS CONOCIDOS:\n"
+            f"{known_items}\n"
+            "\n"
+            "INSTANCIAS DE ITEMS CONOCIDAS:\n"
+            f"{known_item_instances}\n"
             "\n"
             "Texto narrativo:\n"
             f"{text}\n"
