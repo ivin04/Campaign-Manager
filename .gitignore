@@ -7,4 +7,5 @@ data/*.db
 *$py.class
 data/*.backup
 *.json
+!integrations/sillytavern/manifest.json
 *.lnk

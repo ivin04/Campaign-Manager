@@ -1,0 +1,11 @@
+{
+  "display_name": "Campaign Manager",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Campaign Manager",
+  "version": "0.1.0",
+  "homePage": "https://github.com/ivin04/Campaign-Manager"
+}
