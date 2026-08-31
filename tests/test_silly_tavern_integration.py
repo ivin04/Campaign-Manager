@@ -825,3 +825,197 @@ def test_integration_service_applies_extracted_operations(
     assert calls[0]["world"] == []
 
     assert calls[0]["character"] == []
+
+def test_integration_service_persists_created_entity_from_extracted_operation():
+    from operations.world_operations import CreateEntityOperation
+    from services.silly_tavern_integration_service import (
+        SillyTavernIntegrationService,
+    )
+    from services.campaign_state_service import (
+        CampaignStateService,
+    )
+    from services.context_builder import (
+        ContextBuilder,
+    )
+    from services.llm_world_extractor import (
+        LLMWorldExtractor,
+    )
+    from services.world_service import (
+        WorldService,
+    )
+    from repositories.turn_repository import (
+        TurnRepository,
+    )
+    from repositories.campaign_repository import (
+        CampaignRepository,
+    )
+    from repositories.character_repository import (
+        CharacterRepository,
+    )
+    from repositories.entity_repository import (
+        EntityRepository,
+    )
+    from services.operation_parser import (
+        OperationParser,
+    )
+
+    world_service = WorldService()
+
+    campaign_state_service = CampaignStateService(
+        campaign_repository=CampaignRepository(),
+        character_repository=CharacterRepository(),
+        entity_repository=EntityRepository(),
+        world_service=world_service,
+    )
+
+    extractor = LLMWorldExtractor(
+        provider=lambda prompt: (
+            '{"operations": []}'
+        ),
+        operation_parser=OperationParser(),
+    )
+
+    turn_repository = TurnRepository()
+
+    service = SillyTavernIntegrationService(
+        campaign_state_service=campaign_state_service,
+        context_builder=ContextBuilder(),
+        extractor=extractor,
+        world_service=world_service,
+        turn_repository=turn_repository,
+    )
+
+    operation = CreateEntityOperation(
+        name="Aldren",
+        entity_type="npc",
+        description="Propietario de la taberna.",
+    )
+
+    extractor.extract = lambda narrative, context: [
+        operation
+    ]
+
+    result = service.process_turn(
+        player_input=(
+            "Me acerco al tabernero "
+            "y le pregunto su nombre."
+        ),
+        narrative=(
+            "El tabernero se presenta "
+            "como Aldren."
+        ),
+    )
+
+    assert result.operation_count == 1
+    assert result.successful_operation_count == 1
+    assert result.failed_operation_count == 0
+    assert result.all_operations_succeeded is True
+    assert result.world_changed is True
+
+    assert len(result.operations) == 1
+    assert result.operations[0] == operation
+
+    assert len(result.operation_results) == 1
+
+def test_integration_service_created_entity_is_available_in_context():
+    from operations.world_operations import CreateEntityOperation
+    from services.silly_tavern_integration_service import (
+        SillyTavernIntegrationService,
+    )
+    from services.campaign_state_service import (
+        CampaignStateService,
+    )
+    from services.context_builder import (
+        ContextBuilder,
+    )
+    from services.llm_world_extractor import (
+        LLMWorldExtractor,
+    )
+    from services.world_service import (
+        WorldService,
+    )
+    from repositories.turn_repository import (
+        TurnRepository,
+    )
+    from repositories.campaign_repository import (
+        CampaignRepository,
+    )
+    from repositories.character_repository import (
+        CharacterRepository,
+    )
+    from repositories.entity_repository import (
+        EntityRepository,
+    )
+    from services.operation_parser import (
+        OperationParser,
+    )
+
+    world_service = WorldService()
+
+    campaign_state_service = CampaignStateService(
+        campaign_repository=CampaignRepository(),
+        character_repository=CharacterRepository(),
+        entity_repository=EntityRepository(),
+        world_service=world_service,
+    )
+
+    extractor = LLMWorldExtractor(
+        provider=lambda prompt: (
+            '{"operations": []}'
+        ),
+        operation_parser=OperationParser(),
+    )
+
+    turn_repository = TurnRepository()
+
+    service = SillyTavernIntegrationService(
+        campaign_state_service=campaign_state_service,
+        context_builder=ContextBuilder(),
+        extractor=extractor,
+        world_service=world_service,
+        turn_repository=turn_repository,
+    )
+
+    operation = CreateEntityOperation(
+        name="Aldren",
+        entity_type="npc",
+        description="Propietario de la taberna.",
+    )
+
+    extractor.extract = lambda narrative, context: [
+        operation
+    ]
+
+    result = service.process_turn(
+        player_input=(
+            "Me acerco al tabernero "
+            "y le pregunto su nombre."
+        ),
+        narrative=(
+            "El tabernero se presenta "
+            "como Aldren."
+        ),
+    )
+
+    assert result.operation_count == 1
+    assert result.successful_operation_count == 1
+    assert result.failed_operation_count == 0
+    assert result.all_operations_succeeded is True
+    assert result.world_changed is True
+
+    turn_context = (
+        campaign_state_service.get_turn_context()
+    )
+
+    entities = turn_context.world.entities
+
+    aldren = next(
+        entity
+        for entity in entities.values()
+        if entity.name == "Aldren"
+    )
+
+    assert aldren.entity_type == "npc"
+    assert aldren.description == (
+        "Propietario de la taberna."
+    )
