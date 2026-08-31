@@ -160,15 +160,15 @@ class CampaignTurnService:
         """
         Ejecuta un turno completo.
 
-        Con CampaignStateService:
+        Cuando CampaignStateService está disponible, obtiene el
+        contexto de campaña y resuelve el turno.
 
-            1. obtiene el estado de campaña
-            2. obtiene WorldState
-            3. resuelve el turno
-            4. devuelve el resultado
+        La resolución y la persistencia del turno comparten la
+        misma conexión cuando los servicios soportan conn.
 
-        Sin CampaignStateService se conserva el comportamiento
-        anterior para compatibilidad.
+        Si las operaciones del turno fallan, se revierten los
+        cambios de la resolución, pero el resultado del turno
+        se persiste igualmente.
         """
 
         if not isinstance(
@@ -186,151 +186,231 @@ class CampaignTurnService:
                 "player_input must not be empty"
             )
 
-        # --------------------------------------------------------
-        # Obtener WorldState
-        # --------------------------------------------------------
-
-        if self.campaign_state_service is not None:
-
-            try:
-                turn_context = (
-                    self.campaign_state_service.get_turn_context()
-                )
-
-            except CampaignStateServiceError as exc:
-                raise CampaignTurnServiceError(
-                    "failed to obtain campaign turn context"
-                ) from exc
-
-            except Exception as exc:
-                raise CampaignTurnServiceError(
-                    "CampaignStateService failed to get "
-                    "turn context"
-                ) from exc
-
-            if not isinstance(
-                turn_context,
-                TurnContext,
-            ):
-                raise CampaignTurnServiceError(
-                    "CampaignStateService returned an invalid "
-                    "TurnContext"
-                )
-
-            world = turn_context.world
-
-        else:
-
-            try:
-                world = (
-                    self.world_service.get_world()
-                )
-
-            except Exception as exc:
-                raise CampaignTurnServiceError(
-                    "WorldService failed to get world"
-                ) from exc
-
-            if not isinstance(
-                world,
-                WorldState,
-            ):
-                raise CampaignTurnServiceError(
-                    "WorldService returned an invalid WorldState"
-                )
-
-            turn_context = TurnContext(
-                campaign=CampaignState(),
-                current_session=None,
-                active_character=None,
-                world=world,
-            )
-
-        world_snapshot = copy.deepcopy(
-            world
-        )
-
-        # --------------------------------------------------------
-        # Obtener historial reciente
-        # --------------------------------------------------------
-
-        recent_turns = None
-
-        if self.turn_repository is not None:
-            session_id = None
-
-            if (
-                isinstance(turn_context, TurnContext)
-                and turn_context.current_session is not None
-            ):
-                session_id = (
-                    turn_context.current_session.session_id
-                )
-
-            try:
-                recent_turns = (
-                    self.turn_repository.list_recent_turns(
-                        session_id=session_id,
-                        limit=10,
-                    )
-                )
-
-            except Exception as exc:
-                raise CampaignTurnServiceError(
-                    "failed to load recent turn history"
-                ) from exc
-
-        # --------------------------------------------------------
-        # Resolver turno
-        # --------------------------------------------------------
-
         try:
 
             with get_conn() as conn:
 
-                if recent_turns is None:
+                # ------------------------------------------------
+                # Obtener contexto de campaña
+                # ------------------------------------------------
 
-                    result = (
-                        self.turn_resolution_service.resolve_turn(
-                            turn_context,
-                            normalized_input,
-                            conn=conn,
+                if self.campaign_state_service is not None:
+
+                    try:
+                        try:
+                            turn_context = (
+                                self.campaign_state_service
+                                .get_turn_context(
+                                    conn=conn,
+                                )
+                            )
+
+                        except TypeError as exc:
+                            if (
+                                "unexpected keyword argument 'conn'"
+                                not in str(exc)
+                            ):
+                                raise
+
+                            turn_context = (
+                                self.campaign_state_service
+                                .get_turn_context()
+                            )
+
+                    except CampaignStateServiceError as exc:
+                        raise CampaignTurnServiceError(
+                            "failed to obtain campaign turn context"
+                        ) from exc
+
+                    except Exception as exc:
+                        raise CampaignTurnServiceError(
+                            "CampaignStateService failed to get "
+                            "turn context"
+                        ) from exc
+
+                    if not isinstance(
+                        turn_context,
+                        TurnContext,
+                    ):
+                        raise CampaignTurnServiceError(
+                            "CampaignStateService returned an invalid "
+                            "TurnContext"
                         )
-                    )
+
+                    world = turn_context.world
 
                 else:
 
-                    result = (
-                        self.turn_resolution_service.resolve_turn(
-                            turn_context,
-                            normalized_input,
-                            recent_turns=recent_turns,
-                            conn=conn,
+                    try:
+                        world = (
+                            self.world_service.get_world()
                         )
+
+                    except Exception as exc:
+                        raise CampaignTurnServiceError(
+                            "WorldService failed to get world"
+                        ) from exc
+
+                    if not isinstance(
+                        world,
+                        WorldState,
+                    ):
+                        raise CampaignTurnServiceError(
+                            "WorldService returned an invalid "
+                            "WorldState"
+                        )
+
+                    turn_context = TurnContext(
+                        campaign=CampaignState(),
+                        current_session=None,
+                        active_character=None,
+                        world=world,
                     )
 
-                if not isinstance(
-                    result,
-                    TurnResolutionResult,
-                ):
-                    raise CampaignTurnServiceError(
-                        "TurnResolutionService returned "
-                        "an invalid TurnResolutionResult"
-                    )
+                # ------------------------------------------------
+                # Snapshot del mundo
+                # ------------------------------------------------
 
-                if not result.all_operations_succeeded:
-                    conn.rollback()
+                world_snapshot = copy.deepcopy(
+                    world
+                )
+
+                # ------------------------------------------------
+                # Historial reciente
+                # ------------------------------------------------
+
+                recent_turns = None
 
                 if self.turn_repository is not None:
 
                     session_id = None
 
                     if (
-                        isinstance(
-                            turn_context,
-                            TurnContext,
+                        turn_context.current_session
+                        is not None
+                    ):
+                        session_id = (
+                            turn_context.current_session.session_id
                         )
-                        and turn_context.current_session
+
+                    try:
+                        recent_turns = (
+                            self.turn_repository.list_recent_turns(
+                                session_id=session_id,
+                                limit=10,
+                            )
+                        )
+
+                    except Exception as exc:
+                        raise CampaignTurnServiceError(
+                            "failed to load recent turn history"
+                        ) from exc
+
+                # ------------------------------------------------
+                # Resolver turno
+                # ------------------------------------------------
+
+                try:
+
+                    if recent_turns is None:
+
+                        result = (
+                            self.turn_resolution_service
+                            .resolve_turn(
+                                turn_context,
+                                normalized_input,
+                                conn=conn,
+                            )
+                        )
+
+                    else:
+
+                        result = (
+                            self.turn_resolution_service
+                            .resolve_turn(
+                                turn_context,
+                                normalized_input,
+                                recent_turns=recent_turns,
+                                conn=conn,
+                            )
+                        )
+
+                except TurnResolutionServiceError as exc:
+
+                    self._restore_world_state(
+                        world,
+                        world_snapshot,
+                    )
+
+                    raise CampaignTurnServiceError(
+                        "turn resolution failed"
+                    ) from exc
+
+                except CampaignTurnServiceError:
+
+                    self._restore_world_state(
+                        world,
+                        world_snapshot,
+                    )
+
+                    raise
+
+                except Exception as exc:
+
+                    self._restore_world_state(
+                        world,
+                        world_snapshot,
+                    )
+
+                    raise CampaignTurnServiceError(
+                        "unexpected error while resolving turn"
+                    ) from exc
+
+                # ------------------------------------------------
+                # Validar resultado
+                # ------------------------------------------------
+
+                if not isinstance(
+                    result,
+                    TurnResolutionResult,
+                ):
+                    self._restore_world_state(
+                        world,
+                        world_snapshot,
+                    )
+
+                    raise CampaignTurnServiceError(
+                        "TurnResolutionService returned an invalid "
+                        "TurnResolutionResult"
+                    )
+
+                # ------------------------------------------------
+                # Si alguna operación ha fallado:
+                #
+                # - restauramos WorldState
+                # - hacemos rollback de la DB
+                # - PERO guardamos el TurnRecord después del rollback
+                # ------------------------------------------------
+
+                if not result.all_operations_succeeded:
+
+                    self._restore_world_state(
+                        world,
+                        world_snapshot,
+                    )
+
+                    conn.rollback()
+
+                # ------------------------------------------------
+                # Persistir turno
+                # ------------------------------------------------
+
+                if self.turn_repository is not None:
+
+                    session_id = None
+
+                    if (
+                        turn_context.current_session
                         is not None
                     ):
                         session_id = (
@@ -361,37 +441,16 @@ class CampaignTurnService:
                         conn=conn,
                     )
 
-        except TurnResolutionServiceError as exc:
-
-            self._restore_world_state(
-                world,
-                world_snapshot,
-            )
-
-            raise CampaignTurnServiceError(
-                "turn resolution failed"
-            ) from exc
+                return result
 
         except CampaignTurnServiceError:
-            self._restore_world_state(
-                world,
-                world_snapshot,
-            )
-
             raise
 
         except Exception as exc:
 
-            self._restore_world_state(
-                world,
-                world_snapshot,
-            )
-
             raise CampaignTurnServiceError(
                 "unexpected error while resolving turn"
             ) from exc
-
-        return result
 
     # ============================================================
     # LOAD
