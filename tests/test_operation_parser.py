@@ -9,6 +9,7 @@ from operations.world_operations import (
     SpendResourceOperation,
     TransferResourceOperation,
     UpdateRelationOperation,
+    UpdateEntityOperation,
 )
 from operations.referenced_operation import ReferencedOperation
 
@@ -333,3 +334,32 @@ def test_update_relation_accepts_target_reference():
 
     assert operation.target_id.name == "new_target"
 
+def test_update_entity_accepts_entity_reference():
+    parser = OperationParser()
+
+    operations = parser.parse(
+        {
+            "operations": [
+                {
+                    "type": "update_entity",
+                    "entity_id": "$npc",
+                    "name": "Aldren el Rojo",
+                }
+            ]
+        }
+    )
+
+    operation = operations[0]
+
+    assert isinstance(
+        operation,
+        UpdateEntityOperation,
+    )
+
+    assert isinstance(
+        operation.entity_id,
+        OperationReference,
+    )
+
+    assert operation.entity_id.name == "npc"
+    assert operation.name == "Aldren el Rojo"

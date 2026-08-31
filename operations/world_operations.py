@@ -48,9 +48,12 @@ class UpdateEntityOperation(WorldOperation):
     entidad existente.
 
     None significa "no modificar ese campo".
+
+    entity_id puede utilizar OperationReference para
+    referenciar una entidad creada por una operación anterior.
     """
 
-    entity_id: int
+    entity_id: int | OperationReference
 
     name: str | None = None
     entity_type: str | None = None

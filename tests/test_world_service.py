@@ -1297,3 +1297,39 @@ def test_create_relation_resolves_entity_references_end_to_end():
     assert relation.subject_id == aldren.id
     assert relation.target_id == guardia.id
     assert relation.relation_type == "miembro_de"
+
+def test_update_entity_resolves_reference_end_to_end():
+    service = WorldService()
+
+    result = service.apply_operations(
+        [
+            ReferencedOperation(
+                operation=CreateEntityOperation(
+                    name="Aldren",
+                    entity_type="npc",
+                    description="Un guerrero.",
+                ),
+                ref="npc",
+            ),
+            UpdateEntityOperation(
+                entity_id=OperationReference("npc"),
+                description="Un guerrero veterano.",
+                notes="Conoce los caminos de Vorder's Hold.",
+            ),
+        ]
+    )
+
+    assert result.success is True
+    assert result.changed is True
+
+    world = service.get_world()
+
+    entity = next(
+        entity
+        for entity in world.entities.values()
+        if entity.name == "Aldren"
+    )
+
+    assert entity.entity_type == "npc"
+    assert entity.description == "Un guerrero veterano."
+    assert entity.notes == "Conoce los caminos de Vorder's Hold."
