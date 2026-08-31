@@ -732,18 +732,17 @@ def test_integration_service_applies_extracted_operations(
 # SERVICE - OPERATION ORDER
 # ============================================================
 
-
 def test_integration_service_preserves_operation_order(
     monkeypatch,
 ):
     from operations.character_operations import (
-        CharacterOperation,
+        ChangeCharacterHpOperation,
     )
     from operations.referenced_operation import (
         ReferencedOperation,
     )
     from operations.world_operations import (
-        WorldOperation,
+        CreateEntityOperation,
     )
 
     (
@@ -754,49 +753,40 @@ def test_integration_service_preserves_operation_order(
         turn_repository,
     ) = _build_service()
 
-    world_operation_a = (
-        WorldOperation(
-            operation="create_entity",
-            data={
-                "name": "Aldren",
-                "entity_type": "npc",
-            },
-        )
+    # --------------------------------------------------------
+    # Operaciones en el orden exacto producido por el extractor.
+    #
+    # World -> Character -> World
+    # --------------------------------------------------------
+
+    operation_a = ReferencedOperation(
+        ref="first",
+        operation=CreateEntityOperation(
+            name="Aldren",
+            entity_type="npc",
+        ),
     )
 
-    character_operation = (
-        CharacterOperation(
-            operation="change_character_hp",
-            data={
-                "character_id": 1,
-                "delta": -2,
-            },
-        )
+    operation_b = ReferencedOperation(
+        ref="second",
+        operation=ChangeCharacterHpOperation(
+            entity_id=1,
+            amount=-2,
+        ),
     )
 
-    world_operation_b = (
-        WorldOperation(
-            operation="create_entity",
-            data={
-                "name": "Marta",
-                "entity_type": "npc",
-            },
-        )
+    operation_c = ReferencedOperation(
+        ref="third",
+        operation=CreateEntityOperation(
+            name="Marta",
+            entity_type="npc",
+        ),
     )
 
     operations = [
-        ReferencedOperation(
-            ref="first",
-            operation=world_operation_a,
-        ),
-        ReferencedOperation(
-            ref="second",
-            operation=character_operation,
-        ),
-        ReferencedOperation(
-            ref="third",
-            operation=world_operation_b,
-        ),
+        operation_a,
+        operation_b,
+        operation_c,
     ]
 
     monkeypatch.setattr(
@@ -832,7 +822,17 @@ def test_integration_service_preserves_operation_order(
             ordered_operations
         )
 
-        return ()
+        captured["conn"] = conn
+
+        # Este test NO pretende probar el contenido de los
+        # OperationResult. Solo necesitamos devolver tres
+        # elementos para que el resultado del turno tenga
+        # la misma cardinalidad que las operaciones.
+        return (
+            None,
+            None,
+            None,
+        )
 
     monkeypatch.setattr(
         world_service,
@@ -851,17 +851,34 @@ def test_integration_service_preserves_operation_order(
         narrative="Ocurre algo.",
     )
 
+    # --------------------------------------------------------
+    # Las operaciones siguen separadas por tipo.
+    # --------------------------------------------------------
+
     assert captured["world_operations"] == (
-        operations[0],
-        operations[2],
+        operation_a,
+        operation_c,
     )
 
     assert captured["character_operations"] == (
-        operations[1],
+        operation_b,
     )
 
+    # --------------------------------------------------------
+    # ESTA ES LA COMPROBACIÓN IMPORTANTE:
+    #
+    # El orden original producido por el extractor se conserva
+    # aunque las operaciones se separen internamente por tipo.
+    # --------------------------------------------------------
+
     assert captured["ordered_operations"] == (
-        operations[0],
-        operations[1],
-        operations[2],
+        operation_a,
+        operation_b,
+        operation_c,
     )
+
+    # --------------------------------------------------------
+    # WorldService recibió una conexión.
+    # --------------------------------------------------------
+
+    assert captured["conn"] is not None
