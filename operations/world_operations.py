@@ -119,6 +119,24 @@ class TransferItemOperation(WorldOperation):
     new_owner_id: int
 
 
+@dataclass(frozen=True)
+class UpdateItemInstanceOperation(WorldOperation):
+    """
+    Modifica únicamente los campos proporcionados de una
+    instancia física existente.
+
+    None significa "no modificar ese campo".
+    """
+
+    instance_id: int
+
+    owner_id: int | None = None
+    location_id: int | None = None
+    condition: str | None = None
+    notes: str | None = None
+    active: bool | None = None
+
+
 # ============================================================
 # RESOURCES
 # ============================================================
