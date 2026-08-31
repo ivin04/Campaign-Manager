@@ -2111,7 +2111,9 @@ def test_mixed_turn_operations_are_atomic_when_character_operation_fails(
     )
 
     result = world_service.apply_turn_operations(
-        operations,
+        (world_operation,),
+        (character_operation,),
+        ordered_operations=operations,
     )
 
     assert len(result) == 2

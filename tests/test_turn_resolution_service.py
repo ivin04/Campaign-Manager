@@ -1248,6 +1248,7 @@ def test_resolve_turn_preserves_global_operation_order(
         character_operations,
         *,
         conn=None,
+        ordered_operations=None,
     ):
         nonlocal received_world_operations
         nonlocal received_character_operations
@@ -1255,8 +1256,19 @@ def test_resolve_turn_preserves_global_operation_order(
         received_world_operations = tuple(
             world_operations
         )
+
         received_character_operations = tuple(
             character_operations
+        )
+
+        assert ordered_operations is not None
+
+        received_operations = tuple(
+            ordered_operations
+        )
+
+        assert received_operations == tuple(
+            operations
         )
 
         return ()
@@ -1270,13 +1282,4 @@ def test_resolve_turn_preserves_global_operation_order(
     service.resolve_turn(
         context,
         "Ataco a Aldren.",
-    )
-
-    received_operations = (
-        received_world_operations
-        + received_character_operations
-    )
-
-    assert received_operations == tuple(
-        operations
     )
