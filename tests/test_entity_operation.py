@@ -1,6 +1,9 @@
 from models.world_state import WorldState
-from operations.world_operations import CreateEntityOperation
+from operations.world_operations import CreateEntityOperation, UpdateEntityOperation
+from operations.operation_reference import OperationReference
+from operations.referenced_operation import ReferencedOperation
 from services.world_applier import WorldApplier
+from services.world_service import WorldService
 
 
 def test_create_entity():
@@ -69,3 +72,51 @@ def test_create_entity_does_not_create_duplicate():
 
     assert len(world.entities) == 1
     assert world.entities[1].name == "Aldric"
+
+def test_create_entity_returns_generated_id():
+    world = WorldState()
+    applier = WorldApplier()
+
+    operation = CreateEntityOperation(
+        name="Aldric",
+        entity_type="npc",
+    )
+
+    result = applier.apply(
+        world,
+        operation,
+    )
+
+    assert result.success is True
+    assert result.data == {
+        "entity_id": 1,
+    }
+
+def test_create_entity_reference_uses_generated_id():
+    service = WorldService()
+
+    result = service.apply_operations(
+        [
+            ReferencedOperation(
+                operation=CreateEntityOperation(
+                    name="Aldric",
+                    entity_type="npc",
+                ),
+                ref="npc",
+            ),
+            UpdateEntityOperation(
+                entity_id=OperationReference("npc"),
+                description="Descripción actualizada.",
+            ),
+        ]
+    )
+
+    assert result.success is True
+    assert result.changed is True
+
+    world = service.get_world()
+
+    entity = world.entities[1]
+
+    assert entity.name == "Aldric"
+    assert entity.description == "Descripción actualizada."

@@ -149,6 +149,9 @@ class WorldApplier:
             status=OperationStatus.SUCCESS,
             message=f"Entity '{entity.name}' created.",
             operation=operation,
+            data={
+                "entity_id": entity_id,
+            },
         )
 
     def _apply_update_entity(
