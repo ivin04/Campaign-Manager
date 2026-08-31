@@ -1759,3 +1759,88 @@ def test_failed_turn_rolls_back_database_changes_before_saving_turn(
         turns[0].all_operations_succeeded
         is False
     )
+
+def test_turn_save_failure_rolls_back_resolution_database_changes(
+    isolated_database,
+    monkeypatch,
+):
+    from database import one
+    from repositories.turn_repository import TurnRepository
+
+    class MutatingResolutionService(
+        RecordingTurnResolutionService
+    ):
+        def resolve_turn(
+            self,
+            turn_context,
+            player_input,
+            *,
+            recent_turns=None,
+            conn=None,
+        ):
+            conn.execute(
+                """
+                UPDATE campaign
+                SET summary=?
+                WHERE id=1
+                """,
+                ("temporary",),
+            )
+
+            return super().resolve_turn(
+                turn_context,
+                player_input,
+                recent_turns=recent_turns,
+                conn=conn,
+            )
+
+    def failing_save_turn(
+        self,
+        turn,
+        *,
+        conn=None,
+    ):
+        raise RuntimeError(
+            "forced turn persistence failure"
+        )
+
+    monkeypatch.setattr(
+        TurnRepository,
+        "save_turn",
+        failing_save_turn,
+    )
+
+    resolver = MutatingResolutionService(
+        TurnResolutionResult(
+            player_input="Exploro.",
+            narrative="La acción tiene éxito.",
+            operations=(),
+            operation_results=(),
+        )
+    )
+
+    world_service = RecordingWorldService()
+
+    service = CampaignTurnService(
+        turn_resolution_service=resolver,
+        world_service=world_service,
+        turn_repository=TurnRepository(),
+    )
+
+    with pytest.raises(
+        CampaignTurnServiceError,
+        match="unexpected error while resolving turn",
+    ):
+        service.play_turn(
+            "Exploro."
+        )
+
+    campaign = one(
+        """
+        SELECT summary
+        FROM campaign
+        WHERE id=1
+        """
+    )
+
+    assert campaign["summary"] == ""
