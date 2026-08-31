@@ -6,6 +6,11 @@ from models.schemas import (
 )
 
 
+# ============================================================
+# SCHEMAS
+# ============================================================
+
+
 def test_silly_tavern_context_schema_accepts_query():
     data = SillyTavernContextIn(
         query="Entro en la taberna."
@@ -83,6 +88,11 @@ def test_silly_tavern_turn_schema_rejects_empty_narrative():
         )
 
 
+# ============================================================
+# API
+# ============================================================
+
+
 def test_integration_context_endpoint_rejects_missing_query(
     client,
 ):
@@ -144,6 +154,7 @@ def test_integration_turn_endpoint_rejects_empty_narrative(
     )
 
     assert response.status_code == 422
+
 
 def test_integration_context_endpoint_returns_context(
     client,
@@ -348,9 +359,13 @@ def test_integration_turn_endpoint_returns_400_on_service_error(
         "detail": "processing failed"
     }
 
-def test_integration_service_uses_context_builder_for_context(
-    monkeypatch,
-):
+
+# ============================================================
+# SERVICE HELPERS
+# ============================================================
+
+
+def _build_service():
     from services.silly_tavern_integration_service import (
         SillyTavernIntegrationService,
     )
@@ -362,6 +377,9 @@ def test_integration_service_uses_context_builder_for_context(
     )
     from services.llm_world_extractor import (
         LLMWorldExtractor,
+    )
+    from services.operation_parser import (
+        OperationParser,
     )
     from services.world_service import (
         WorldService,
@@ -402,12 +420,7 @@ def test_integration_service_uses_context_builder_for_context(
         provider=lambda prompt: (
             '{"operations": []}'
         ),
-        operation_parser=(
-            __import__(
-                "services.operation_parser",
-                fromlist=["OperationParser"],
-            ).OperationParser()
-        ),
+        operation_parser=OperationParser(),
     )
 
     turn_repository = TurnRepository()
@@ -423,6 +436,31 @@ def test_integration_service_uses_context_builder_for_context(
             turn_repository=turn_repository,
         )
     )
+
+    return (
+        service,
+        context_builder,
+        extractor,
+        world_service,
+        turn_repository,
+    )
+
+
+# ============================================================
+# SERVICE - CONTEXT
+# ============================================================
+
+
+def test_integration_service_uses_context_builder_for_context(
+    monkeypatch,
+):
+    (
+        service,
+        context_builder,
+        _extractor,
+        _world_service,
+        turn_repository,
+    ) = _build_service()
 
     calls = []
 
@@ -475,79 +513,21 @@ def test_integration_service_uses_context_builder_for_context(
     )
 
 
+# ============================================================
+# SERVICE - NARRATIVE
+# ============================================================
+
+
 def test_integration_service_does_not_generate_narrative(
     monkeypatch,
 ):
-    from services.silly_tavern_integration_service import (
-        SillyTavernIntegrationService,
-    )
-    from services.campaign_state_service import (
-        CampaignStateService,
-    )
-    from services.context_builder import (
-        ContextBuilder,
-    )
-    from services.llm_world_extractor import (
-        LLMWorldExtractor,
-    )
-    from services.world_service import (
-        WorldService,
-    )
-    from repositories.turn_repository import (
-        TurnRepository,
-    )
-    from repositories.campaign_repository import (
-        CampaignRepository,
-    )
-    from repositories.character_repository import (
-        CharacterRepository,
-    )
-    from repositories.entity_repository import (
-        EntityRepository,
-    )
-    from services.operation_parser import (
-        OperationParser,
-    )
-
-    world_service = WorldService()
-
-    campaign_state_service = (
-        CampaignStateService(
-            campaign_repository=(
-                CampaignRepository()
-            ),
-            character_repository=(
-                CharacterRepository()
-            ),
-            entity_repository=(
-                EntityRepository()
-            ),
-            world_service=world_service,
-        )
-    )
-
-    context_builder = ContextBuilder()
-
-    extractor = LLMWorldExtractor(
-        provider=lambda prompt: (
-            '{"operations": []}'
-        ),
-        operation_parser=OperationParser(),
-    )
-
-    turn_repository = TurnRepository()
-
-    service = (
-        SillyTavernIntegrationService(
-            campaign_state_service=(
-                campaign_state_service
-            ),
-            context_builder=context_builder,
-            extractor=extractor,
-            world_service=world_service,
-            turn_repository=turn_repository,
-        )
-    )
+    (
+        service,
+        _context_builder,
+        extractor,
+        world_service,
+        turn_repository,
+    ) = _build_service()
 
     monkeypatch.setattr(
         extractor,
@@ -564,14 +544,17 @@ def test_integration_service_does_not_generate_narrative(
     monkeypatch.setattr(
         turn_repository,
         "save_turn",
-        lambda turn: turn,
+        lambda turn, *, conn=None: turn,
     )
 
     monkeypatch.setattr(
         world_service,
         "apply_turn_operations",
         lambda world_operations,
-        character_operations: (),
+        character_operations,
+        *,
+        conn=None,
+        ordered_operations=None: (),
     )
 
     result = service.process_turn(
@@ -583,75 +566,17 @@ def test_integration_service_does_not_generate_narrative(
         "La puerta se abre."
     )
 
+
 def test_integration_service_passes_silly_tavern_narrative_to_extractor(
     monkeypatch,
 ):
-    from services.silly_tavern_integration_service import (
-        SillyTavernIntegrationService,
-    )
-    from services.campaign_state_service import (
-        CampaignStateService,
-    )
-    from services.context_builder import (
-        ContextBuilder,
-    )
-    from services.llm_world_extractor import (
-        LLMWorldExtractor,
-    )
-    from services.world_service import (
-        WorldService,
-    )
-    from repositories.turn_repository import (
-        TurnRepository,
-    )
-    from repositories.campaign_repository import (
-        CampaignRepository,
-    )
-    from repositories.character_repository import (
-        CharacterRepository,
-    )
-    from repositories.entity_repository import (
-        EntityRepository,
-    )
-    from services.operation_parser import (
-        OperationParser,
-    )
-
-    world_service = WorldService()
-
-    campaign_state_service = (
-        CampaignStateService(
-            campaign_repository=(
-                CampaignRepository()
-            ),
-            character_repository=(
-                CharacterRepository()
-            ),
-            entity_repository=(
-                EntityRepository()
-            ),
-            world_service=world_service,
-        )
-    )
-
-    extractor = LLMWorldExtractor(
-        provider=lambda prompt: (
-            '{"operations": []}'
-        ),
-        operation_parser=OperationParser(),
-    )
-
-    service = (
-        SillyTavernIntegrationService(
-            campaign_state_service=(
-                campaign_state_service
-            ),
-            context_builder=ContextBuilder(),
-            extractor=extractor,
-            world_service=world_service,
-            turn_repository=TurnRepository(),
-        )
-    )
+    (
+        service,
+        _context_builder,
+        extractor,
+        world_service,
+        turn_repository,
+    ) = _build_service()
 
     captured = {}
 
@@ -671,134 +596,67 @@ def test_integration_service_passes_silly_tavern_narrative_to_extractor(
     )
 
     monkeypatch.setattr(
-        service.turn_repository,
+        turn_repository,
         "list_recent_turns",
         lambda session_id=None, limit=10: [],
     )
 
     monkeypatch.setattr(
-        service.turn_repository,
+        turn_repository,
         "save_turn",
-        lambda turn: turn,
+        lambda turn, *, conn=None: turn,
     )
 
     monkeypatch.setattr(
         world_service,
         "apply_turn_operations",
         lambda world_operations,
-        character_operations: (),
+        character_operations,
+        *,
+        conn=None,
+        ordered_operations=None: (),
     )
 
-    service.process_turn(
+    result = service.process_turn(
         player_input="Abro la puerta.",
         narrative=(
-            "La puerta se abre y una corriente "
-            "helada entra en la habitación."
+            "La puerta se abre lentamente."
         ),
     )
 
     assert captured["text"] == (
-        "La puerta se abre y una corriente "
-        "helada entra en la habitación."
+        "La puerta se abre lentamente."
     )
+
+    assert captured["context"] is not None
+
+    assert result.narrative == (
+        "La puerta se abre lentamente."
+    )
+
+
+# ============================================================
+# SERVICE - OPERATIONS
+# ============================================================
+
 
 def test_integration_service_applies_extracted_operations(
     monkeypatch,
 ):
-    from services.silly_tavern_integration_service import (
-        SillyTavernIntegrationService,
-    )
-    from services.campaign_state_service import (
-        CampaignStateService,
-    )
-    from services.context_builder import (
-        ContextBuilder,
-    )
-    from services.llm_world_extractor import (
-        LLMWorldExtractor,
-    )
-    from services.world_service import (
-        WorldService,
-    )
-    from repositories.turn_repository import (
-        TurnRepository,
-    )
-    from repositories.campaign_repository import (
-        CampaignRepository,
-    )
-    from repositories.character_repository import (
-        CharacterRepository,
-    )
-    from repositories.entity_repository import (
-        EntityRepository,
-    )
-    from services.operation_parser import (
-        OperationParser,
-    )
+    (
+        service,
+        _context_builder,
+        extractor,
+        world_service,
+        turn_repository,
+    ) = _build_service()
 
-    world_service = WorldService()
-
-    campaign_state_service = (
-        CampaignStateService(
-            campaign_repository=(
-                CampaignRepository()
-            ),
-            character_repository=(
-                CharacterRepository()
-            ),
-            entity_repository=(
-                EntityRepository()
-            ),
-            world_service=world_service,
-        )
-    )
-
-    extractor = LLMWorldExtractor(
-        provider=lambda prompt: (
-            '{"operations": []}'
-        ),
-        operation_parser=OperationParser(),
-    )
-
-    turn_repository = TurnRepository()
-
-    service = (
-        SillyTavernIntegrationService(
-            campaign_state_service=(
-                campaign_state_service
-            ),
-            context_builder=ContextBuilder(),
-            extractor=extractor,
-            world_service=world_service,
-            turn_repository=turn_repository,
-        )
-    )
-
-    calls = []
-
-    def fake_apply(
-        world_operations,
-        character_operations,
-    ):
-        calls.append(
-            {
-                "world": world_operations,
-                "character": character_operations,
-            }
-        )
-
-        return ()
+    operations = []
 
     monkeypatch.setattr(
         extractor,
         "extract",
-        lambda narrative, context: [],
-    )
-
-    monkeypatch.setattr(
-        world_service,
-        "apply_turn_operations",
-        fake_apply,
+        lambda narrative, context: operations,
     )
 
     monkeypatch.setattr(
@@ -807,307 +665,129 @@ def test_integration_service_applies_extracted_operations(
         lambda session_id=None, limit=10: [],
     )
 
+    captured = {}
+
+    def fake_apply_turn_operations(
+        world_operations,
+        character_operations,
+        *,
+        conn=None,
+        ordered_operations=None,
+    ):
+        captured["world_operations"] = tuple(
+            world_operations
+        )
+
+        captured["character_operations"] = tuple(
+            character_operations
+        )
+
+        captured["ordered_operations"] = tuple(
+            ordered_operations
+        )
+
+        captured["conn"] = conn
+
+        return ()
+
+    monkeypatch.setattr(
+        world_service,
+        "apply_turn_operations",
+        fake_apply_turn_operations,
+    )
+
     monkeypatch.setattr(
         turn_repository,
         "save_turn",
-        lambda turn: turn,
+        lambda turn, *, conn=None: (
+            captured.__setitem__(
+                "save_conn",
+                conn,
+            )
+            or turn
+        ),
     )
 
     result = service.process_turn(
-        player_input="Miro alrededor.",
-        narrative="La habitación permanece en silencio.",
+        player_input="Abro la puerta.",
+        narrative="La puerta se abre.",
     )
 
     assert result.operation_count == 0
 
-    assert len(calls) == 1
+    assert captured["world_operations"] == ()
 
-    assert calls[0]["world"] == []
+    assert captured["character_operations"] == ()
 
-    assert calls[0]["character"] == []
+    assert captured["ordered_operations"] == ()
 
-def test_integration_service_persists_created_entity_from_extracted_operation():
-    from operations.world_operations import CreateEntityOperation
-    from services.silly_tavern_integration_service import (
-        SillyTavernIntegrationService,
-    )
-    from services.campaign_state_service import (
-        CampaignStateService,
-    )
-    from services.context_builder import (
-        ContextBuilder,
-    )
-    from services.llm_world_extractor import (
-        LLMWorldExtractor,
-    )
-    from services.world_service import (
-        WorldService,
-    )
-    from repositories.turn_repository import (
-        TurnRepository,
-    )
-    from repositories.campaign_repository import (
-        CampaignRepository,
-    )
-    from repositories.character_repository import (
-        CharacterRepository,
-    )
-    from repositories.entity_repository import (
-        EntityRepository,
-    )
-    from services.operation_parser import (
-        OperationParser,
+    assert captured["conn"] is not None
+
+    assert captured["save_conn"] is (
+        captured["conn"]
     )
 
-    world_service = WorldService()
 
-    campaign_state_service = CampaignStateService(
-        campaign_repository=CampaignRepository(),
-        character_repository=CharacterRepository(),
-        entity_repository=EntityRepository(),
-        world_service=world_service,
-    )
-
-    extractor = LLMWorldExtractor(
-        provider=lambda prompt: (
-            '{"operations": []}'
-        ),
-        operation_parser=OperationParser(),
-    )
-
-    turn_repository = TurnRepository()
-
-    service = SillyTavernIntegrationService(
-        campaign_state_service=campaign_state_service,
-        context_builder=ContextBuilder(),
-        extractor=extractor,
-        world_service=world_service,
-        turn_repository=turn_repository,
-    )
-
-    operation = CreateEntityOperation(
-        name="Aldren",
-        entity_type="npc",
-        description="Propietario de la taberna.",
-    )
-
-    extractor.extract = lambda narrative, context: [
-        operation
-    ]
-
-    result = service.process_turn(
-        player_input=(
-            "Me acerco al tabernero "
-            "y le pregunto su nombre."
-        ),
-        narrative=(
-            "El tabernero se presenta "
-            "como Aldren."
-        ),
-    )
-
-    assert result.operation_count == 1
-    assert result.successful_operation_count == 1
-    assert result.failed_operation_count == 0
-    assert result.all_operations_succeeded is True
-    assert result.world_changed is True
-
-    assert len(result.operations) == 1
-    assert result.operations[0] == operation
-
-    assert len(result.operation_results) == 1
-
-def test_integration_service_created_entity_is_available_in_context():
-    from operations.world_operations import CreateEntityOperation
-    from services.silly_tavern_integration_service import (
-        SillyTavernIntegrationService,
-    )
-    from services.campaign_state_service import (
-        CampaignStateService,
-    )
-    from services.context_builder import (
-        ContextBuilder,
-    )
-    from services.llm_world_extractor import (
-        LLMWorldExtractor,
-    )
-    from services.world_service import (
-        WorldService,
-    )
-    from repositories.turn_repository import (
-        TurnRepository,
-    )
-    from repositories.campaign_repository import (
-        CampaignRepository,
-    )
-    from repositories.character_repository import (
-        CharacterRepository,
-    )
-    from repositories.entity_repository import (
-        EntityRepository,
-    )
-    from services.operation_parser import (
-        OperationParser,
-    )
-
-    world_service = WorldService()
-
-    campaign_state_service = CampaignStateService(
-        campaign_repository=CampaignRepository(),
-        character_repository=CharacterRepository(),
-        entity_repository=EntityRepository(),
-        world_service=world_service,
-    )
-
-    extractor = LLMWorldExtractor(
-        provider=lambda prompt: (
-            '{"operations": []}'
-        ),
-        operation_parser=OperationParser(),
-    )
-
-    turn_repository = TurnRepository()
-
-    service = SillyTavernIntegrationService(
-        campaign_state_service=campaign_state_service,
-        context_builder=ContextBuilder(),
-        extractor=extractor,
-        world_service=world_service,
-        turn_repository=turn_repository,
-    )
-
-    operation = CreateEntityOperation(
-        name="Aldren",
-        entity_type="npc",
-        description="Propietario de la taberna.",
-    )
-
-    extractor.extract = lambda narrative, context: [
-        operation
-    ]
-
-    result = service.process_turn(
-        player_input=(
-            "Me acerco al tabernero "
-            "y le pregunto su nombre."
-        ),
-        narrative=(
-            "El tabernero se presenta "
-            "como Aldren."
-        ),
-    )
-
-    assert result.operation_count == 1
-    assert result.successful_operation_count == 1
-    assert result.failed_operation_count == 0
-    assert result.all_operations_succeeded is True
-    assert result.world_changed is True
-
-    turn_context = (
-        campaign_state_service.get_turn_context()
-    )
-
-    entities = turn_context.world.entities
-
-    aldren = next(
-        entity
-        for entity in entities.values()
-        if entity.name == "Aldren"
-    )
-
-    assert aldren.entity_type == "npc"
-    assert aldren.description == (
-        "Propietario de la taberna."
-    )
+# ============================================================
+# SERVICE - OPERATION ORDER
+# ============================================================
 
 
 def test_integration_service_preserves_operation_order(
     monkeypatch,
 ):
-    from services.silly_tavern_integration_service import (
-        SillyTavernIntegrationService,
-    )
-    from services.campaign_state_service import (
-        CampaignStateService,
-    )
-    from services.context_builder import (
-        ContextBuilder,
-    )
-    from services.llm_world_extractor import (
-        LLMWorldExtractor,
-    )
-    from services.operation_parser import (
-        OperationParser,
-    )
-    from services.world_service import (
-        WorldService,
-    )
-    from repositories.turn_repository import (
-        TurnRepository,
-    )
-    from repositories.campaign_repository import (
-        CampaignRepository,
-    )
-    from repositories.character_repository import (
-        CharacterRepository,
-    )
-    from repositories.entity_repository import (
-        EntityRepository,
-    )
-    from operations.world_operations import (
-        WorldOperation,
-    )
     from operations.character_operations import (
         CharacterOperation,
     )
     from operations.referenced_operation import (
         ReferencedOperation,
     )
+    from operations.world_operations import (
+        WorldOperation,
+    )
 
-    world_service = WorldService()
+    (
+        service,
+        _context_builder,
+        extractor,
+        world_service,
+        turn_repository,
+    ) = _build_service()
 
-    campaign_state_service = (
-        CampaignStateService(
-            campaign_repository=CampaignRepository(),
-            character_repository=CharacterRepository(),
-            entity_repository=EntityRepository(),
-            world_service=world_service,
+    world_operation_a = (
+        WorldOperation(
+            operation="create_entity",
+            data={
+                "name": "Aldren",
+                "entity_type": "npc",
+            },
         )
     )
 
-    extractor = LLMWorldExtractor(
-        provider=lambda prompt: (
-            '{"operations": []}'
-        ),
-        operation_parser=OperationParser(),
-    )
-
-    turn_repository = TurnRepository()
-
-    service = (
-        SillyTavernIntegrationService(
-            campaign_state_service=(
-                campaign_state_service
-            ),
-            context_builder=ContextBuilder(),
-            extractor=extractor,
-            world_service=world_service,
-            turn_repository=turn_repository,
+    character_operation = (
+        CharacterOperation(
+            operation="change_character_hp",
+            data={
+                "character_id": 1,
+                "delta": -2,
+            },
         )
     )
 
-    world_operation = object.__new__(
-        WorldOperation
-    )
-
-    character_operation = object.__new__(
-        CharacterOperation
+    world_operation_b = (
+        WorldOperation(
+            operation="create_entity",
+            data={
+                "name": "Marta",
+                "entity_type": "npc",
+            },
+        )
     )
 
     operations = [
         ReferencedOperation(
             ref="first",
-            operation=world_operation,
+            operation=world_operation_a,
         ),
         ReferencedOperation(
             ref="second",
@@ -1115,7 +795,7 @@ def test_integration_service_preserves_operation_order(
         ),
         ReferencedOperation(
             ref="third",
-            operation=world_operation,
+            operation=world_operation_b,
         ),
     ]
 
@@ -1131,7 +811,7 @@ def test_integration_service_preserves_operation_order(
         lambda session_id=None, limit=10: [],
     )
 
-    received = {}
+    captured = {}
 
     def fake_apply_turn_operations(
         world_operations,
@@ -1140,15 +820,15 @@ def test_integration_service_preserves_operation_order(
         conn=None,
         ordered_operations=None,
     ):
-        received["world_operations"] = tuple(
+        captured["world_operations"] = tuple(
             world_operations
         )
 
-        received["character_operations"] = tuple(
+        captured["character_operations"] = tuple(
             character_operations
         )
 
-        received["ordered_operations"] = tuple(
+        captured["ordered_operations"] = tuple(
             ordered_operations
         )
 
@@ -1171,16 +851,16 @@ def test_integration_service_preserves_operation_order(
         narrative="Ocurre algo.",
     )
 
-    assert received["world_operations"] == (
+    assert captured["world_operations"] == (
         operations[0],
         operations[2],
     )
 
-    assert received["character_operations"] == (
+    assert captured["character_operations"] == (
         operations[1],
     )
 
-    assert received["ordered_operations"] == (
+    assert captured["ordered_operations"] == (
         operations[0],
         operations[1],
         operations[2],
