@@ -9,6 +9,8 @@ from models.schemas import (
     CampaignSessionUpdate,
     SessionIn,
     TurnIn,
+    SillyTavernContextIn,
+    SillyTavernTurnIn,
 )
 
 from repositories.campaign_repository import CampaignRepository
@@ -33,6 +35,11 @@ from services.turn_resolution_service import (
 )
 from services.world_service import WorldService
 from services.campaign_state_service import CampaignStateService
+
+from services.silly_tavern_integration_service import (
+    SillyTavernIntegrationService,
+    SillyTavernIntegrationServiceError,
+)
 
 
 app = FastAPI(
@@ -228,6 +235,20 @@ campaign_turn_service = create_campaign_turn_service(
     context_builder=context_builder,
     campaign_state_service=campaign_state_service,
     turn_repository=turn_repository,
+)
+
+silly_tavern_integration_service = (
+    SillyTavernIntegrationService(
+        campaign_state_service=campaign_state_service,
+        context_builder=context_builder,
+        extractor=(
+            campaign_turn_service
+            .turn_resolution_service
+            .extractor
+        ),
+        world_service=world_service,
+        turn_repository=turn_repository,
+    )
 )
 
 # ============================================================
@@ -487,6 +508,120 @@ def memory_context(
         q.strip(),
     )
 
+
+# ============================================================
+# SILLYTAVERN INTEGRATION
+# ============================================================
+
+
+@app.post("/integration/context")
+def get_silly_tavern_context(
+    data: SillyTavernContextIn,
+):
+    """
+    Devuelve el contexto persistente necesario para que
+    SillyTavern genere la siguiente respuesta narrativa.
+    """
+
+    try:
+        result = (
+            silly_tavern_integration_service
+            .get_context(
+                data.query
+            )
+        )
+
+    except SillyTavernIntegrationServiceError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="failed to build SillyTavern context",
+        ) from exc
+
+    return result
+
+
+@app.post("/integration/turn")
+def process_silly_tavern_turn(
+    data: SillyTavernTurnIn,
+):
+    """
+    Procesa una narrativa que ya ha sido generada
+    por SillyTavern.
+
+    Campaign Manager:
+
+        narrativa
+            ↓
+        extracción
+            ↓
+        operaciones
+            ↓
+        WorldService
+            ↓
+        SQLite
+    """
+
+    try:
+        result = (
+            silly_tavern_integration_service
+            .process_turn(
+                player_input=data.player_input,
+                narrative=data.narrative,
+            )
+        )
+
+    except SillyTavernIntegrationServiceError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="failed to process SillyTavern turn",
+        ) from exc
+
+    return {
+        "narrative": result.narrative,
+        "player_input": result.player_input,
+        "operation_count": (
+            result.operation_count
+        ),
+        "successful_operation_count": (
+            result.successful_operation_count
+        ),
+        "failed_operation_count": (
+            result.failed_operation_count
+        ),
+        "all_operations_succeeded": (
+            result.all_operations_succeeded
+        ),
+        "world_changed": (
+            result.world_changed
+        ),
+        "operations": [
+            type(operation).__name__
+            for operation
+            in (
+                result.operations
+                + result.character_operations
+            )
+        ],
+        "operation_results": [
+            _serialize_operation_result(
+                operation_result
+            )
+            for operation_result
+            in result.operation_results
+        ],
+    }
 
 # ============================================================
 # WORLD

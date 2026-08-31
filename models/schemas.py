@@ -81,3 +81,73 @@ class ActiveCharacterUpdate(BaseModel):
         default=None,
         ge=1,
     )
+
+class SillyTavernContextIn(BaseModel):
+    """
+    Petición de contexto procedente de SillyTavern.
+
+    query representa la acción o situación actual que el
+    modelo va a utilizar para determinar qué recuerdos del
+    mundo son relevantes.
+    """
+
+    query: str = Field(
+        ...,
+        min_length=1,
+        max_length=10000,
+    )
+
+    @field_validator("query")
+    @classmethod
+    def validate_query(
+        cls,
+        value: str,
+    ) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError(
+                "query must not be empty"
+            )
+
+        return value
+
+
+class SillyTavernTurnIn(BaseModel):
+    """
+    Turno ya generado por SillyTavern.
+
+    Campaign Manager NO genera la narrativa en este endpoint.
+    Recibe la acción del jugador y la narrativa resultante,
+    extrae los cambios persistentes y los aplica al mundo.
+    """
+
+    player_input: str = Field(
+        ...,
+        min_length=1,
+        max_length=10000,
+    )
+
+    narrative: str = Field(
+        ...,
+        min_length=1,
+        max_length=30000,
+    )
+
+    @field_validator(
+        "player_input",
+        "narrative",
+    )
+    @classmethod
+    def validate_text(
+        cls,
+        value: str,
+    ) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError(
+                "text must not be empty"
+            )
+
+        return value
