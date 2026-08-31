@@ -7,3 +7,4 @@ data/*.db
 *$py.class
 data/*.backup
 *.json
+*.lnk
