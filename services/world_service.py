@@ -301,6 +301,15 @@ class WorldService:
                 "world_operations must be iterable"
             ) from exc
 
+        try:
+            character_operations = tuple(
+                character_operations
+            )
+        except TypeError as exc:
+            raise TypeError(
+                "character_operations must be iterable"
+            ) from exc
+
         if ordered_operations is not None:
             try:
                 ordered_operations = tuple(
@@ -408,45 +417,53 @@ class WorldService:
         def apply_with_connection(connection):
 
             if ordered_operations is not None:
-                operations_to_apply = ordered_operations
+
+                for operation in ordered_operations:
+
+                    operation_to_apply = operation
+
+                    if isinstance(
+                        operation,
+                        ReferencedOperation,
+                    ):
+                        operation_to_apply = operation.operation
+
+                    if isinstance(
+                        operation_to_apply,
+                        WorldOperation,
+                    ):
+                        apply_world_operation(
+                            operation,
+                            connection,
+                        )
+
+                    elif isinstance(
+                        operation_to_apply,
+                        CharacterOperation,
+                    ):
+                        apply_character_operation(
+                            operation,
+                            connection,
+                        )
+
+                    else:
+                        raise TypeError(
+                            f"Unsupported operation type: "
+                            f"{type(operation_to_apply).__name__}"
+                        )
+
             else:
-                operations_to_apply = (
-                    tuple(world_operations)
-                    + tuple(character_operations)
-                )
 
-            for operation in operations_to_apply:
-
-                operation_to_apply = operation
-
-                if isinstance(
-                    operation,
-                    ReferencedOperation,
-                ):
-                    operation_to_apply = operation.operation
-
-                if isinstance(
-                    operation_to_apply,
-                    WorldOperation,
-                ):
+                for operation in world_operations:
                     apply_world_operation(
                         operation,
                         connection,
                     )
 
-                elif isinstance(
-                    operation_to_apply,
-                    CharacterOperation,
-                ):
+                for operation in character_operations:
                     apply_character_operation(
                         operation,
                         connection,
-                    )
-
-                else:
-                    raise TypeError(
-                        f"Unsupported operation type: "
-                        f"{type(operation_to_apply).__name__}"
                     )
 
             if world_operations:
