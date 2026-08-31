@@ -109,7 +109,9 @@ class LLMWorldExtractor:
         Construye un prompt determinista para extraer cambios
         persistentes del turno.
 
-        El LLM no debe ejecutar operaciones ni inventar IDs.
+        El LLM interpreta únicamente hechos explícitos.
+        Los IDs solo pueden utilizarse para entidades ya existentes.
+        Las entidades nuevas se crean sin ID.
         """
 
         world = context.world
@@ -179,43 +181,102 @@ class LLMWorldExtractor:
             )
 
         return (
-            "Eres un extractor de estado de un mundo de D&D.\n"
+            "Eres un extractor de estado persistente "
+            "de un mundo de D&D.\n"
             "\n"
-            "Tu tarea es detectar únicamente cambios persistentes "
-            "descritos explícitamente en el texto.\n"
+            "Tu tarea es convertir únicamente hechos "
+            "explícitamente confirmados en la narrativa "
+            "en operaciones estructuradas.\n"
             "\n"
             "NO narres.\n"
             "NO expliques.\n"
-            "NO inventes información.\n"
+            "NO añadas texto fuera del JSON.\n"
+            "NO inventes hechos.\n"
             "NO ejecutes operaciones.\n"
             "\n"
-            "Puedes devolver operaciones de mundo o de personaje.\n"
+            "Solo registra información que haya ocurrido "
+            "o haya sido revelada explícitamente en la "
+            "narrativa.\n"
+            "\n"
+            "CUÁNDO CREAR UNA ENTIDAD NUEVA:\n"
+            "- Si aparece por primera vez una persona, NPC, "
+            "criatura, lugar u otra entidad identificable "
+            "por un nombre explícito y la narrativa revela "
+            "información útil para el estado del mundo, "
+            "puedes usar create_entity.\n"
+            "- create_entity NO recibe entity_id.\n"
+            "- El ID de una entidad nueva lo genera el backend.\n"
+            "- No uses create_entity para una entidad que "
+            "ya aparezca en ENTIDADES CONOCIDAS.\n"
             "\n"
             "REGLAS DE IDENTIFICADORES:\n"
-            "- Usa únicamente IDs que aparezcan en el contexto.\n"
+            "- Para modificar una entidad existente usa "
+            "únicamente su ID mostrado en ENTIDADES CONOCIDAS.\n"
             "- NO inventes IDs.\n"
             "- El personaje activo está marcado explícitamente.\n"
-            "- Para cambiar HP del personaje activo usa su "
-            "entity_id real.\n"
+            "- Para change_character_hp usa el entity_id real "
+            "del personaje correspondiente.\n"
             "\n"
             "IMPORTANTE:\n"
-            "- Solo crea una operación si el cambio está "
+            "- Solo crea una operación si el hecho está "
             "explícitamente descrito en la narrativa.\n"
-            "- No deduzcas daño, curación, objetos, recursos o "
-            "relaciones que no estén descritos.\n"
-            "- No conviertas intención narrativa en cambio "
-            "persistente si el texto no confirma que ocurrió.\n"
+            "- No deduzcas daño, curación, objetos, recursos "
+            "o relaciones que no estén confirmados.\n"
+            "- No conviertas una intención en un cambio "
+            "persistente si la narrativa no confirma "
+            "que ocurrió.\n"
+            "- Si no existe ningún cambio persistente, "
+            "devuelve una lista de operaciones vacía.\n"
+            "\n"
+            "OPERACIONES DISPONIBLES:\n"
+            "\n"
+            "Crear entidad nueva:\n"
+            "{\n"
+            '  "type": "create_entity",\n'
+            '  "name": "Aldren",\n'
+            '  "entity_type": "npc",\n'
+            '  "description": "Propietario de la taberna."\n'
+            "}\n"
+            "\n"
+            "Modificar entidad existente:\n"
+            "{\n"
+            '  "type": "update_entity",\n'
+            '  "entity_id": 2,\n'
+            '  "description": "Nueva información '
+            'explícitamente revelada."\n'
+            "}\n"
+            "\n"
+            "Cambiar HP de un personaje:\n"
+            "{\n"
+            '  "type": "change_character_hp",\n'
+            '  "entity_id": 1,\n'
+            '  "amount": -5\n'
+            "}\n"
+            "\n"
+            "FORMATO DE RESPUESTA:\n"
+            "Devuelve exclusivamente un objeto JSON válido "
+            "con esta estructura:\n"
+            "{\n"
+            '  "operations": [\n'
+            "    {\n"
+            '      "type": "create_entity",\n'
+            '      "name": "Aldren",\n'
+            '      "entity_type": "npc",\n'
+            '      "description": "Propietario de la taberna."\n'
+            "    }\n"
+            "  ]\n"
+            "}\n"
+            "\n"
+            "Si no hay ningún cambio persistente:\n"
+            "{\n"
+            '  "operations": []\n'
+            "}\n"
             "\n"
             "PERSONAJE ACTIVO:\n"
             f"{character_block}\n"
             "\n"
             "ENTIDADES CONOCIDAS:\n"
             f"{known_entities}\n"
-            "\n"
-            "Devuelve exclusivamente JSON válido con esta forma:\n"
-            "{\n"
-            '  "operations": []\n'
-            "}\n"
             "\n"
             "Texto narrativo:\n"
             f"{text}\n"
@@ -243,17 +304,6 @@ class LLMWorldExtractor:
             raise LLMExtractionError(
                 "LLM returned an empty response"
             )
-
-        # Algunos modelos devuelven el JSON dentro de un
-        # bloque Markdown. Aceptamos tanto JSON puro como:
-        #
-        # ```json
-        # {
-        #   "operations": []
-        # }
-        # ```
-        #
-        # El contenido sigue teniendo que ser JSON válido.
 
         if response.startswith("```"):
             lines = response.splitlines()
