@@ -318,6 +318,9 @@ class CampaignTurnService:
                         "an invalid TurnResolutionResult"
                     )
 
+                if not result.all_operations_succeeded:
+                    conn.rollback()
+
                 if self.turn_repository is not None:
 
                     session_id = None

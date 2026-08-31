@@ -1657,3 +1657,105 @@ def test_invalid_resolution_result_restores_world():
         world_service.world.entities[1]
         == "original"
     )
+
+def test_failed_turn_rolls_back_database_changes_before_saving_turn(
+    isolated_database,
+):
+    from database import one
+    from operations.world_operations import (
+        CreateEntityOperation,
+    )
+
+    operation = CreateEntityOperation(
+        name="Temporal",
+        entity_type="npc",
+        description="Temporal.",
+        notes="",
+        active=True,
+    )
+
+    result = TurnResolutionResult(
+        player_input="Exploro.",
+        narrative="La acción falla.",
+        operations=(operation,),
+        operation_results=(
+            OperationResult(
+                status=OperationStatus.INVALID,
+                message="Forced failure.",
+                operation=operation,
+            ),
+        ),
+    )
+
+    class MutatingFailingResolutionService(
+        RecordingTurnResolutionService
+    ):
+        def resolve_turn(
+            self,
+            turn_context,
+            player_input,
+            *,
+            recent_turns=None,
+            conn=None,
+        ):
+            conn.execute(
+                """
+                UPDATE campaign
+                SET summary=?
+                WHERE id=1
+                """,
+                ("temporary",),
+            )
+
+            return super().resolve_turn(
+                turn_context,
+                player_input,
+                recent_turns=recent_turns,
+                conn=conn,
+            )
+
+    resolver = MutatingFailingResolutionService(
+        result
+    )
+
+    world_service = RecordingWorldService()
+
+    turn_repository = TurnRepository()
+
+    service = CampaignTurnService(
+        turn_resolution_service=resolver,
+        world_service=world_service,
+        turn_repository=turn_repository,
+    )
+
+    returned = service.play_turn(
+        "Exploro."
+    )
+
+    assert (
+        returned.all_operations_succeeded
+        is False
+    )
+
+    campaign = one(
+        """
+        SELECT summary
+        FROM campaign
+        WHERE id=1
+        """
+    )
+
+    assert campaign["summary"] == ""
+
+    turns = turn_repository.list_turns()
+
+    assert len(turns) == 1
+
+    assert turns[0].player_input == (
+        "Exploro."
+    )
+
+    assert (
+        turns[0].all_operations_succeeded
+        is False
+    )
