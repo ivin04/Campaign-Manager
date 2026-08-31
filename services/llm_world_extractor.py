@@ -244,6 +244,28 @@ class LLMWorldExtractor:
                 "LLM returned an empty response"
             )
 
+        # Algunos modelos devuelven el JSON dentro de un
+        # bloque Markdown. Aceptamos tanto JSON puro como:
+        #
+        # ```json
+        # {
+        #   "operations": []
+        # }
+        # ```
+        #
+        # El contenido sigue teniendo que ser JSON válido.
+
+        if response.startswith("```"):
+            lines = response.splitlines()
+
+            if (
+                len(lines) >= 2
+                and lines[-1].strip() == "```"
+            ):
+                response = "\n".join(
+                    lines[1:-1]
+                ).strip()
+
         try:
             payload = json.loads(
                 response
