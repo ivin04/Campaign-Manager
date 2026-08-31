@@ -333,3 +333,64 @@ def test_search_can_find_event_by_metadata(service, world):
 
     assert len(result["events"]) == 1
     assert result["events"][0]["id"] == "event-001"
+
+def test_search_matches_entity_from_natural_language_query():
+    from models.entity import Entity
+    from models.world_state import WorldState
+    from services.memory_search_service import (
+        MemorySearchService,
+    )
+
+    world = WorldState()
+
+    entity = Entity(
+        id=1,
+        name="Aldren",
+        entity_type="npc",
+        description="Propietario de la taberna.",
+        notes="",
+        active=True,
+    )
+
+    world.entities[entity.id] = entity
+
+    service = MemorySearchService()
+
+    result = service.search(
+        world,
+        "¿Quién es Aldren?",
+    )
+
+    assert len(result["entities"]) == 1
+    assert result["entities"][0]["name"] == "Aldren"
+
+
+def test_search_matches_entity_when_name_is_only_part_of_query():
+    from models.entity import Entity
+    from models.world_state import WorldState
+    from services.memory_search_service import (
+        MemorySearchService,
+    )
+
+    world = WorldState()
+
+    entity = Entity(
+        id=1,
+        name="Aldren",
+        entity_type="npc",
+        description="Propietario de la taberna.",
+        notes="",
+        active=True,
+    )
+
+    world.entities[entity.id] = entity
+
+    service = MemorySearchService()
+
+    result = service.search(
+        world,
+        "Háblame de Aldren",
+    )
+
+    assert len(result["entities"]) == 1
+    assert result["entities"][0]["name"] == "Aldren"
