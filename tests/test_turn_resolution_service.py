@@ -27,6 +27,7 @@ from operations.referenced_operation import ReferencedOperation
 from operations.world_operations import UpdateEntityOperation
 from operations.operation_reference import OperationReference
 from operations.world_operations import WorldOperation
+from operations.character_operations import ChangeCharacterHpOperation
 
 class RecordingDMService(DMService):
 
@@ -1204,3 +1205,78 @@ def test_referenced_operation_survives_turn_resolution():
     )
 
     assert second.entity_id.name == "npc"
+
+def test_resolve_turn_preserves_global_operation_order(
+    monkeypatch,
+):
+    operations = [
+        CreateEntityOperation(
+            name="Aldren",
+            entity_type="npc",
+        ),
+        ChangeCharacterHpOperation(
+            entity_id=1,
+            amount=-2,
+        ),
+        UpdateEntityOperation(
+            entity_id=1,
+            notes="Herido durante el combate.",
+        ),
+    ]
+
+    dm = RecordingDMService()
+
+    extractor = RecordingExtractor(
+        operations=operations,
+    )
+
+    world_service = WorldService()
+
+    service = TurnResolutionService(
+        dm_service=dm,
+        extractor=extractor,
+        world_service=world_service,
+    )
+
+    context = make_turn_context()
+
+    received_world_operations = None
+    received_character_operations = None
+
+    def fake_apply_turn_operations(
+        world_operations,
+        character_operations,
+        *,
+        conn=None,
+    ):
+        nonlocal received_world_operations
+        nonlocal received_character_operations
+
+        received_world_operations = tuple(
+            world_operations
+        )
+        received_character_operations = tuple(
+            character_operations
+        )
+
+        return ()
+
+    monkeypatch.setattr(
+        world_service,
+        "apply_turn_operations",
+        fake_apply_turn_operations,
+    )
+
+    service.resolve_turn(
+        context,
+        "Ataco a Aldren.",
+    )
+
+    received_operations = (
+        received_world_operations
+        + received_character_operations
+    )
+
+    assert received_operations == tuple(
+        operations
+    )

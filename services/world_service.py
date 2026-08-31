@@ -10,6 +10,8 @@ from operations.referenced_operation import ReferencedOperation
 from models.world_state import WorldState
 from models.operation_result import OperationResult
 
+from operations.character_operations import CharacterOperation
+
 from operations.world_operations import (
     WorldOperation,
 )
@@ -403,17 +405,38 @@ class WorldService:
 
         def apply_with_connection(connection):
 
-            for operation in world_operations:
-                apply_world_operation(
-                    operation,
-                    connection,
-                )
+            for operation in operations:
+                operation_to_apply = operation
 
-            for operation in character_operations:
-                apply_character_operation(
+                if isinstance(
                     operation,
-                    connection,
-                )
+                    ReferencedOperation,
+                ):
+                    operation_to_apply = operation.operation
+
+                if isinstance(
+                    operation_to_apply,
+                    WorldOperation,
+                ):
+                    self._apply_world_operation(
+                        operation,
+                        connection,
+                    )
+
+                elif isinstance(
+                    operation_to_apply,
+                    CharacterOperation,
+                ):
+                    self._apply_character_operation(
+                        operation,
+                        connection,
+                    )
+
+                else:
+                    raise TypeError(
+                        f"Unsupported operation type: "
+                        f"{type(operation_to_apply).__name__}"
+                    )
 
             if world_operations:
                 self.repository.save_world(
