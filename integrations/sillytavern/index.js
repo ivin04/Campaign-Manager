@@ -18,6 +18,8 @@ const defaultSettings = {
 
 let settings = null;
 
+let lastProcessedTurnKey = null;
+
 function log(...args) {
     console.log(
         '[Campaign Manager]',
@@ -413,7 +415,97 @@ function registerTurnDetection() {
     );
 }
 
-function onMessageReceived() {
+async function sendTurnToBackend(
+    playerInput,
+    narrativeText,
+) {
+    const currentSettings =
+        getSettings();
+
+    const backendUrl =
+        currentSettings.backendUrl
+            .trim()
+            .replace(/\/+$/, '');
+
+    if (!backendUrl) {
+        warn(
+            'Backend URL is empty. Turn was not sent.',
+        );
+
+        return null;
+    }
+
+    const payload = {
+        player_input: playerInput,
+        narrative: narrativeText,
+    };
+
+    log(
+        'Sending turn to Campaign Manager:',
+        payload,
+    );
+
+    const response =
+        await fetch(
+            `${backendUrl}/integration/turn`,
+            {
+                method: 'POST',
+
+                headers: {
+                    'Content-Type':
+                        'application/json',
+
+                    'Accept':
+                        'application/json',
+                },
+
+                body: JSON.stringify(
+                    payload,
+                ),
+            },
+        );
+
+    let responseBody = null;
+
+    try {
+        responseBody =
+            await response.json();
+    } catch {
+        responseBody = null;
+    }
+
+    if (!response.ok) {
+        const detail =
+            responseBody?.detail;
+
+        let errorMessage;
+
+        if (typeof detail === 'string') {
+            errorMessage = detail;
+        } else if (
+            detail !== undefined
+        ) {
+            errorMessage =
+                JSON.stringify(detail);
+        } else {
+            errorMessage =
+                'Unknown backend error';
+        }
+
+        throw new Error(
+            `HTTP ${response.status}: ${errorMessage}`,
+        );
+    }
+
+    log(
+        'Turn processed successfully:',
+        responseBody,
+    );
+
+    return responseBody;
+}
+
+async function onMessageReceived() {
     const currentSettings =
         getSettings();
 
@@ -497,13 +589,59 @@ function onMessageReceived() {
         return;
     }
 
+    /*
+     * Use the message indexes and content to
+     * prevent the same turn from being sent
+     * more than once.
+     */
+    const turnKey =
+        [
+            chat.length - 2,
+            playerInput,
+            chat.length - 1,
+            narrativeText,
+        ].join('|');
+
+    if (
+        lastProcessedTurnKey ===
+        turnKey
+    ) {
+        log(
+            'Turn already processed. Skipping duplicate.',
+        );
+
+        return;
+    }
+
+    lastProcessedTurnKey =
+        turnKey;
+
     log(
         'Turn detected:',
         {
-            player_input: playerInput,
-            narrative: narrativeText,
+            player_input:
+                playerInput,
+            narrative:
+                narrativeText,
         },
     );
+
+    try {
+        await sendTurnToBackend(
+            playerInput,
+            narrativeText,
+        );
+    } catch (error) {
+        /*
+         * Allow retry if the backend failed.
+         */
+        lastProcessedTurnKey = null;
+
+        console.error(
+            '[Campaign Manager] Failed to process turn:',
+            error,
+        );
+    }
 }
 
 function initializeExtension() {
