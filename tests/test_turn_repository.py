@@ -710,3 +710,87 @@ def test_list_recent_turns_rejects_boolean_session_id(
         repository.list_recent_turns(
             session_id=True,
         )
+
+def test_save_turn_with_connection_does_not_commit_transaction(
+    isolated_database,
+):
+    from database import get_conn
+    from repositories.turn_repository import TurnRepository
+    from models.turn_record import TurnRecord
+
+    repository = TurnRepository()
+
+    with get_conn() as conn:
+        turn = TurnRecord(
+            session_id=None,
+            player_input="Exploro.",
+            narrative="Encuentras una puerta.",
+            operation_count=0,
+            successful_operation_count=0,
+            failed_operation_count=0,
+            all_operations_succeeded=True,
+            world_changed=False,
+        )
+
+        saved = repository.save_turn(
+            turn,
+            conn=conn,
+        )
+
+        assert saved.id is not None
+
+        row = conn.execute(
+            """
+            SELECT id
+            FROM turns
+            WHERE id=?
+            """,
+            (saved.id,),
+        ).fetchone()
+
+        assert row is not None
+
+        # La transacción debe seguir bajo control del caller.
+        conn.rollback()
+
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT id
+            FROM turns
+            WHERE id=?
+            """,
+            (saved.id,),
+        ).fetchone()
+
+        assert row is None
+
+def test_save_turn_without_connection_persists_turn(
+    isolated_database,
+):
+    from repositories.turn_repository import TurnRepository
+    from models.turn_record import TurnRecord
+
+    repository = TurnRepository()
+
+    turn = TurnRecord(
+        session_id=None,
+        player_input="Espero.",
+        narrative="Pasa una hora.",
+        operation_count=0,
+        successful_operation_count=0,
+        failed_operation_count=0,
+        all_operations_succeeded=True,
+        world_changed=False,
+    )
+
+    saved = repository.save_turn(turn)
+
+    assert saved.id is not None
+
+    loaded = repository.get_turn(saved.id)
+
+    assert loaded is not None
+    assert loaded.id == saved.id
+    assert loaded.player_input == "Espero."
+    assert loaded.narrative == "Pasa una hora."

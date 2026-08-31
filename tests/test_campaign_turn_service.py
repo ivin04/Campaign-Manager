@@ -1844,3 +1844,170 @@ def test_turn_save_failure_rolls_back_resolution_database_changes(
     )
 
     assert campaign["summary"] == ""
+
+def test_play_turn_serializes_concurrent_calls():
+    import threading
+    import time
+
+    from models.turn_resolution_result import (
+        TurnResolutionResult,
+    )
+
+    class ConcurrentResolutionService(
+        RecordingTurnResolutionService
+    ):
+        def __init__(self):
+            super().__init__(
+                TurnResolutionResult(
+                    player_input="",
+                    narrative="Narrativa.",
+                    operations=(),
+                    operation_results=(),
+                )
+            )
+
+            self.active_calls = 0
+            self.max_active_calls = 0
+            self.calls = []
+            self.lock = threading.Lock()
+
+        def resolve_turn(
+            self,
+            turn_context,
+            player_input,
+            *,
+            recent_turns=None,
+            conn=None,
+        ):
+            with self.lock:
+                self.active_calls += 1
+                self.max_active_calls = max(
+                    self.max_active_calls,
+                    self.active_calls,
+                )
+                self.calls.append(player_input)
+
+            try:
+                time.sleep(0.05)
+
+                return TurnResolutionResult(
+                    player_input=player_input,
+                    narrative="Narrativa.",
+                    operations=(),
+                    operation_results=(),
+                )
+
+            finally:
+                with self.lock:
+                    self.active_calls -= 1
+
+    resolution_service = ConcurrentResolutionService()
+
+    world_service = RecordingWorldService()
+
+    service = CampaignTurnService(
+        turn_resolution_service=resolution_service,
+        world_service=world_service,
+    )
+
+    errors = []
+
+    def run_turn(player_input):
+        try:
+            service.play_turn(player_input)
+        except Exception as exc:
+            errors.append(exc)
+
+    thread_a = threading.Thread(
+        target=run_turn,
+        args=("Turno A",),
+    )
+
+    thread_b = threading.Thread(
+        target=run_turn,
+        args=("Turno B",),
+    )
+
+    thread_a.start()
+    thread_b.start()
+
+    thread_a.join()
+    thread_b.join()
+
+    assert errors == []
+
+    assert resolution_service.max_active_calls == 1
+
+    assert sorted(
+        resolution_service.calls
+    ) == [
+        "Turno A",
+        "Turno B",
+    ]
+
+def test_play_turn_releases_lock_after_resolution_failure():
+    from models.turn_resolution_result import (
+        TurnResolutionResult,
+    )
+    from services.turn_resolution_service import (
+        TurnResolutionServiceError,
+    )
+
+    class FailingOnceResolutionService(
+        RecordingTurnResolutionService
+    ):
+        def __init__(self):
+            super().__init__(
+                TurnResolutionResult(
+                    player_input="",
+                    narrative="Narrativa.",
+                    operations=(),
+                    operation_results=(),
+                )
+            )
+
+            self.calls = 0
+
+        def resolve_turn(
+            self,
+            turn_context,
+            player_input,
+            *,
+            recent_turns=None,
+            conn=None,
+        ):
+            self.calls += 1
+
+            if self.calls == 1:
+                raise TurnResolutionServiceError(
+                    "forced failure"
+                )
+
+            return TurnResolutionResult(
+                player_input=player_input,
+                narrative="Segundo turno correcto.",
+                operations=(),
+                operation_results=(),
+            )
+
+    resolution_service = FailingOnceResolutionService()
+
+    world_service = RecordingWorldService()
+
+    service = CampaignTurnService(
+        turn_resolution_service=resolution_service,
+        world_service=world_service,
+    )
+
+    with pytest.raises(
+        CampaignTurnServiceError,
+        match="turn resolution failed",
+    ):
+        service.play_turn("Primer turno.")
+
+    result = service.play_turn(
+        "Segundo turno."
+    )
+
+    assert result.player_input == "Segundo turno."
+    assert resolution_service.calls == 2
