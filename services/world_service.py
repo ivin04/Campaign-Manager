@@ -368,6 +368,7 @@ class WorldService:
                 ref,
                 result,
                 references,
+                self.world,
             )
 
         def apply_with_connection(connection):
