@@ -277,20 +277,17 @@ class TurnResolutionService:
                     "an invalid operation"
                 )
 
-
-        def unwrap_operation(operation):
-            return operation
-
-        
         def get_operation(operation):
-            if isinstance(operation, ReferencedOperation):
+            if isinstance(
+                operation,
+                ReferencedOperation,
+            ):
                 return operation.operation
 
             return operation
 
         normalized_operations = tuple(
-            normalize_operation(operation)
-            for operation in operations
+            normalized_operations
         )
 
         world_operations = tuple(
