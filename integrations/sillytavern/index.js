@@ -36,10 +36,7 @@ async function getCampaignManagerGenerationContext(query) {
         .replace(/\/+$/, "");
 
     if (!backendUrl) {
-        warn(
-            "Backend URL is empty. Context was not requested.",
-        );
-
+        warn("Backend URL is empty. Context was not requested.");
         return "";
     }
 
@@ -49,10 +46,7 @@ async function getCampaignManagerGenerationContext(query) {
             : "";
 
     if (!normalizedQuery) {
-        warn(
-            "Generation context query is empty.",
-        );
-
+        warn("Generation context query is empty.");
         return "";
     }
 
@@ -61,15 +55,10 @@ async function getCampaignManagerGenerationContext(query) {
             `${backendUrl}/integration/context`,
             {
                 method: "POST",
-
                 headers: {
-                    "Content-Type":
-                        "application/json",
-
-                    "Accept":
-                        "application/json",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
                 },
-
                 body: JSON.stringify({
                     query: normalizedQuery,
                 }),
@@ -79,28 +68,22 @@ async function getCampaignManagerGenerationContext(query) {
         let responseBody = null;
 
         try {
-            responseBody =
-                await response.json();
+            responseBody = await response.json();
         } catch {
             responseBody = null;
         }
 
         if (!response.ok) {
-            const detail =
-                responseBody?.detail;
+            const detail = responseBody?.detail;
 
             let errorMessage;
 
             if (typeof detail === "string") {
                 errorMessage = detail;
-            } else if (
-                detail !== undefined
-            ) {
-                errorMessage =
-                    JSON.stringify(detail);
+            } else if (detail !== undefined) {
+                errorMessage = JSON.stringify(detail);
             } else {
-                errorMessage =
-                    "Unknown backend error";
+                errorMessage = "Unknown backend error";
             }
 
             throw new Error(
@@ -108,38 +91,54 @@ async function getCampaignManagerGenerationContext(query) {
             );
         }
 
-        if (
-            !responseBody ||
-            typeof responseBody !== "object"
-        ) {
+        if (!responseBody || typeof responseBody !== "object") {
             throw new Error(
                 "Campaign Manager returned an invalid context response",
             );
         }
 
+        /*
+         * /integration/context returns:
+         *
+         * {
+         *     campaign: {...},
+         *     session: ...,
+         *     active_character: ...,
+         *     query: "...",
+         *     context: {
+         *         entities: [...],
+         *         items: [...],
+         *         ...
+         *         context: "..."
+         *     }
+         * }
+         *
+         * The actual text that must be injected into
+         * SillyTavern is responseBody.context.context.
+         */
+
         if (
-            typeof responseBody.context !== "string"
+            !responseBody.context ||
+            typeof responseBody.context !== "object"
         ) {
             throw new Error(
-                "Campaign Manager response does not contain a context string",
+                "Campaign Manager response does not contain a context object",
             );
         }
 
-        return responseBody.context.trim();
+        if (typeof responseBody.context.context !== "string") {
+            throw new Error(
+                "Campaign Manager context object does not contain a context string",
+            );
+        }
 
+        return responseBody.context.context.trim();
     } catch (error) {
         console.warn(
             "[Campaign Manager] Failed to obtain generation context:",
             error,
         );
 
-        /*
-         * Fail open.
-         *
-         * Campaign Manager is a memory/world-state layer.
-         * If it is unavailable, SillyTavern must still be able
-         * to generate the narrative normally.
-         */
         return "";
     }
 }
