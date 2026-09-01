@@ -24,66 +24,122 @@ let lastProcessedTurnKey = null;
 // CAMPAIGN MANAGER CONTEXT FOR GENERATION
 // ============================================================
 
-async function getCampaignManagerGenerationContext() {
-    const settings = getSettings();
+async function getCampaignManagerGenerationContext(query) {
+    const currentSettings = getSettings();
 
-    if (!settings.enabled) {
+    if (!currentSettings.enabled) {
         return "";
     }
 
-    const baseUrl = getApiBaseUrl();
+    const backendUrl = currentSettings.backendUrl
+        .trim()
+        .replace(/\/+$/, "");
+
+    if (!backendUrl) {
+        warn(
+            "Backend URL is empty. Context was not requested.",
+        );
+
+        return "";
+    }
+
+    const normalizedQuery =
+        typeof query === "string"
+            ? query.trim()
+            : "";
+
+    if (!normalizedQuery) {
+        warn(
+            "Generation context query is empty.",
+        );
+
+        return "";
+    }
 
     try {
         const response = await fetch(
-            `${baseUrl}/integration/context`,
+            `${backendUrl}/integration/context`,
             {
-                method: "GET",
+                method: "POST",
+
                 headers: {
-                    "Content-Type": "application/json",
+                    "Content-Type":
+                        "application/json",
+
+                    "Accept":
+                        "application/json",
                 },
+
+                body: JSON.stringify({
+                    query: normalizedQuery,
+                }),
             },
         );
 
+        let responseBody = null;
+
+        try {
+            responseBody =
+                await response.json();
+        } catch {
+            responseBody = null;
+        }
+
         if (!response.ok) {
+            const detail =
+                responseBody?.detail;
+
+            let errorMessage;
+
+            if (typeof detail === "string") {
+                errorMessage = detail;
+            } else if (
+                detail !== undefined
+            ) {
+                errorMessage =
+                    JSON.stringify(detail);
+            } else {
+                errorMessage =
+                    "Unknown backend error";
+            }
+
             throw new Error(
-                `Context request failed: ${response.status}`,
+                `HTTP ${response.status}: ${errorMessage}`,
             );
-        }
-
-        const payload = await response.json();
-
-        if (
-            !payload ||
-            typeof payload !== "object"
-        ) {
-            console.warn(
-                "[Campaign Manager] Invalid context response",
-            );
-
-            return "";
         }
 
         if (
-            typeof payload.context !== "string"
+            !responseBody ||
+            typeof responseBody !== "object"
         ) {
-            console.warn(
-                "[Campaign Manager] Context response does not contain text",
+            throw new Error(
+                "Campaign Manager returned an invalid context response",
             );
-
-            return "";
         }
 
-        return payload.context.trim();
+        if (
+            typeof responseBody.context !== "string"
+        ) {
+            throw new Error(
+                "Campaign Manager response does not contain a context string",
+            );
+        }
+
+        return responseBody.context.trim();
 
     } catch (error) {
         console.warn(
-            "[Campaign Manager] Failed to obtain generation context",
+            "[Campaign Manager] Failed to obtain generation context:",
             error,
         );
 
-        // Fail open:
-        // SillyTavern must continue working if Campaign Manager
-        // is unavailable.
+        /*
+         * Fail open.
+         *
+         * Campaign Manager is a memory/world-state layer.
+         * If it is unavailable, SillyTavern must still be able
+         * to generate the narrative normally.
+         */
         return "";
     }
 }
@@ -95,16 +151,130 @@ async function getCampaignManagerGenerationContext() {
 
 function buildCampaignManagerContextMessage(context) {
     if (!context) {
-        return null;
+        return "";
     }
 
     return (
-        "\n\n" +
         "[CAMPAIGN MANAGER - CURRENT WORLD STATE]\n" +
-        context +
-        "\n[END CAMPAIGN MANAGER CONTEXT]\n"
+        context.trim() +
+        "\n[END CAMPAIGN MANAGER CONTEXT]"
     );
 }
+
+// ============================================================
+// SILLYTAVERN GENERATION INTERCEPTOR
+// ============================================================
+
+globalThis.campaignManagerGenerateInterceptor =
+    async function (
+        chatMessages,
+        contextSize,
+        abort,
+        type,
+    ) {
+        const currentSettings =
+            getSettings();
+
+        if (!currentSettings.enabled) {
+            return;
+        }
+
+        if (!Array.isArray(chatMessages)) {
+            warn(
+                "Generation interceptor received invalid chat.",
+            );
+
+            return;
+        }
+
+        if (chatMessages.length === 0) {
+            return;
+        }
+
+        /*
+         * Find the most recent user message.
+         *
+         * We deliberately do not assume it is exactly
+         * chatMessages[chatMessages.length - 2].
+         */
+        let playerInput = "";
+
+        for (
+            let index = chatMessages.length - 1;
+            index >= 0;
+            index -= 1
+        ) {
+            const message =
+                chatMessages[index];
+
+            if (
+                message &&
+                message.is_user === true &&
+                typeof message.mes === "string"
+            ) {
+                playerInput =
+                    message.mes.trim();
+
+                break;
+            }
+        }
+
+        if (!playerInput) {
+            warn(
+                "Could not find a user message for generation context.",
+            );
+
+            return;
+        }
+
+        const context =
+            await getCampaignManagerGenerationContext(
+                playerInput,
+            );
+
+        if (!context) {
+            return;
+        }
+
+        const contextMessage =
+            buildCampaignManagerContextMessage(
+                context,
+            );
+
+        if (!contextMessage) {
+            return;
+        }
+
+        /*
+         * The interceptor receives the chat that SillyTavern
+         * is about to use for generation.
+         *
+         * Insert a temporary message immediately before
+         * the generation point.
+         *
+         * This message is not sent through MESSAGE_RECEIVED
+         * because it is not added to SillyTavern's persistent
+         * chat history.
+         */
+        chatMessages.push({
+            name: "Campaign Manager",
+            is_user: false,
+            is_system: true,
+            mes: contextMessage,
+        });
+
+        log(
+            "Campaign Manager context injected.",
+            {
+                generationType: type,
+                contextSize,
+                queryLength:
+                    playerInput.length,
+                contextLength:
+                    context.length,
+            },
+        );
+    };
 
 function log(...args) {
     console.log(
