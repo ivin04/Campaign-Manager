@@ -7,5 +7,6 @@
   "css": "style.css",
   "author": "Campaign Manager",
   "version": "0.1.0",
-  "homePage": "https://github.com/ivin04/Campaign-Manager"
+  "homePage": "https://github.com/ivin04/Campaign-Manager",
+  "generate_interceptor": "campaignManagerGenerateInterceptor"
 }

@@ -20,6 +20,92 @@ let settings = null;
 
 let lastProcessedTurnKey = null;
 
+// ============================================================
+// CAMPAIGN MANAGER CONTEXT FOR GENERATION
+// ============================================================
+
+async function getCampaignManagerGenerationContext() {
+    const settings = getSettings();
+
+    if (!settings.enabled) {
+        return "";
+    }
+
+    const baseUrl = getApiBaseUrl();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/integration/context`,
+            {
+                method: "GET",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+            },
+        );
+
+        if (!response.ok) {
+            throw new Error(
+                `Context request failed: ${response.status}`,
+            );
+        }
+
+        const payload = await response.json();
+
+        if (
+            !payload ||
+            typeof payload !== "object"
+        ) {
+            console.warn(
+                "[Campaign Manager] Invalid context response",
+            );
+
+            return "";
+        }
+
+        if (
+            typeof payload.context !== "string"
+        ) {
+            console.warn(
+                "[Campaign Manager] Context response does not contain text",
+            );
+
+            return "";
+        }
+
+        return payload.context.trim();
+
+    } catch (error) {
+        console.warn(
+            "[Campaign Manager] Failed to obtain generation context",
+            error,
+        );
+
+        // Fail open:
+        // SillyTavern must continue working if Campaign Manager
+        // is unavailable.
+        return "";
+    }
+}
+
+
+// ============================================================
+// TEMPORARY GENERATION CONTEXT
+// ============================================================
+
+function buildCampaignManagerContextMessage(context) {
+    if (!context) {
+        return null;
+    }
+
+    return (
+        "\n\n" +
+        "[CAMPAIGN MANAGER - CURRENT WORLD STATE]\n" +
+        context +
+        "\n[END CAMPAIGN MANAGER CONTEXT]\n"
+    );
+}
+
 function log(...args) {
     console.log(
         '[Campaign Manager]',
