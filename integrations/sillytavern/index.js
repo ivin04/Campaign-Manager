@@ -848,6 +848,7 @@ async function sendTurnToBackend(
     return responseBody;
 }
 
+
 async function onMessageReceived() {
     const currentSettings =
         getSettings();
@@ -969,23 +970,35 @@ async function onMessageReceived() {
         },
     );
 
-    try {
-        await sendTurnToBackend(
-            playerInput,
-            narrativeText,
-        );
-    } catch (error) {
+    /*
+     * Do not await the backend request from
+     * the MESSAGE_RECEIVED event handler.
+     *
+     * SillyTavern must be allowed to finish
+     * its own message lifecycle without our
+     * HTTP request remaining attached to it.
+     */
+    void sendTurnToBackend(
+        playerInput,
+        narrativeText,
+    ).catch((error) => {
         /*
          * Allow retry if the backend failed.
          */
-        lastProcessedTurnKey = null;
+        if (
+            lastProcessedTurnKey ===
+            turnKey
+        ) {
+            lastProcessedTurnKey = null;
+        }
 
         console.error(
             '[Campaign Manager] Failed to process turn:',
             error,
         );
-    }
+    });
 }
+
 
 function initializeExtension() {
     const currentSettings =
