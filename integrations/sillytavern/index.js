@@ -160,6 +160,29 @@ globalThis.campaignManagerGenerateInterceptor =
         const currentSettings =
             getSettings();
 
+        /*
+         * SillyTavern uses quiet generations for internal
+         * operations such as chat summarization.
+         *
+         * Campaign Manager world state is generation context
+         * for the actual narrative response, not for internal
+         * SillyTavern processing.
+         *
+         * Do not inject Campaign Manager context into quiet
+         * generations, and explicitly clear any previous
+         * extension prompt so it cannot leak into the quiet
+         * generation.
+         */
+        if (type === 'quiet') {
+            await clearCampaignManagerContext();
+
+            log(
+                'Skipping Campaign Manager context for quiet generation.',
+            );
+
+            return;
+        }
+
         if (!currentSettings.enabled) {
             await clearCampaignManagerContext();
             return;

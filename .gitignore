@@ -9,3 +9,5 @@ data/*.backup
 *.json
 !integrations/sillytavern/manifest.json
 *.lnk
+*.db-shm
+*.db-wal
