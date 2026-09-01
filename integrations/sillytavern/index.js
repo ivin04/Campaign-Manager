@@ -1,9 +1,5 @@
 import {
     extension_settings,
-} from '../../extensions.js';
-
-import {
-    extension_settings,
     getContext,
 } from '../../extensions.js';
 
