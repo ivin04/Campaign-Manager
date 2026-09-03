@@ -24,15 +24,9 @@ class TurnResolutionResult:
     - operaciones detectadas por el extractor
     - resultado de aplicar las operaciones
 
-    El resultado es inmutable.
-
-    La aplicación de operaciones es atómica:
-
-        - si todas las operaciones tienen éxito,
-          el cambio del mundo se considera confirmado.
-
-        - si una operación falla,
-          el WorldState original se conserva.
+    En caso de una repetición idempotente, las operaciones no se
+    vuelven a ejecutar. En ese caso se utilizan los metadatos
+    persistidos del TurnRecord.
     """
 
     player_input: str
@@ -47,23 +41,60 @@ class TurnResolutionResult:
 
     operation_results: tuple = ()
 
+    already_processed: bool = False
+
+    persisted_operation_count: int | None = None
+
+    persisted_successful_operation_count: int | None = None
+
+    persisted_failed_operation_count: int | None = None
+
+    persisted_all_operations_succeeded: bool | None = None
+
+    persisted_world_changed: bool | None = None
+
+    @classmethod
+    def from_persisted_turn(
+        cls,
+        turn,
+    ) -> "TurnResolutionResult":
+        """
+        Reconstruye la representación de un turno ya persistido.
+
+        No vuelve a ejecutar ninguna operación.
+        """
+
+        return cls(
+            player_input=turn.player_input,
+            narrative=turn.narrative,
+            already_processed=True,
+            persisted_operation_count=(
+                turn.operation_count
+            ),
+            persisted_successful_operation_count=(
+                turn.successful_operation_count
+            ),
+            persisted_failed_operation_count=(
+                turn.failed_operation_count
+            ),
+            persisted_all_operations_succeeded=(
+                turn.all_operations_succeeded
+            ),
+            persisted_world_changed=(
+                turn.world_changed
+            ),
+        )
 
     @property
     def world_changed(self) -> bool:
         """
         Indica si el turno produjo algún cambio confirmado.
-
-        La aplicación de operaciones es atómica. Por tanto:
-
-            - si alguna operación falla, el turno se revierte
-            y no existe ningún cambio confirmado.
-
-            - si todas las operaciones tienen éxito pero ninguna
-            modifica el estado, no hay cambio.
-
-            - si todas tienen éxito y al menos una modifica el estado,
-            el turno produjo un cambio confirmado.
         """
+
+        if self.already_processed:
+            return bool(
+                self.persisted_world_changed
+            )
 
         if self.operation_count == 0:
             return False
@@ -81,8 +112,6 @@ class TurnResolutionResult:
             self._result_changed(result)
             for result in self.operation_results
         )
-
-
 
     @staticmethod
     def _result_changed(result) -> bool:
@@ -103,13 +132,17 @@ class TurnResolutionResult:
         """
         Indica si todas las operaciones detectadas
         fueron aplicadas correctamente.
-
-        La ausencia de resultados para alguna operación
-        implica que el turno no se considera completamente
-        exitoso.
         """
 
-        if len(self.operation_results) != self.operation_count:
+        if self.already_processed:
+            return bool(
+                self.persisted_all_operations_succeeded
+            )
+
+        if (
+            len(self.operation_results)
+            != self.operation_count
+        ):
             return False
 
         return all(
@@ -121,9 +154,12 @@ class TurnResolutionResult:
     def operation_count(self) -> int:
         """
         Número total de operaciones detectadas.
-
-        Incluye mundo y personaje.
         """
+
+        if self.already_processed:
+            return int(
+                self.persisted_operation_count or 0
+            )
 
         return (
             len(self.operations)
@@ -136,6 +172,12 @@ class TurnResolutionResult:
         Número de operaciones aplicadas correctamente.
         """
 
+        if self.already_processed:
+            return int(
+                self.persisted_successful_operation_count
+                or 0
+            )
+
         return sum(
             self._result_success(result)
             for result in self.operation_results
@@ -146,6 +188,12 @@ class TurnResolutionResult:
         """
         Número de operaciones que no se aplicaron correctamente.
         """
+
+        if self.already_processed:
+            return int(
+                self.persisted_failed_operation_count
+                or 0
+            )
 
         return sum(
             not self._result_success(result)

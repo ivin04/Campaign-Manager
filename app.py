@@ -39,6 +39,7 @@ from services.campaign_state_service import CampaignStateService
 from services.silly_tavern_integration_service import (
     SillyTavernIntegrationService,
     SillyTavernIntegrationServiceError,
+    SillyTavernIntegrationServiceConflictError,
 )
 
 
@@ -576,6 +577,12 @@ def process_silly_tavern_turn(
                 external_turn_id=data.external_turn_id,
             )
         )
+
+    except SillyTavernIntegrationServiceConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        ) from exc
 
     except SillyTavernIntegrationServiceError as exc:
         raise HTTPException(

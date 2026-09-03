@@ -26,6 +26,17 @@ class SillyTavernIntegrationServiceError(RuntimeError):
     """
 
 
+class SillyTavernIntegrationServiceConflictError(
+    SillyTavernIntegrationServiceError
+):
+    """
+    Conflicto de idempotencia.
+
+    Ocurre cuando un external_turn_id ya existe pero
+    pertenece a un payload diferente.
+    """
+
+
 class SillyTavernIntegrationService:
     """
     Integra SillyTavern con Campaign Manager.
@@ -247,13 +258,26 @@ class SillyTavernIntegrationService:
         Procesa un turno cuya narrativa ya ha sido generada
         por SillyTavern.
 
-        Orden:
+        La persistencia del mundo y del TurnRecord es atómica.
 
-            1. obtener TurnContext
-            2. cargar historial
-            3. extraer operaciones
-            4. aplicar operaciones atómicamente
-            5. persistir TurnRecord
+        Cuando existe external_turn_id:
+
+            - el ID se comprueba dentro de una transacción
+              BEGIN IMMEDIATE.
+
+            - mismo ID + mismo payload:
+                devuelve el resultado persistido sin volver
+                a ejecutar las operaciones.
+
+            - mismo ID + payload diferente:
+                produce un conflicto.
+
+            - ID inexistente:
+                procesa y persiste normalmente.
+
+        BEGIN IMMEDIATE garantiza que dos peticiones concurrentes
+        con el mismo external_turn_id no puedan ejecutar ambas
+        las operaciones sobre el mundo.
         """
 
         normalized_input = self._validate_text(
@@ -291,6 +315,10 @@ class SillyTavernIntegrationService:
                     "external_turn_id must not be longer than 500 characters"
                 )
 
+        # --------------------------------------------------------
+        # CONTEXTO
+        # --------------------------------------------------------
+
         try:
             turn_context = (
                 self.campaign_state_service
@@ -317,32 +345,16 @@ class SillyTavernIntegrationService:
                 "TurnContext"
             )
 
-        if normalized_external_turn_id is not None:
-            try:
-                existing_turn = (
-                    self.turn_repository
-                    .get_by_external_turn_id(
-                        normalized_external_turn_id
-                    )
-                )
-
-            except Exception as exc:
-                raise SillyTavernIntegrationServiceError(
-                    "failed to check external turn id"
-                ) from exc
-
-            if existing_turn is not None:
-                raise SillyTavernIntegrationServiceError(
-                    "turn already processed: "
-                    f"{normalized_external_turn_id}"
-                )
-
         session_id = None
 
         if turn_context.current_session is not None:
             session_id = (
                 turn_context.current_session.session_id
             )
+
+        # --------------------------------------------------------
+        # HISTORIAL
+        # --------------------------------------------------------
 
         try:
             recent_turns = (
@@ -460,22 +472,98 @@ class SillyTavernIntegrationService:
                     "operation"
                 )
 
-        # --------------------------------------------------------
-        # APLICAR OPERACIONES + PERSISTIR TURNO
-        # --------------------------------------------------------
-        #
-        # El mundo y el TurnRecord deben formar una única
-        # transacción de SQLite.
-        #
-        # Además, ordered_operations conserva exactamente
-        # el orden producido por el extractor.
-
         normalized_operations = tuple(
             operations
         )
 
+        # --------------------------------------------------------
+        # APLICAR + PERSISTIR ATÓMICAMENTE
+        # --------------------------------------------------------
+        #
+        # IMPORTANTE:
+        #
+        # El BEGIN IMMEDIATE ocurre DESPUÉS de la extracción
+        # LLM para no mantener bloqueada la base de datos mientras
+        # esperamos al modelo.
+        #
+        # La comprobación del external_turn_id se hace dentro
+        # de esta transacción y por tanto es la comprobación
+        # autoritativa.
+        # --------------------------------------------------------
+
         try:
             with get_conn() as conn:
+
+                # ------------------------------------------------
+                # ADQUIRIR LOCK DE ESCRITURA
+                # ------------------------------------------------
+
+                conn.execute(
+                    "BEGIN IMMEDIATE"
+                )
+
+                # ------------------------------------------------
+                # IDEMPOTENCIA
+                # ------------------------------------------------
+
+                if normalized_external_turn_id is not None:
+
+                    existing_turn = (
+                        self.turn_repository
+                        .get_by_external_turn_id(
+                            normalized_external_turn_id,
+                            conn=conn,
+                        )
+                    )
+
+                    if existing_turn is not None:
+
+                        same_input = (
+                            existing_turn.player_input
+                            == normalized_input
+                        )
+
+                        same_narrative = (
+                            existing_turn.narrative
+                            == normalized_narrative
+                        )
+
+                        if not (
+                            same_input
+                            and same_narrative
+                        ):
+                            raise (
+                                SillyTavernIntegrationServiceConflictError(
+                                    "external_turn_id already exists "
+                                    "with different turn content: "
+                                    f"{normalized_external_turn_id}"
+                                )
+                            )
+
+                        # ------------------------------------------------
+                        # REPETICIÓN EXACTA
+                        # ------------------------------------------------
+                        #
+                        # El turno ya fue procesado correctamente.
+                        #
+                        # NO volvemos a aplicar operaciones.
+                        # NO modificamos WorldState.
+                        # NO insertamos otro TurnRecord.
+                        #
+                        # El contexto manager hará COMMIT, pero no
+                        # existe ninguna modificación relevante.
+                        # ------------------------------------------------
+
+                        return (
+                            TurnResolutionResult
+                            .from_persisted_turn(
+                                existing_turn
+                            )
+                        )
+
+                # ------------------------------------------------
+                # APLICAR OPERACIONES
+                # ------------------------------------------------
 
                 operation_results = (
                     self.world_service.apply_turn_operations(
@@ -505,7 +593,7 @@ class SillyTavernIntegrationService:
                 )
 
                 # ------------------------------------------------
-                # PERSISTIR TURNO EN LA MISMA TRANSACCIÓN
+                # PERSISTIR TURNO
                 # ------------------------------------------------
 
                 self.turn_repository.save_turn(
@@ -534,6 +622,9 @@ class SillyTavernIntegrationService:
                     ),
                     conn=conn,
                 )
+
+        except SillyTavernIntegrationServiceConflictError:
+            raise
 
         except Exception as exc:
             raise SillyTavernIntegrationServiceError(
