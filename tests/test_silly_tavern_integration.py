@@ -273,6 +273,7 @@ def test_integration_turn_endpoint_returns_processed_turn(
     def fake_process_turn(
         player_input,
         narrative,
+        external_turn_id=None,
     ):
         assert player_input == (
             "Abro la puerta."
@@ -335,6 +336,7 @@ def test_integration_turn_endpoint_returns_400_on_service_error(
     def fake_process_turn(
         player_input,
         narrative,
+        external_turn_id=None,
     ):
         raise SillyTavernIntegrationServiceError(
             "processing failed"
