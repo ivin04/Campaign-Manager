@@ -1,6 +1,6 @@
 import sqlite3
 
-CURRENT_VERSION = 7
+CURRENT_VERSION = 8
 
 def migration_001(conn: sqlite3.Connection) -> None:
     conn.executescript(
@@ -348,6 +348,38 @@ def migration_007(conn: sqlite3.Connection) -> None:
         """
     )
 
+def migration_008(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        -- ============================================================
+        -- TURN VERSIONING / RECONCILIATION
+        -- ============================================================
+
+        ALTER TABLE turns
+            ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+
+        ALTER TABLE turns
+            ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+
+        ALTER TABLE turns
+            ADD COLUMN snapshot TEXT;
+
+        CREATE INDEX IF NOT EXISTS idx_turns_external_turn_id
+            ON turns(external_turn_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            idx_turns_external_turn_version
+            ON turns(external_turn_id, version)
+            WHERE external_turn_id IS NOT NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            idx_turns_active_external_turn
+            ON turns(external_turn_id)
+            WHERE external_turn_id IS NOT NULL
+              AND status = 'active';
+        """
+    )
+
 
 def run_migrations(conn: sqlite3.Connection) -> None:
     version = conn.execute(
@@ -388,6 +420,11 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         migration_007(conn)
         conn.execute("PRAGMA user_version = 7")
         version = 7
+
+    if version < 8:
+        migration_008(conn)
+        conn.execute("PRAGMA user_version = 8")
+        version = 8
 
     if version != CURRENT_VERSION:
         raise RuntimeError(

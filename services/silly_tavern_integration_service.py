@@ -18,6 +18,9 @@ from services.llm_world_extractor import (
     LLMExtractionError,
 )
 from services.world_service import WorldService
+from repositories.world_snapshot_repository import (
+    WorldSnapshotRepository,
+)
 
 
 class SillyTavernIntegrationServiceError(RuntimeError):
@@ -145,6 +148,9 @@ class SillyTavernIntegrationService:
 
         self.turn_repository = turn_repository
 
+        self.world_snapshot_repository = WorldSnapshotRepository()
+
+
     # ============================================================
     # CONTEXT
     # ============================================================
@@ -253,6 +259,7 @@ class SillyTavernIntegrationService:
         player_input: str,
         narrative: str,
         external_turn_id: str | None = None,
+        turn_version: int = 1,
     ) -> TurnResolutionResult:
         """
         Procesa un turno cuya narrativa ya ha sido generada
@@ -280,6 +287,16 @@ class SillyTavernIntegrationService:
         las operaciones sobre el mundo.
         """
 
+        if not isinstance(turn_version, int):
+            raise TypeError(
+                "turn_version must be an integer"
+            )
+
+        if turn_version < 1:
+            raise ValueError(
+                "turn_version must be >= 1"
+            )
+        
         normalized_input = self._validate_text(
             player_input,
             "player_input",
@@ -510,11 +527,84 @@ class SillyTavernIntegrationService:
 
                     existing_turn = (
                         self.turn_repository
-                        .get_by_external_turn_id(
+                        .get_active_by_external_turn_id(
                             normalized_external_turn_id,
                             conn=conn,
                         )
                     )
+
+                    if existing_turn is not None:
+
+                        # ------------------------------------------------------------
+                        # EXACT RETRY OF CURRENT VERSION
+                        # ------------------------------------------------------------
+
+                        if turn_version == existing_turn.version:
+
+                            same_input = (
+                                existing_turn.player_input
+                                == normalized_input
+                            )
+
+                            same_narrative = (
+                                existing_turn.narrative
+                                == normalized_narrative
+                            )
+
+                            if not (
+                                same_input
+                                and same_narrative
+                            ):
+                                raise (
+                                    SillyTavernIntegrationServiceConflictError(
+                                        "external_turn_id and version already "
+                                        "exist with different turn content: "
+                                        f"{normalized_external_turn_id}/"
+                                        f"{turn_version}"
+                                    )
+                                )
+
+                            return (
+                                TurnResolutionResult
+                                .from_persisted_turn(
+                                    existing_turn
+                                )
+                            )
+
+                        # ------------------------------------------------------------
+                        # NEW VERSION
+                        # ------------------------------------------------------------
+
+                        if turn_version < existing_turn.version:
+                            raise (
+                                SillyTavernIntegrationServiceConflictError(
+                                    "turn version is older than the active version: "
+                                    f"{turn_version} < "
+                                    f"{existing_turn.version}"
+                                )
+                            )
+
+                        # ------------------------------------------------------------
+                        # turn_version > active version
+                        #
+                        # This is the SWIPE / REGENERATE case.
+                        # ------------------------------------------------------------
+
+                        if existing_turn.snapshot is None:
+                            raise SillyTavernIntegrationServiceError(
+                                "cannot reconcile turn because the active "
+                                "turn has no snapshot"
+                            )
+
+                        self.world_snapshot_repository.restore_snapshot(
+                            conn,
+                            existing_turn.snapshot,
+                        )
+
+                        self.turn_repository.supersede_turn(
+                            existing_turn.id,
+                            conn=conn,
+                        )
 
                     if existing_turn is not None:
 
@@ -565,6 +655,12 @@ class SillyTavernIntegrationService:
                 # APLICAR OPERACIONES
                 # ------------------------------------------------
 
+                snapshot = (
+                    self.world_snapshot_repository.create_snapshot(
+                        conn
+                    )
+                )
+
                 operation_results = (
                     self.world_service.apply_turn_operations(
                         world_operations,
@@ -601,9 +697,7 @@ class SillyTavernIntegrationService:
                         session_id=session_id,
                         player_input=result.player_input,
                         narrative=result.narrative,
-                        operation_count=(
-                            result.operation_count
-                        ),
+                        operation_count=result.operation_count,
                         successful_operation_count=(
                             result.successful_operation_count
                         ),
@@ -613,12 +707,13 @@ class SillyTavernIntegrationService:
                         all_operations_succeeded=(
                             result.all_operations_succeeded
                         ),
-                        world_changed=(
-                            result.world_changed
-                        ),
+                        world_changed=result.world_changed,
                         external_turn_id=(
                             normalized_external_turn_id
                         ),
+                        version=turn_version,
+                        status="active",
+                        snapshot=snapshot,
                     ),
                     conn=conn,
                 )

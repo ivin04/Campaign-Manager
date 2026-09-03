@@ -8,6 +8,7 @@ from database import (
     one,
     one_in_conn,
     rows,
+    get_conn,
 )
 
 
@@ -125,7 +126,10 @@ class TurnRepository:
                 failed_operation_count,
                 all_operations_succeeded,
                 world_changed,
-                external_turn_id
+                external_turn_id,
+                version,
+                status,
+                snapshot
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
@@ -140,6 +144,9 @@ class TurnRepository:
             int(turn.all_operations_succeeded),
             int(turn.world_changed),
             external_turn_id,
+            turn.version,
+            turn.status,
+            turn.snapshot,
         )
 
         if conn is None:
@@ -519,4 +526,108 @@ class TurnRepository:
             ),
             created_at=row["created_at"],
             external_turn_id=row["external_turn_id"],
+        )
+
+    def get_active_by_external_turn_id(
+        self,
+        external_turn_id: str,
+        *,
+        conn=None,
+    ) -> TurnRecord | None:
+
+        if conn is None:
+            with get_conn() as connection:
+                return self.get_active_by_external_turn_id(
+                    external_turn_id,
+                    conn=connection,
+                )
+
+        row = conn.execute(
+            """
+            SELECT
+                id,
+                session_id,
+                player_input,
+                narrative,
+                operation_count,
+                successful_operation_count,
+                failed_operation_count,
+                all_operations_succeeded,
+                world_changed,
+                created_at,
+                external_turn_id,
+                version,
+                status,
+                snapshot
+            FROM turns
+            WHERE external_turn_id=?
+            AND status='active'
+            ORDER BY version DESC
+            LIMIT 1
+            """,
+            (external_turn_id,),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return self._row_to_turn_record(row)
+
+    def get_versions_by_external_turn_id(
+        self,
+        external_turn_id: str,
+        *,
+        conn=None,
+    ) -> list[TurnRecord]:
+
+        if conn is None:
+            with get_conn() as connection:
+                return self.get_versions_by_external_turn_id(
+                    external_turn_id,
+                    conn=connection,
+                )
+
+        rows = conn.execute(
+            """
+            SELECT
+                id,
+                session_id,
+                player_input,
+                narrative,
+                operation_count,
+                successful_operation_count,
+                failed_operation_count,
+                all_operations_succeeded,
+                world_changed,
+                created_at,
+                external_turn_id,
+                version,
+                status,
+                snapshot
+            FROM turns
+            WHERE external_turn_id=?
+            ORDER BY version ASC
+            """,
+            (external_turn_id,),
+        ).fetchall()
+
+        return [
+            self._row_to_turn_record(row)
+            for row in rows
+        ]
+
+    def supersede_turn(
+        self,
+        turn_id: int,
+        *,
+        conn,
+    ) -> None:
+
+        conn.execute(
+            """
+            UPDATE turns
+            SET status='superseded'
+            WHERE id=?
+            """,
+            (turn_id,),
         )
