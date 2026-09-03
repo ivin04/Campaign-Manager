@@ -9,7 +9,10 @@ class TurnRecord:
     Registro persistente de un turno de campaña.
 
     Contiene únicamente información histórica del turno.
-    El WorldState continúa siendo la fuente de verdad del mundo.
+    El WorldState continúa siendo la fuente de verdad.
+
+    external_turn_id identifica el turno original en el sistema
+    externo que lo generó, por ejemplo SillyTavern.
     """
 
     id: int | None = None
@@ -26,6 +29,8 @@ class TurnRecord:
     world_changed: bool = False
 
     created_at: str | None = None
+
+    external_turn_id: str | None = None
 
     def __post_init__(self) -> None:
         self._validate_optional_positive_int(
@@ -92,6 +97,25 @@ class TurnRecord:
             raise TypeError(
                 "created_at must be a string or None"
             )
+
+        if self.external_turn_id is not None:
+            if not isinstance(
+                self.external_turn_id,
+                str,
+            ):
+                raise TypeError(
+                    "external_turn_id must be a string or None"
+                )
+
+            if not self.external_turn_id.strip():
+                raise ValueError(
+                    "external_turn_id must not be empty"
+                )
+
+            if len(self.external_turn_id) > 500:
+                raise ValueError(
+                    "external_turn_id must not be longer than 500 characters"
+                )
 
         if (
             self.successful_operation_count

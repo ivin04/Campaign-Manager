@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from models.turn_record import TurnRecord
+
 from database import (
     execute,
     execute_in_conn,
@@ -48,6 +49,32 @@ class TurnRepository:
             field_name,
         )
 
+    @staticmethod
+    def _validate_external_turn_id(
+        value: str,
+    ) -> str:
+        if not isinstance(
+            value,
+            str,
+        ):
+            raise TypeError(
+                "external_turn_id must be a string"
+            )
+
+        value = value.strip()
+
+        if not value:
+            raise ValueError(
+                "external_turn_id must not be empty"
+            )
+
+        if len(value) > 500:
+            raise ValueError(
+                "external_turn_id must not be longer than 500 characters"
+            )
+
+        return value
+
     def save_turn(
         self,
         turn: TurnRecord,
@@ -55,7 +82,10 @@ class TurnRepository:
         conn=None,
     ) -> TurnRecord:
 
-        if not isinstance(turn, TurnRecord):
+        if not isinstance(
+            turn,
+            TurnRecord,
+        ):
             raise TypeError(
                 "turn must be a TurnRecord"
             )
@@ -76,6 +106,15 @@ class TurnRepository:
                 "turn.narrative must be a string"
             )
 
+        external_turn_id = None
+
+        if turn.external_turn_id is not None:
+            external_turn_id = (
+                self._validate_external_turn_id(
+                    turn.external_turn_id
+                )
+            )
+
         query = """
             INSERT INTO turns (
                 session_id,
@@ -85,9 +124,10 @@ class TurnRepository:
                 successful_operation_count,
                 failed_operation_count,
                 all_operations_succeeded,
-                world_changed
+                world_changed,
+                external_turn_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         params = (
@@ -99,6 +139,7 @@ class TurnRepository:
             turn.failed_operation_count,
             int(turn.all_operations_succeeded),
             int(turn.world_changed),
+            external_turn_id,
         )
 
         if conn is None:
@@ -119,7 +160,8 @@ class TurnRepository:
                     failed_operation_count,
                     all_operations_succeeded,
                     world_changed,
-                    created_at
+                    created_at,
+                    external_turn_id
                 FROM turns
                 WHERE id=?
                 """,
@@ -146,7 +188,8 @@ class TurnRepository:
                     failed_operation_count,
                     all_operations_succeeded,
                     world_changed,
-                    created_at
+                    created_at,
+                    external_turn_id
                 FROM turns
                 WHERE id=?
                 """,
@@ -182,12 +225,60 @@ class TurnRepository:
                 failed_operation_count,
                 all_operations_succeeded,
                 world_changed,
-                created_at
+                created_at,
+                external_turn_id
             FROM turns
             WHERE id=?
             """,
             (turn_id,),
         )
+
+        if row is None:
+            return None
+
+        return self._row_to_model(row)
+
+    def get_by_external_turn_id(
+        self,
+        external_turn_id: str,
+        *,
+        conn=None,
+    ) -> TurnRecord | None:
+
+        normalized_id = (
+            self._validate_external_turn_id(
+                external_turn_id
+            )
+        )
+
+        query = """
+            SELECT
+                id,
+                session_id,
+                player_input,
+                narrative,
+                operation_count,
+                successful_operation_count,
+                failed_operation_count,
+                all_operations_succeeded,
+                world_changed,
+                created_at,
+                external_turn_id
+            FROM turns
+            WHERE external_turn_id=?
+        """
+
+        if conn is None:
+            row = one(
+                query,
+                (normalized_id,),
+            )
+        else:
+            row = one_in_conn(
+                conn,
+                query,
+                (normalized_id,),
+            )
 
         if row is None:
             return None
@@ -207,7 +298,10 @@ class TurnRepository:
         )
 
         if limit is not None:
-            if not isinstance(limit, int):
+            if not isinstance(
+                limit,
+                int,
+            ):
                 raise TypeError(
                     "limit must be an integer"
                 )
@@ -236,7 +330,8 @@ class TurnRepository:
                         failed_operation_count,
                         all_operations_succeeded,
                         world_changed,
-                        created_at
+                        created_at,
+                        external_turn_id
                     FROM turns
                     ORDER BY id ASC
                     """
@@ -254,7 +349,8 @@ class TurnRepository:
                         failed_operation_count,
                         all_operations_succeeded,
                         world_changed,
-                        created_at
+                        created_at,
+                        external_turn_id
                     FROM turns
                     ORDER BY id ASC
                     LIMIT ?
@@ -276,7 +372,8 @@ class TurnRepository:
                         failed_operation_count,
                         all_operations_succeeded,
                         world_changed,
-                        created_at
+                        created_at,
+                        external_turn_id
                     FROM turns
                     WHERE session_id=?
                     ORDER BY id ASC
@@ -296,7 +393,8 @@ class TurnRepository:
                         failed_operation_count,
                         all_operations_succeeded,
                         world_changed,
-                        created_at
+                        created_at,
+                        external_turn_id
                     FROM turns
                     WHERE session_id=?
                     ORDER BY id ASC
@@ -319,19 +417,16 @@ class TurnRepository:
         session_id: int | None = None,
         limit: int = 10,
     ) -> list[TurnRecord]:
-        """
-        Devuelve los últimos turnos guardados.
-
-        Los resultados se devuelven en orden cronológico ascendente,
-        del más antiguo al más reciente.
-        """
 
         self._validate_optional_positive_int(
             session_id,
             "session_id",
         )
 
-        if not isinstance(limit, int):
+        if not isinstance(
+            limit,
+            int,
+        ):
             raise TypeError(
                 "limit must be an integer"
             )
@@ -359,13 +454,15 @@ class TurnRepository:
                     failed_operation_count,
                     all_operations_succeeded,
                     world_changed,
-                    created_at
+                    created_at,
+                    external_turn_id
                 FROM turns
                 ORDER BY id DESC
                 LIMIT ?
                 """,
                 (limit,),
             )
+
         else:
             result = rows(
                 """
@@ -379,7 +476,8 @@ class TurnRepository:
                     failed_operation_count,
                     all_operations_succeeded,
                     world_changed,
-                    created_at
+                    created_at,
+                    external_turn_id
                 FROM turns
                 WHERE session_id = ?
                 ORDER BY id DESC
@@ -397,7 +495,10 @@ class TurnRepository:
         ]
 
     @staticmethod
-    def _row_to_model(row: dict) -> TurnRecord:
+    def _row_to_model(
+        row: dict,
+    ) -> TurnRecord:
+
         return TurnRecord(
             id=row["id"],
             session_id=row["session_id"],
@@ -417,4 +518,5 @@ class TurnRepository:
                 row["world_changed"]
             ),
             created_at=row["created_at"],
+            external_turn_id=row["external_turn_id"],
         )

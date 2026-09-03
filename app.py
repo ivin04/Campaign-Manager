@@ -573,6 +573,7 @@ def process_silly_tavern_turn(
             .process_turn(
                 player_input=data.player_input,
                 narrative=data.narrative,
+                external_turn_id=data.external_turn_id,
             )
         )
 
@@ -591,6 +592,9 @@ def process_silly_tavern_turn(
     return {
         "narrative": result.narrative,
         "player_input": result.player_input,
+        "external_turn_id": (
+            data.external_turn_id
+        ),
         "operation_count": (
             result.operation_count
         ),

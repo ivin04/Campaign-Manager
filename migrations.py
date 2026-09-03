@@ -1,6 +1,6 @@
 import sqlite3
 
-CURRENT_VERSION = 6
+CURRENT_VERSION = 7
 
 def migration_001(conn: sqlite3.Connection) -> None:
     conn.executescript(
@@ -335,6 +335,19 @@ def migration_006(conn: sqlite3.Connection) -> None:
         """
     )
 
+def migration_007(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        ALTER TABLE turns
+        ADD COLUMN external_turn_id TEXT;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+        idx_turns_external_turn_id
+        ON turns(external_turn_id)
+        WHERE external_turn_id IS NOT NULL;
+        """
+    )
+
 
 def run_migrations(conn: sqlite3.Connection) -> None:
     version = conn.execute(
@@ -370,6 +383,11 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         migration_006(conn)
         conn.execute("PRAGMA user_version = 6")
         version = 6
+
+    if version < 7:
+        migration_007(conn)
+        conn.execute("PRAGMA user_version = 7")
+        version = 7
 
     if version != CURRENT_VERSION:
         raise RuntimeError(

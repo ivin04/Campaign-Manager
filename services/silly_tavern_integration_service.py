@@ -241,6 +241,7 @@ class SillyTavernIntegrationService:
         self,
         player_input: str,
         narrative: str,
+        external_turn_id: str | None = None,
     ) -> TurnResolutionResult:
         """
         Procesa un turno cuya narrativa ya ha sido generada
@@ -264,6 +265,31 @@ class SillyTavernIntegrationService:
             narrative,
             "narrative",
         )
+
+        normalized_external_turn_id = None
+
+        if external_turn_id is not None:
+            if not isinstance(
+                external_turn_id,
+                str,
+            ):
+                raise TypeError(
+                    "external_turn_id must be a string or None"
+                )
+
+            normalized_external_turn_id = (
+                external_turn_id.strip()
+            )
+
+            if not normalized_external_turn_id:
+                raise ValueError(
+                    "external_turn_id must not be empty"
+                )
+
+            if len(normalized_external_turn_id) > 500:
+                raise ValueError(
+                    "external_turn_id must not be longer than 500 characters"
+                )
 
         try:
             turn_context = (
@@ -290,6 +316,26 @@ class SillyTavernIntegrationService:
                 "CampaignStateService returned an invalid "
                 "TurnContext"
             )
+
+        if normalized_external_turn_id is not None:
+            try:
+                existing_turn = (
+                    self.turn_repository
+                    .get_by_external_turn_id(
+                        normalized_external_turn_id
+                    )
+                )
+
+            except Exception as exc:
+                raise SillyTavernIntegrationServiceError(
+                    "failed to check external turn id"
+                ) from exc
+
+            if existing_turn is not None:
+                raise SillyTavernIntegrationServiceError(
+                    "turn already processed: "
+                    f"{normalized_external_turn_id}"
+                )
 
         session_id = None
 
@@ -481,6 +527,9 @@ class SillyTavernIntegrationService:
                         ),
                         world_changed=(
                             result.world_changed
+                        ),
+                        external_turn_id=(
+                            normalized_external_turn_id
                         ),
                     ),
                     conn=conn,

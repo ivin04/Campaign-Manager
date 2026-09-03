@@ -7,6 +7,7 @@ import {
     chat,
     eventSource,
     event_types,
+    getCurrentChatId,
 } from '../../../script.js';
 
 
@@ -758,7 +759,70 @@ function registerTurnDetection() {
     );
 }
 
+async function createStableTurnId(
+    playerMessageIndex,
+    narrativeMessageIndex,
+    playerInput,
+    narrativeText,
+) {
+    let chatId = '';
+
+    try {
+        if (typeof getCurrentChatId === 'function') {
+            chatId = String(
+                getCurrentChatId() ?? '',
+            );
+        }
+    } catch (error) {
+        warn(
+            'Could not obtain current SillyTavern chat id.',
+            error,
+        );
+    }
+
+    const rawValue = [
+        'campaign-manager-v1',
+        chatId,
+        playerMessageIndex,
+        narrativeMessageIndex,
+        playerInput,
+        narrativeText,
+    ].join('\n');
+
+    const encoder =
+        new TextEncoder();
+
+    const data =
+        encoder.encode(rawValue);
+
+    const hashBuffer =
+        await crypto.subtle.digest(
+            'SHA-256',
+            data,
+        );
+
+    const hashArray =
+        Array.from(
+            new Uint8Array(
+                hashBuffer,
+            ),
+        );
+
+    const hashHex =
+        hashArray
+            .map(
+                byte =>
+                    byte
+                        .toString(16)
+                        .padStart(2, '0'),
+            )
+            .join('');
+
+    return hashHex;
+}
+
 async function sendTurnToBackend(
+    externalTurnId,
     playerInput,
     narrativeText,
 ) {
@@ -778,9 +842,24 @@ async function sendTurnToBackend(
         return null;
     }
 
+    if (
+        typeof externalTurnId !== 'string' ||
+        !externalTurnId.trim()
+    ) {
+        throw new Error(
+            'externalTurnId is required.',
+        );
+    }
+
     const payload = {
-        player_input: playerInput,
-        narrative: narrativeText,
+        external_turn_id:
+            externalTurnId,
+
+        player_input:
+            playerInput,
+
+        narrative:
+            narrativeText,
     };
 
     log(
@@ -873,8 +952,11 @@ async function onMessageReceived() {
         return;
     }
 
+    const narrativeIndex =
+        chat.length - 1;
+
     const narrative =
-        chat[chat.length - 1];
+        chat[narrativeIndex];
 
     if (!narrative) {
         return;
@@ -888,8 +970,11 @@ async function onMessageReceived() {
         return;
     }
 
+    const playerMessageIndex =
+        chat.length - 2;
+
     const playerMessage =
-        chat[chat.length - 2];
+        chat[playerMessageIndex];
 
     if (!playerMessage) {
         warn(
@@ -933,38 +1018,49 @@ async function onMessageReceived() {
         return;
     }
 
-    /*
-     * Use the message indexes and content to
-     * prevent the same turn from being sent
-     * more than once.
-     */
-    const turnKey =
-        [
-            chat.length - 2,
-            playerInput,
-            chat.length - 1,
-            narrativeText,
-        ].join('|');
+    let externalTurnId;
+
+    try {
+        externalTurnId =
+            await createStableTurnId(
+                playerMessageIndex,
+                narrativeIndex,
+                playerInput,
+                narrativeText,
+            );
+
+    } catch (error) {
+        console.error(
+            '[Campaign Manager] Failed to create stable turn id:',
+            error,
+        );
+
+        return;
+    }
 
     if (
         lastProcessedTurnKey ===
-        turnKey
+        externalTurnId
     ) {
         log(
-            'Turn already processed. Skipping duplicate.',
+            'Turn already processed locally. Skipping duplicate.',
         );
 
         return;
     }
 
     lastProcessedTurnKey =
-        turnKey;
+        externalTurnId;
 
     log(
         'Turn detected:',
         {
+            external_turn_id:
+                externalTurnId,
+
             player_input:
                 playerInput,
+
             narrative:
                 narrativeText,
         },
@@ -979,6 +1075,7 @@ async function onMessageReceived() {
      * HTTP request remaining attached to it.
      */
     void sendTurnToBackend(
+        externalTurnId,
         playerInput,
         narrativeText,
     ).catch((error) => {
@@ -987,9 +1084,10 @@ async function onMessageReceived() {
          */
         if (
             lastProcessedTurnKey ===
-            turnKey
+            externalTurnId
         ) {
-            lastProcessedTurnKey = null;
+            lastProcessedTurnKey =
+                null;
         }
 
         console.error(
