@@ -23,6 +23,8 @@ let settings = null;
 
 let lastProcessedTurnKey = null;
 
+let lastProcessedTurnVersionKey = null;
+
 // ============================================================
 // CAMPAIGN MANAGER CONTEXT FOR GENERATION
 // ============================================================
@@ -759,11 +761,54 @@ function registerTurnDetection() {
     );
 }
 
+function registerChatLifecycleDetection() {
+    if (
+        !eventSource ||
+        !event_types
+    ) {
+        warn(
+            'SillyTavern event system is unavailable.',
+        );
+
+        return;
+    }
+
+    const chatChangedEvent =
+        event_types.CHAT_CHANGED;
+
+    if (!chatChangedEvent) {
+        warn(
+            'CHAT_CHANGED event is unavailable.',
+        );
+
+        return;
+    }
+
+    eventSource.on(
+        chatChangedEvent,
+        () => {
+            lastProcessedTurnKey =
+                null;
+
+            lastProcessedTurnVersionKey =
+                null;
+
+            void clearCampaignManagerContext();
+
+            log(
+                'Chat changed. Campaign Manager local turn state reset.',
+            );
+        },
+    );
+
+    log(
+        'Chat lifecycle detection registered:',
+        chatChangedEvent,
+    );
+}
+
 async function createStableTurnId(
-    playerMessageIndex,
-    narrativeMessageIndex,
-    playerInput,
-    narrativeText,
+    playerMessage,
 ) {
     let chatId = '';
 
@@ -780,13 +825,52 @@ async function createStableTurnId(
         );
     }
 
+    /*
+     * SillyTavern messages have a stable `mesid`
+     * inside the current chat.
+     *
+     * The logical Campaign Manager turn must be
+     * identified by the user message, not by the
+     * generated narrative.
+     *
+     * This is important because a single user message
+     * can have multiple AI swipes/regenerations.
+     */
+    const messageId =
+        playerMessage &&
+        playerMessage.mesid !== undefined &&
+        playerMessage.mesid !== null
+            ? String(playerMessage.mesid)
+            : '';
+
+    /*
+     * Fallback for older/custom SillyTavern message
+     * objects that do not expose mesid.
+     *
+     * Do NOT include the narrative here.
+     */
+    const fallbackIndex =
+        playerMessage &&
+        playerMessage.__campaignManagerIndex !== undefined
+            ? String(
+                playerMessage.__campaignManagerIndex,
+            )
+            : '';
+
+    const identityPart =
+        messageId ||
+        fallbackIndex;
+
+    if (!identityPart) {
+        throw new Error(
+            'Could not determine a stable SillyTavern user message identity.',
+        );
+    }
+
     const rawValue = [
-        'campaign-manager-v1',
+        'campaign-manager-turn-v2',
         chatId,
-        playerMessageIndex,
-        narrativeMessageIndex,
-        playerInput,
-        narrativeText,
+        identityPart,
     ].join('\n');
 
     const encoder =
@@ -927,29 +1011,13 @@ async function sendTurnToBackend(
     return responseBody;
 }
 
-
-async function onMessageReceived() {
-    const currentSettings =
-        getSettings();
-
-    if (!currentSettings.enabled) {
-        return;
-    }
-
+function getCurrentTurnMessages() {
     if (!Array.isArray(chat)) {
-        warn(
-            'SillyTavern chat is unavailable.',
-        );
-
-        return;
+        return null;
     }
 
     if (chat.length < 2) {
-        warn(
-            'Not enough messages to process a turn.',
-        );
-
-        return;
+        return null;
     }
 
     const narrativeIndex =
@@ -959,15 +1027,11 @@ async function onMessageReceived() {
         chat[narrativeIndex];
 
     if (!narrative) {
-        return;
+        return null;
     }
 
     if (narrative.is_user) {
-        warn(
-            'Last message is not an assistant message. Skipping.',
-        );
-
-        return;
+        return null;
     }
 
     const playerMessageIndex =
@@ -977,20 +1041,44 @@ async function onMessageReceived() {
         chat[playerMessageIndex];
 
     if (!playerMessage) {
-        warn(
-            'Player message not found.',
-        );
-
-        return;
+        return null;
     }
 
     if (!playerMessage.is_user) {
+        return null;
+    }
+
+    return {
+        playerMessage,
+        narrative,
+        playerMessageIndex,
+        narrativeIndex,
+    };
+}
+
+async function onMessageReceived() {
+    const currentSettings =
+        getSettings();
+
+    if (!currentSettings.enabled) {
+        return;
+    }
+
+    const turn =
+        getCurrentTurnMessages();
+
+    if (!turn) {
         warn(
-            'Previous message is not a user message. Skipping.',
+            'Could not determine the current user/assistant turn.',
         );
 
         return;
     }
+
+    const {
+        playerMessage,
+        narrative,
+    } = turn;
 
     const playerInput =
         typeof playerMessage.mes === 'string'
@@ -1023,12 +1111,8 @@ async function onMessageReceived() {
     try {
         externalTurnId =
             await createStableTurnId(
-                playerMessageIndex,
-                narrativeIndex,
-                playerInput,
-                narrativeText,
+                playerMessage,
             );
-
     } catch (error) {
         console.error(
             '[Campaign Manager] Failed to create stable turn id:',
@@ -1038,12 +1122,22 @@ async function onMessageReceived() {
         return;
     }
 
+    /*
+     * A turn identity represents the user message.
+     *
+     * Different AI swipes therefore intentionally
+     * share the same external_turn_id.
+     */
     if (
         lastProcessedTurnKey ===
         externalTurnId
     ) {
         log(
             'Turn already processed locally. Skipping duplicate.',
+            {
+                external_turn_id:
+                    externalTurnId,
+            },
         );
 
         return;
@@ -1071,8 +1165,7 @@ async function onMessageReceived() {
      * the MESSAGE_RECEIVED event handler.
      *
      * SillyTavern must be allowed to finish
-     * its own message lifecycle without our
-     * HTTP request remaining attached to it.
+     * its own message lifecycle.
      */
     void sendTurnToBackend(
         externalTurnId,
@@ -1110,6 +1203,8 @@ function initializeExtension() {
     createSettingsUi();
 
     registerTurnDetection();
+
+    registerChatLifecycleDetection();
 }
 
 initializeExtension();
