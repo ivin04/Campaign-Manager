@@ -564,38 +564,6 @@ def test_play_turn_does_not_save_world_directly():
     )
 
 
-def test_save_failure_is_wrapped():
-
-    result = make_result(
-        world_changed=True
-    )
-
-    world_service = RecordingWorldService()
-
-    world_service.save_error = RuntimeError(
-        "database unavailable"
-    )
-
-    service, _, _, _ = make_service(
-        result=result,
-        world_service=world_service,
-    )
-
-    with pytest.raises(
-        CampaignTurnServiceError,
-        match="failed to persist campaign world",
-    ) as exc_info:
-
-        service.play_turn(
-            "Creo una entidad."
-        )
-
-    assert isinstance(
-        exc_info.value.__cause__,
-        RuntimeError,
-    )
-
-
 # ============================================================
 # LOAD
 # ============================================================

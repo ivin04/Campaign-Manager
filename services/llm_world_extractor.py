@@ -5,7 +5,9 @@ from collections.abc import Callable
 from typing import Any
 
 from models.turn_context import TurnContext
+from operations.character_operations import CharacterOperation
 from operations.turn_operations import TurnOperation
+from operations.world_operations import WorldOperation
 
 
 class LLMExtractionError(ValueError):
@@ -698,11 +700,11 @@ class LLMWorldExtractor:
         ):
             if not isinstance(
                 operation,
-                TurnOperation,
+                (WorldOperation, CharacterOperation),
             ):
                 raise LLMExtractionError(
                     "Operation parser returned "
-                    f"an invalid TurnOperation at index {index}"
+                    f"invalid operation at index {index}"
                 )
 
         return operations

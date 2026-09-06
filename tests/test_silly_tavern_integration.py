@@ -440,7 +440,7 @@ def _build_service():
             context_builder=context_builder,
             extractor=extractor,
             world_service=world_service,
-            _turn_repository=_turn_repository,
+            turn_repository=_turn_repository,
         )
     )
 
