@@ -1126,16 +1126,6 @@ async function onMessageReceived() {
     let externalTurnId;
 
     try {
-        console.log(
-            '[Campaign Manager] Player message object:',
-            playerMessage,
-        );
-
-        console.log(
-            '[Campaign Manager] Player message keys:',
-            Object.keys(playerMessage ?? {}),
-        );
-
         const playerMessageIndex =
             chat.findIndex(
                 (message) =>
