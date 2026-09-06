@@ -8,6 +8,7 @@ from operations.operation_reference import OperationReference
 from operations.world_operations import (
     CreateItemInstanceOperation,
     UpdateItemInstanceOperation,
+    _UNSET
 )
 
 from services.operation_parser import (
@@ -379,10 +380,10 @@ def test_parser_accepts_partial_update():
     assert operation.instance_id == 100
     assert operation.condition == "roto"
 
-    assert operation.owner_id is None
-    assert operation.location_id is None
-    assert operation.notes is None
-    assert operation.active is None
+    assert operation.owner_id is _UNSET
+    assert operation.location_id is _UNSET
+    assert operation.notes is _UNSET
+    assert operation.active is _UNSET
 
 def test_parser_rejects_unknown_field():
     parser = OperationParser()
@@ -444,3 +445,91 @@ def test_create_item_instance_accepts_references():
     )
 
     assert operation.location_id.name == "location"
+
+def test_applier_clears_owner_with_none():
+    world = build_world()
+
+    operation = UpdateItemInstanceOperation(
+        instance_id=100,
+        owner_id=None,
+    )
+
+    result = WorldApplier().apply(
+        world,
+        operation,
+    )
+
+    assert result.success
+    assert result.changed
+    assert world.item_instances[100].owner_id is None
+
+def test_applier_clears_location_with_none():
+    world = build_world()
+
+    operation = UpdateItemInstanceOperation(
+        instance_id=100,
+        location_id=None,
+    )
+
+    result = WorldApplier().apply(
+        world,
+        operation,
+    )
+
+    assert result.success
+    assert result.changed
+    assert world.item_instances[100].location_id is None
+
+def test_applier_does_not_modify_omitted_fields():
+    world = build_world()
+
+    operation = UpdateItemInstanceOperation(
+        instance_id=100,
+        condition="dañado",
+    )
+
+    result = WorldApplier().apply(
+        world,
+        operation,
+    )
+
+    assert result.success
+    assert result.changed
+
+    instance = world.item_instances[100]
+
+    assert instance.owner_id == 1
+    assert instance.location_id == 3
+    assert instance.condition == "dañado"
+
+def test_parser_distinguishes_missing_from_null():
+    parser = OperationParser()
+
+    operations = parser.parse(
+        {
+            "operations": [
+                {
+                    "type": "update_item_instance",
+                    "instance_id": 100,
+                },
+                {
+                    "type": "update_item_instance",
+                    "instance_id": 100,
+                    "owner_id": None,
+                    "location_id": None,
+                },
+            ]
+        }
+    )
+
+    omitted = operations[0]
+    explicit_null = operations[1]
+
+    assert omitted.owner_id is _UNSET
+    assert omitted.location_id is _UNSET
+    assert omitted.condition is _UNSET
+    assert omitted.notes is _UNSET
+    assert omitted.active is _UNSET
+
+    assert explicit_null.owner_id is None
+    assert explicit_null.location_id is None

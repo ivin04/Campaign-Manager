@@ -29,6 +29,7 @@ from operations.world_operations import (
     CreateItemInstanceOperation,
     CreateResourceOperation,
     UpdateItemInstanceOperation,
+    _UNSET,
 )
 
 from operations.operation_reference import OperationReference
@@ -448,9 +449,15 @@ class WorldApplier:
                 operation=operation,
             )
 
+        # ------------------------------------------------------------
         # Validate owner before modifying anything.
-        if operation.owner_id is not None:
-            if operation.owner_id not in world.entities:
+        # None is valid here and means "remove owner".
+        # ------------------------------------------------------------
+        if operation.owner_id is not _UNSET:
+            if (
+                operation.owner_id is not None
+                and operation.owner_id not in world.entities
+            ):
                 return OperationResult(
                     status=OperationStatus.NOT_FOUND,
                     message=(
@@ -461,9 +468,15 @@ class WorldApplier:
                     operation=operation,
                 )
 
+        # ------------------------------------------------------------
         # Validate location before modifying anything.
-        if operation.location_id is not None:
-            if operation.location_id not in world.entities:
+        # None is valid here and means "remove location".
+        # ------------------------------------------------------------
+        if operation.location_id is not _UNSET:
+            if (
+                operation.location_id is not None
+                and operation.location_id not in world.entities
+            ):
                 return OperationResult(
                     status=OperationStatus.NOT_FOUND,
                     message=(
@@ -476,45 +489,83 @@ class WorldApplier:
 
         changed = False
 
+        # ------------------------------------------------------------
         # Update owner.
+        # _UNSET = do not modify
+        # None   = remove owner
+        # int    = assign owner
+        # ------------------------------------------------------------
         if (
-            operation.owner_id is not None
+            operation.owner_id is not _UNSET
             and instance.owner_id != operation.owner_id
         ):
             instance.owner_id = operation.owner_id
             changed = True
 
+        # ------------------------------------------------------------
         # Update location.
+        # _UNSET = do not modify
+        # None   = remove location
+        # int    = assign location
+        # ------------------------------------------------------------
         if (
-            operation.location_id is not None
+            operation.location_id is not _UNSET
             and instance.location_id != operation.location_id
         ):
             instance.location_id = operation.location_id
             changed = True
 
+        # ------------------------------------------------------------
         # Update condition.
+        # _UNSET = do not modify
+        # None   = clear condition
+        # str    = set condition
+        # ------------------------------------------------------------
         if (
-            operation.condition is not None
+            operation.condition is not _UNSET
             and instance.condition != operation.condition
         ):
-            instance.condition = operation.condition
+            instance.condition = (
+                "" if operation.condition is None
+                else operation.condition
+            )
             changed = True
 
+        # ------------------------------------------------------------
         # Update notes.
+        # _UNSET = do not modify
+        # None   = clear notes
+        # str    = set notes
+        # ------------------------------------------------------------
         if (
-            operation.notes is not None
+            operation.notes is not _UNSET
             and instance.notes != operation.notes
         ):
-            instance.notes = operation.notes
+            instance.notes = (
+                "" if operation.notes is None
+                else operation.notes
+            )
             changed = True
 
-        # Update active state.
-        if (
-            operation.active is not None
-            and instance.active != operation.active
-        ):
-            instance.active = operation.active
-            changed = True
+        # ------------------------------------------------------------
+        # Update active.
+        # _UNSET = do not modify
+        # bool   = set active state
+        #
+        # active=None is treated as invalid rather than persisted,
+        # because ItemInstance.active is a bool field.
+        # ------------------------------------------------------------
+        if operation.active is not _UNSET:
+            if operation.active is None:
+                return OperationResult(
+                    status=OperationStatus.INVALID,
+                    message="Item instance 'active' cannot be None.",
+                    operation=operation,
+                )
+
+            if instance.active != operation.active:
+                instance.active = operation.active
+                changed = True
 
         if not changed:
             return OperationResult(
