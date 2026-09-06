@@ -1,4 +1,6 @@
+import threading
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -1561,3 +1563,91 @@ def test_same_turn_version_with_different_content_returns_conflict(
     assert turns[0]["narrative"] == (
         "La puerta se abre."
     )
+
+def test_concurrent_exact_retries_persist_only_one_turn(
+    monkeypatch,
+):
+    import app
+    from database import get_conn
+
+    external_turn_id = "concurrent-turn-001"
+
+    barrier = threading.Barrier(2)
+    extractor_calls = 0
+    extractor_lock = threading.Lock()
+
+    def fake_extract(narrative, turn_context):
+        nonlocal extractor_calls
+
+        with extractor_lock:
+            extractor_calls += 1
+
+        barrier.wait(timeout=5)
+
+        return []
+
+    extractor = (
+        app.silly_tavern_integration_service.extractor
+    )
+
+    monkeypatch.setattr(
+        extractor,
+        "extract",
+        fake_extract,
+    )
+
+    payload = {
+        "player_input": "Abro la puerta.",
+        "narrative": "La puerta se abre lentamente.",
+        "external_turn_id": external_turn_id,
+        "turn_version": 1,
+    }
+
+    def send_request():
+        return app.silly_tavern_integration_service.process_turn(
+            player_input=payload["player_input"],
+            narrative=payload["narrative"],
+            external_turn_id=payload["external_turn_id"],
+            turn_version=payload["turn_version"],
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(send_request)
+            for _ in range(2)
+        ]
+
+        results = [
+            future.result()
+            for future in futures
+        ]
+
+    assert len(results) == 2
+
+    assert extractor_calls == 2
+
+    assert results[0].player_input == payload["player_input"]
+    assert results[1].player_input == payload["player_input"]
+
+    assert results[0].narrative == payload["narrative"]
+    assert results[1].narrative == payload["narrative"]
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                external_turn_id,
+                version,
+                status
+            FROM turns
+            WHERE external_turn_id = ?
+            ORDER BY version
+            """,
+            (external_turn_id,),
+        ).fetchall()
+
+    assert len(rows) == 1
+
+    assert rows[0]["external_turn_id"] == external_turn_id
+    assert rows[0]["version"] == 1
+    assert rows[0]["status"] == "active"
