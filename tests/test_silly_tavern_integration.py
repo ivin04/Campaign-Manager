@@ -1651,3 +1651,255 @@ def test_concurrent_exact_retries_persist_only_one_turn(
     assert rows[0]["external_turn_id"] == external_turn_id
     assert rows[0]["version"] == 1
     assert rows[0]["status"] == "active"
+
+def test_e2e_silly_tavern_turn_persists_world_change(
+    monkeypatch,
+):
+    """
+    E2E del pipeline real de integración:
+
+        SillyTavern narrative
+            ↓
+        LLMWorldExtractor
+            ↓
+        WorldOperation
+            ↓
+        WorldService
+            ↓
+        SQLite
+            ↓
+        TurnRepository
+
+    El extractor está controlado para que el test sea
+    determinista y no dependa de Ollama/LLM real.
+    """
+
+    from database import get_conn
+    from operations.world_operations import (
+        CreateEntityOperation,
+    )
+    from repositories.campaign_repository import (
+        CampaignRepository,
+    )
+    from repositories.character_repository import (
+        CharacterRepository,
+    )
+    from repositories.entity_repository import (
+        EntityRepository,
+    )
+    from repositories.turn_repository import (
+        TurnRepository,
+    )
+    from services.campaign_state_service import (
+        CampaignStateService,
+    )
+    from services.context_builder import (
+        ContextBuilder,
+    )
+    from services.llm_world_extractor import (
+        LLMWorldExtractor,
+    )
+    from services.operation_parser import (
+        OperationParser,
+    )
+    from services.silly_tavern_integration_service import (
+        SillyTavernIntegrationService,
+    )
+    from services.world_service import (
+        WorldService,
+    )
+
+    # --------------------------------------------------------
+    # Construir el pipeline real
+    # --------------------------------------------------------
+
+    world_service = WorldService()
+
+    campaign_state_service = CampaignStateService(
+        campaign_repository=CampaignRepository(),
+        character_repository=CharacterRepository(),
+        entity_repository=EntityRepository(),
+        world_service=world_service,
+    )
+
+    context_builder = ContextBuilder()
+
+    extractor = LLMWorldExtractor(
+        provider=lambda prompt: '{"operations": []}',
+        operation_parser=OperationParser(),
+    )
+
+    turn_repository = TurnRepository()
+
+    service = SillyTavernIntegrationService(
+        campaign_state_service=campaign_state_service,
+        context_builder=context_builder,
+        extractor=extractor,
+        world_service=world_service,
+        turn_repository=turn_repository,
+    )
+
+    # --------------------------------------------------------
+    # Sustituimos SOLO la extracción LLM.
+    #
+    # El resto del pipeline es real.
+    # --------------------------------------------------------
+
+    created_entity_name = "La Cripta Antigua"
+
+    def fake_extract(
+        narrative,
+        context,
+    ):
+        assert narrative == (
+            "Aldren descubre una antigua cripta "
+            "oculta bajo la montaña."
+        )
+
+        assert context is not None
+
+        return [
+            CreateEntityOperation(
+                name=created_entity_name,
+                entity_type="location",
+                description=(
+                    "Una antigua cripta oculta bajo la montaña."
+                ),
+            )
+        ]
+
+    monkeypatch.setattr(
+        extractor,
+        "extract",
+        fake_extract,
+    )
+
+    # --------------------------------------------------------
+    # Ejecutar el turno completo
+    # --------------------------------------------------------
+
+    result = service.process_turn(
+        player_input=(
+            "Busco un lugar donde refugiarme."
+        ),
+        narrative=(
+            "Aldren descubre una antigua cripta "
+            "oculta bajo la montaña."
+        ),
+        external_turn_id="e2e-test-turn-001",
+        turn_version=1,
+    )
+
+    # --------------------------------------------------------
+    # Comprobar resultado del turno
+    # --------------------------------------------------------
+
+    assert result.narrative == (
+        "Aldren descubre una antigua cripta "
+        "oculta bajo la montaña."
+    )
+
+    assert result.operation_count == 1
+    assert result.successful_operation_count == 1
+    assert result.failed_operation_count == 0
+    assert result.all_operations_succeeded is True
+    assert result.world_changed is True
+
+    # --------------------------------------------------------
+    # Comprobar WorldState en memoria
+    # --------------------------------------------------------
+
+    world = world_service.get_world()
+
+    matching_entities = [
+        entity
+        for entity in world.entities.values()
+        if entity.name == created_entity_name
+    ]
+
+    assert len(matching_entities) == 1
+
+    entity = matching_entities[0]
+
+    assert entity.entity_type == "location"
+    assert entity.description == (
+        "Una antigua cripta oculta bajo la montaña."
+    )
+
+    # --------------------------------------------------------
+    # Comprobar que el cambio llegó realmente a SQLite
+    #
+    # No usamos WorldService aquí.
+    # Leemos directamente desde el repositorio.
+    # --------------------------------------------------------
+
+    entity_repository = EntityRepository()
+
+    persisted_entity = entity_repository.get_entity(
+        entity.id,
+    )
+
+    assert persisted_entity is not None
+    assert persisted_entity.id == entity.id
+    assert persisted_entity.name == created_entity_name
+    assert persisted_entity.entity_type == "location"
+    assert persisted_entity.description == (
+        "Una antigua cripta oculta bajo la montaña."
+    )
+
+    # --------------------------------------------------------
+    # Comprobar que el TurnRecord también se persistió
+    # --------------------------------------------------------
+
+    persisted_turn = (
+        turn_repository.get_active_by_external_turn_id(
+            "e2e-test-turn-001",
+        )
+    )
+
+    assert persisted_turn is not None
+
+    assert persisted_turn.external_turn_id == (
+        "e2e-test-turn-001"
+    )
+
+    assert persisted_turn.version == 1
+
+    assert persisted_turn.player_input == (
+        "Busco un lugar donde refugiarme."
+    )
+
+    assert persisted_turn.narrative == (
+        "Aldren descubre una antigua cripta "
+        "oculta bajo la montaña."
+    )
+
+    assert persisted_turn.operation_count == 1
+    assert persisted_turn.successful_operation_count == 1
+    assert persisted_turn.failed_operation_count == 0
+    assert persisted_turn.world_changed is True
+
+    # --------------------------------------------------------
+    # Comprobación final independiente contra SQLite
+    # --------------------------------------------------------
+
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT
+                id,
+                name,
+                entity_type,
+                description
+            FROM entities
+            WHERE id=?
+            """,
+            (entity.id,),
+        ).fetchone()
+
+    assert row is not None
+    assert row["name"] == created_entity_name
+    assert row["entity_type"] == "location"
+    assert row["description"] == (
+        "Una antigua cripta oculta bajo la montaña."
+    )
