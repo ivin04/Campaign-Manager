@@ -1,37 +1,710 @@
 # D&D Campaign Manager
 
-Gestor local de memoria para una campaña de D&D 5e 2014.
+Local backend for managing persistent **D&D 5e (2014)** campaign state and integrating an LLM-powered narrative workflow with **SillyTavern**.
 
-## Instalación
+The project separates narrative generation from world-state management: SillyTavern is responsible for generating the story, while Campaign Manager extracts structured changes from that narrative, validates them, applies them to the campaign state and persists the result in SQLite.
 
-Abre CMD en esta carpeta:
+The goal is to maintain a consistent, persistent world across long-running campaigns while supporting operations such as character changes, items, resources, relationships and world events.
 
-    python -m venv .venv
-    .venv\Scripts\activate
-    pip install -r requirements.txt
+---
 
-## Arranque
+## Features
 
-    .venv\Scripts\python.exe -m uvicorn app:app --host 127.0.0.1 --port 8765
+* **Persistent campaign state** backed by SQLite.
+* **REST API** built with FastAPI.
+* **SillyTavern integration** for processing generated narratives.
+* **LLM-based world extraction**, converting narrative text into structured operations.
+* **Structured world operations** instead of allowing the LLM to directly modify the database.
+* **In-memory `WorldState`** for efficient world manipulation.
+* **Memory and context retrieval** for supplying relevant campaign information to the LLM.
+* **Turn persistence** with operation and world-change metadata.
+* **Turn versioning** using `external_turn_id` and `turn_version`.
+* **Swipe / regeneration reconciliation**, restoring the previous world snapshot before applying a regenerated turn.
+* **Idempotency and conflict detection** for externally identified turns.
+* **World snapshots** used to reconcile different versions of the same turn.
+* **Database migrations** for controlled schema evolution.
+* **Automated tests** covering services, repositories, API behaviour and turn reconciliation.
 
-Luego abre:
+---
 
-    http://127.0.0.1:8765/docs
+## Architecture
 
-La base de datos se crea automáticamente en:
+The application is organized around a layered architecture that separates HTTP handling, domain logic, persistence and LLM interaction.
 
-    data\campaign.db
+```text
+                         ┌─────────────────┐
+                         │   SillyTavern   │
+                         │ Narrative / UI  │
+                         └────────┬────────┘
+                                  │
+                    player_input + narrative
+                                  │
+                                  ▼
+                    ┌───────────────────────┐
+                    │        FastAPI        │
+                    │      REST API         │
+                    └───────────┬───────────┘
+                                │
+                                ▼
+              ┌────────────────────────────────┐
+              │ SillyTavernIntegrationService  │
+              └───────────────┬────────────────┘
+                              │
+                    ┌─────────┴─────────┐
+                    ▼                   ▼
+          ┌─────────────────┐   ┌──────────────────┐
+          │ ContextBuilder  │   │ LLMWorldExtractor│
+          │ Memory Search   │   │ Operation Parser │
+          └─────────────────┘   └────────┬─────────┘
+                                         │
+                                         ▼
+                               ┌──────────────────┐
+                               │   WorldService   │
+                               │  WorldApplier    │
+                               └────────┬─────────┘
+                                        │
+                                        ▼
+                                  ┌───────────┐
+                                  │  SQLite   │
+                                  │ Persistence│
+                                  └───────────┘
+```
 
-## Comprobación
+### Main components
 
-Abre:
+#### `WorldService`
 
-    http://127.0.0.1:8765/health
+Owns the current in-memory `WorldState` and coordinates the application of structured operations.
 
-Debe aparecer:
+The service works against a working copy of the world and persists successful changes to SQLite.
 
-    {"ok":true}
+#### `TurnResolutionService`
 
-## Importante
+Coordinates the domain-level resolution of a turn without coupling the core turn flow directly to the HTTP layer.
 
-Esta primera versión crea la base y una API local. La integración automática con SillyTavern (guardar recuerdos y recuperar contexto antes de cada respuesta) será el siguiente paso.
+Its responsibilities include coordinating:
+
+* narrative generation;
+* context;
+* world extraction;
+* operation application;
+* turn resolution results.
+
+#### `SillyTavernIntegrationService`
+
+Acts as the integration boundary between SillyTavern and the campaign backend.
+
+It handles:
+
+* incoming player input;
+* generated narrative;
+* persistent context;
+* world extraction;
+* turn persistence;
+* external turn identifiers;
+* turn versions;
+* regeneration reconciliation.
+
+#### `LLMWorldExtractor`
+
+Uses an LLM to identify persistent world changes from narrative text.
+
+Instead of letting generated text directly manipulate the database, the LLM produces structured operations that are subsequently parsed, validated and applied by the application.
+
+#### `OperationParser`
+
+Converts the extracted representation into domain operations such as creating or modifying world entities and item instances.
+
+#### `MemorySearchService`
+
+Provides retrieval over the current world state and builds structured representations that can be used as persistent campaign memory.
+
+#### Repositories
+
+Persistence is separated from the domain services through repository classes.
+
+Examples include:
+
+* `CampaignRepository`
+* `CharacterRepository`
+* `EntityRepository`
+* `TurnRepository`
+* `WorldSnapshotRepository`
+
+---
+
+## Turn Processing
+
+A normal SillyTavern turn follows this general flow:
+
+```text
+Player action
+     │
+     ▼
+SillyTavern generates narrative
+     │
+     ▼
+POST /integration/turn
+     │
+     ▼
+LLMWorldExtractor
+     │
+     ▼
+Structured operations
+     │
+     ▼
+Operation validation
+     │
+     ▼
+WorldService
+     │
+     ▼
+SQLite persistence
+     │
+     ▼
+TurnRecord
+```
+
+The narrative itself is not treated as the source of truth for persistent state.
+
+Instead:
+
+```text
+Narrative
+    ↓
+LLM extraction
+    ↓
+Structured operations
+    ↓
+Domain validation
+    ↓
+WorldState
+    ↓
+SQLite
+```
+
+This makes the LLM an interpreter of the narrative rather than the component directly responsible for database mutations.
+
+---
+
+## Turn Versioning & Regeneration
+
+One of the main consistency problems when integrating with SillyTavern is **response regeneration / swiping**.
+
+For example:
+
+```text
+Turn 42
+  Version 1
+      │
+      ├── Player: "I open the chest."
+      │
+      └── Narrative: "You find an ancient sword."
+                │
+                ▼
+          World changes
+          Sword created
+
+
+User regenerates response
+
+
+Turn 42
+  Version 2
+      │
+      ├── Same player action
+      │
+      └── Different narrative
+                │
+                ▼
+          Restore snapshot
+                │
+                ▼
+          Apply version 2
+```
+
+Each externally identified turn can therefore have multiple versions:
+
+```text
+external_turn_id = "turn-42"
+
+version 1 → superseded
+version 2 → superseded
+version 3 → active
+```
+
+Before applying a new version, the previous active version's world snapshot is restored.
+
+This prevents regenerated narratives from accumulating mutually incompatible world changes.
+
+### Idempotency
+
+If the same `external_turn_id` and version are received again with identical content, the persisted result can be reused instead of applying the turn twice.
+
+If the same identifier/version is received with different content, the integration reports a conflict.
+
+Older versions are also rejected once a newer active version exists.
+
+This provides a clear consistency model for external turn processing.
+
+---
+
+## World Snapshots
+
+Snapshots are used to reconcile different versions of a turn.
+
+A snapshot contains the persistent world tables required to restore campaign state, including:
+
+* entities;
+* items;
+* item instances;
+* resources;
+* resource balances;
+* relations;
+* world events;
+* character states.
+
+The snapshot mechanism allows the application to move from:
+
+```text
+World before Turn 42
+        ↓
+Turn 42 / Version 1
+        ↓
+World after Version 1
+```
+
+back to:
+
+```text
+World before Turn 42
+```
+
+and then apply:
+
+```text
+Turn 42 / Version 2
+```
+
+This is particularly useful for LLM-driven interfaces where users can regenerate previously generated responses.
+
+---
+
+## Database
+
+The project uses **SQLite** as its persistent storage layer.
+
+The database is created automatically under:
+
+```text
+data/campaign.db
+```
+
+Schema changes are managed through application migrations rather than relying on manual database modifications.
+
+This keeps the project local and lightweight while still providing explicit schema evolution.
+
+---
+
+## API
+
+The application exposes a REST API through FastAPI.
+
+### Basic
+
+```text
+GET /
+GET /health
+```
+
+### Campaign
+
+```text
+PATCH /campaign
+PATCH /campaign/session
+GET   /campaign/state
+PATCH /campaign/active-character
+```
+
+### Turns
+
+```text
+POST /turn
+GET  /turns
+```
+
+### Memory
+
+```text
+GET /memory/search
+GET /memory/context
+```
+
+### SillyTavern integration
+
+```text
+POST /integration/context
+POST /integration/turn
+```
+
+### World
+
+```text
+GET /world
+```
+
+### Export
+
+```text
+GET /export
+```
+
+Interactive API documentation is available through FastAPI's generated documentation:
+
+```text
+http://127.0.0.1:8765/docs
+```
+
+---
+
+## Requirements
+
+* Python 3.11+
+* Ollama
+* A compatible local LLM model
+* SillyTavern (for the integration workflow)
+
+The backend itself uses:
+
+* FastAPI
+* Uvicorn
+* SQLite
+* Pydantic
+
+---
+
+## Installation
+
+Clone the repository:
+
+```bash
+git clone https://github.com/ivin04/Campaign-Manager.git
+cd Campaign-Manager
+```
+
+Create a virtual environment:
+
+```bash
+python -m venv .venv
+```
+
+Activate it on Windows:
+
+```bash
+.venv\Scripts\activate
+```
+
+Install the Python dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+The database will be initialized automatically when the application starts.
+
+---
+
+## Running
+
+### Windows
+
+The repository includes:
+
+```text
+start.bat
+```
+
+Alternatively, start the server manually:
+
+```bash
+.venv\Scripts\python.exe -m uvicorn app:app --host 127.0.0.1 --port 8765
+```
+
+The API will be available at:
+
+```text
+http://127.0.0.1:8765
+```
+
+Health check:
+
+```text
+http://127.0.0.1:8765/health
+```
+
+Expected response:
+
+```json
+{
+  "ok": true
+}
+```
+
+Interactive API documentation:
+
+```text
+http://127.0.0.1:8765/docs
+```
+
+---
+
+## Ollama
+
+The application uses an `OllamaProvider` as the local LLM provider.
+
+Ollama must therefore be running locally with a compatible model available.
+
+The exact model is intentionally not hard-coded into the project documentation so that the backend can be used with different local models depending on available hardware and desired performance.
+
+---
+
+## SillyTavern Integration
+
+The intended workflow is:
+
+```text
+SillyTavern
+     │
+     │ Generate narrative
+     ▼
+Campaign Manager
+     │
+     ├── Retrieve persistent context
+     │
+     ├── Extract world changes
+     │
+     ├── Validate operations
+     │
+     ├── Apply changes
+     │
+     └── Persist turn
+     ▼
+SQLite
+```
+
+Campaign Manager does not replace SillyTavern as the narrative interface.
+
+Instead, it acts as a persistent campaign-state backend.
+
+This separation allows the narrative layer and the world-state layer to evolve independently.
+
+---
+
+## Testing
+
+The project uses `pytest`.
+
+Run the complete test suite with:
+
+```bash
+pytest
+```
+
+The test suite covers the main application layers, including:
+
+* repositories;
+* services;
+* world operations;
+* API endpoints;
+* persistence;
+* turn processing;
+* SillyTavern integration;
+* turn versioning;
+* regeneration / snapshot reconciliation;
+* idempotency and conflict handling.
+
+The goal is not only to test individual functions, but also to verify that persistent campaign state remains consistent across different turn versions.
+
+---
+
+## Design Decisions
+
+### Structured operations instead of direct LLM database access
+
+The LLM does not directly modify SQLite.
+
+Instead:
+
+```text
+LLM
+ ↓
+Extracted operation
+ ↓
+Parser
+ ↓
+Domain validation
+ ↓
+WorldService
+ ↓
+SQLite
+```
+
+This creates a controlled boundary between probabilistic LLM output and deterministic application state.
+
+---
+
+### SQLite instead of a server database
+
+SQLite keeps the project:
+
+* local;
+* portable;
+* easy to install;
+* suitable for a single-user campaign manager.
+
+A server database can be introduced later if the project evolves toward a multi-user or hosted architecture.
+
+---
+
+### In-memory WorldState + persistent SQLite
+
+The application keeps the active world in memory for domain operations while using SQLite as persistent storage.
+
+This gives the domain layer a convenient object-oriented representation of the world without making the LLM or business logic dependent on raw SQL queries.
+
+---
+
+### Snapshots for turn reconciliation
+
+Regenerating an LLM response can invalidate state changes produced by the previous response.
+
+Snapshots provide an explicit mechanism to restore the state associated with the previous version before applying the new one.
+
+This makes turn regeneration a state-reconciliation problem rather than simply inserting another turn into the database.
+
+---
+
+### External turn identifiers
+
+SillyTavern and similar clients need a way to identify the same logical turn across regenerated responses.
+
+The combination of:
+
+```text
+external_turn_id
+turn_version
+status
+snapshot
+```
+
+provides the necessary information to distinguish:
+
+* new turns;
+* repeated requests;
+* regenerated responses;
+* stale versions;
+* conflicting payloads.
+
+---
+
+## Project Structure
+
+```text
+Campaign-Manager/
+│
+├── app.py
+├── database.py
+├── migrations.py
+├── requirements.txt
+├── pyproject.toml
+├── start.bat
+│
+├── models/
+│   └── Domain and API models
+│
+├── operations/
+│   └── Structured world operations
+│
+├── repositories/
+│   └── SQLite persistence layer
+│
+├── services/
+│   ├── Campaign services
+│   ├── Context and memory services
+│   ├── LLM services
+│   ├── Turn resolution
+│   ├── SillyTavern integration
+│   └── World management
+│
+├── integrations/
+│   └── External integration code
+│
+├── migrations/
+│   └── Database evolution
+│
+├── tests/
+│   └── Automated test suite
+│
+└── data/
+    └── campaign.db
+```
+
+---
+
+## Current Status
+
+The current version provides the core backend required for a persistent local campaign manager:
+
+* persistent campaign state;
+* structured world operations;
+* LLM-based extraction;
+* context and memory retrieval;
+* SQLite persistence;
+* REST API;
+* SillyTavern integration;
+* turn versioning;
+* snapshot-based regeneration reconciliation;
+* automated testing.
+
+The project is currently focused on **reliable state management and integration correctness** rather than building a complete virtual tabletop or combat engine.
+
+---
+
+## Roadmap
+
+Potential future improvements include:
+
+* richer character state management;
+* improved context ranking;
+* more advanced memory retrieval;
+* expanded D&D mechanics;
+* combat support;
+* additional LLM providers;
+* improved SillyTavern tooling;
+* observability and structured logging;
+* optional web UI;
+* multi-user / hosted deployment.
+
+These features are intentionally outside the current core scope so that persistence and state consistency remain the primary engineering focus.
+
+---
+
+## Why This Project?
+
+Although the project is built around a D&D use case, its underlying problems are broader:
+
+* integrating probabilistic LLM output with deterministic application state;
+* designing persistent domain models;
+* maintaining consistency across external clients;
+* handling retries and idempotency;
+* reconciling different versions of the same operation;
+* separating domain logic from infrastructure;
+* testing stateful workflows.
+
+The project therefore serves as a practical exploration of **LLM application architecture, state management, persistence and API design**.
+
+---
+
+## License
+
+This project is currently provided as-is for personal and educational use.
