@@ -16,23 +16,73 @@ class WorldRepository:
     # LOAD
     # ============================================================
 
-    def load_world(self) -> WorldState:
+    def load_world(
+        self,
+        *,
+        conn=None,
+    ) -> WorldState:
 
         world = WorldState()
 
-        self._load_entities(world)
-        self._load_items(world)
-        self._load_item_instances(world)
-        self._load_resources(world)
-        self._load_resource_balances(world)
-        self._load_relations(world)
-        self._load_events(world)
+        self._load_entities(
+            world,
+            conn=conn,
+        )
+
+        self._load_items(
+            world,
+            conn=conn,
+        )
+
+        self._load_item_instances(
+            world,
+            conn=conn,
+        )
+
+        self._load_resources(
+            world,
+            conn=conn,
+        )
+
+        self._load_resource_balances(
+            world,
+            conn=conn,
+        )
+
+        self._load_relations(
+            world,
+            conn=conn,
+        )
+
+        self._load_events(
+            world,
+            conn=conn,
+        )
 
         return world
 
-    def _load_entities(self, world: WorldState):
+    def _rows(
+        self,
+        query: str,
+        *,
+        conn=None,
+    ):
+        if conn is None:
+            return rows(query)
 
-        rows_data = rows("""
+        return [
+            dict(row)
+            for row in conn.execute(query).fetchall()
+        ]
+
+    def _load_entities(
+        self,
+        world: WorldState,
+        *,
+        conn=None,
+    ):
+
+        rows_data = self._rows("""
             SELECT
                 id,
                 name,
@@ -41,7 +91,7 @@ class WorldRepository:
                 notes,
                 active
             FROM entities
-        """)
+        """, conn=conn)
 
         for row in rows_data:
 
@@ -56,9 +106,14 @@ class WorldRepository:
 
             world.entities[entity.id] = entity
 
-    def _load_items(self, world: WorldState):
+    def _load_items(
+        self,
+        world: WorldState,
+        *,
+        conn=None,
+    ):
 
-        rows_data = rows("""
+        rows_data = self._rows("""
             SELECT
                 id,
                 name,
@@ -67,7 +122,7 @@ class WorldRepository:
                 unique_item,
                 notes
             FROM items
-        """)
+        """, conn=conn)
 
         for row in rows_data:
 
@@ -82,9 +137,14 @@ class WorldRepository:
 
             world.items[item.id] = item
 
-    def _load_item_instances(self, world: WorldState):
+    def _load_item_instances(
+        self,
+        world: WorldState,
+        *,
+        conn=None,
+    ):
 
-        rows_data = rows("""
+        rows_data = self._rows("""
             SELECT
                 id,
                 item_id,
@@ -95,7 +155,7 @@ class WorldRepository:
                 notes,
                 active
             FROM item_instances
-        """)
+        """, conn=conn)
 
         for row in rows_data:
 
@@ -112,9 +172,14 @@ class WorldRepository:
 
             world.item_instances[instance.id] = instance
 
-    def _load_resources(self, world: WorldState):
+    def _load_resources(
+        self,
+        world: WorldState,
+        *,
+        conn=None,
+    ):
 
-        rows_data = rows("""
+        rows_data = self._rows("""
             SELECT
                 id,
                 name,
@@ -122,7 +187,7 @@ class WorldRepository:
                 unit,
                 notes
             FROM resources
-        """)
+        """, conn=conn)
 
         for row in rows_data:
 
@@ -136,9 +201,14 @@ class WorldRepository:
 
             world.resources[resource.id] = resource
 
-    def _load_resource_balances(self, world: WorldState):
+    def _load_resource_balances(
+        self,
+        world: WorldState,
+        *,
+        conn=None,
+    ):
 
-        rows_data = rows("""
+        rows_data = self._rows("""
             SELECT
                 id,
                 resource_id,
@@ -146,7 +216,7 @@ class WorldRepository:
                 amount,
                 notes
             FROM resource_balances
-        """)
+        """, conn=conn)
 
         for row in rows_data:
 
@@ -160,9 +230,14 @@ class WorldRepository:
 
             world.resource_balances[balance.id] = balance
 
-    def _load_relations(self, world: WorldState):
+    def _load_relations(
+        self,
+        world: WorldState,
+        *,
+        conn=None,
+    ):
 
-        rows_data = rows("""
+        rows_data = self._rows("""
             SELECT
                 id,
                 subject_id,
@@ -171,7 +246,7 @@ class WorldRepository:
                 metadata,
                 active
             FROM relations
-        """)
+        """, conn=conn)
 
         for row in rows_data:
 
@@ -188,9 +263,14 @@ class WorldRepository:
 
             world.relations[relation.id] = relation
 
-    def _load_events(self, world: WorldState):
+    def _load_events(
+        self,
+        world: WorldState,
+        *,
+        conn=None,
+    ):
 
-        rows_data = rows("""
+        rows_data = self._rows("""
             SELECT
                 id,
                 event_type,
@@ -201,7 +281,7 @@ class WorldRepository:
                 secret,
                 metadata
             FROM world_events
-        """)
+        """, conn=conn)
 
         for row in rows_data:
 

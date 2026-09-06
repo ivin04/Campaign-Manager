@@ -1298,5 +1298,40 @@ def test_save_world_does_not_open_connection_when_one_is_provided(
         fail_get_conn,
     )
 
-    # Usa aquí la fixture/conexión SQLite real de tus tests
-    # de WorldRepository.
+def test_load_world_uses_provided_connection():
+    from database import get_conn
+    from models.entity import Entity
+    from repositories.world_repository import WorldRepository
+
+    repository = WorldRepository()
+
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO entities (
+                name,
+                entity_type,
+                description,
+                notes,
+                active
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                "Entidad transaccional",
+                "npc",
+                "Visible solamente dentro de esta transacción.",
+                "",
+                1,
+            ),
+        )
+
+        loaded = repository.load_world(
+            conn=conn,
+        )
+
+        assert any(
+            isinstance(entity, Entity)
+            and entity.name == "Entidad transaccional"
+            for entity in loaded.entities.values()
+        )

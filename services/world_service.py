@@ -73,12 +73,23 @@ class WorldService:
 
         self.world = WorldState()
 
-    def load(self) -> WorldState:
+    def load(self, *, conn=None) -> WorldState:
         """
         Carga el mundo desde SQLite y lo establece como estado actual.
+
+        Si se proporciona una conexión, la lectura se realiza mediante
+        esa misma conexión. Esto es importante cuando load() se ejecuta
+        dentro de una transacción que todavía contiene cambios no
+        confirmados.
+
+        Cuando no se proporciona conexión, mantiene la compatibilidad
+        con repositorios simples utilizados en tests.
         """
 
-        self.world = self.repository.load_world()
+        if conn is None:
+            self.world = self.repository.load_world()
+        else:
+            self.world = self.repository.load_world(conn=conn)
 
         return self.world
 

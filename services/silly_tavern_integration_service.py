@@ -649,11 +649,9 @@ class SillyTavernIntegrationService:
                             existing_turn.snapshot,
                         )
 
-                        # El snapshot restaura SQLite, pero WorldService mantiene
-                        # también un WorldState en memoria. Hay que recargarlo para
-                        # que ambos estados vuelvan a estar sincronizados antes de
-                        # aplicar la nueva versión del turno.
-                        self.world_service.load()
+                        self.world_service.load(
+                            conn=conn,
+                        )
 
                         self.turn_repository.supersede_turn(
                             existing_turn.id,
