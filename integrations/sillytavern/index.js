@@ -25,6 +25,9 @@ let lastProcessedTurnKey = null;
 
 let lastProcessedTurnVersionKey = null;
 
+let currentTurnExternalId = null;
+let currentTurnVersion = 1;
+
 // ============================================================
 // CAMPAIGN MANAGER CONTEXT FOR GENERATION
 // ============================================================

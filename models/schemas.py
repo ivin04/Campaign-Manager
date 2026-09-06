@@ -140,6 +140,11 @@ class SillyTavernTurnIn(BaseModel):
         max_length=500,
     )
 
+    turn_version: int = Field(
+        default=1,
+        ge=1,
+    )
+
     @field_validator(
         "player_input",
         "narrative",
