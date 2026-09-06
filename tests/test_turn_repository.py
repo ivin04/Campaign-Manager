@@ -794,3 +794,130 @@ def test_save_turn_without_connection_persists_turn(
     assert loaded.id == saved.id
     assert loaded.player_input == "Espero."
     assert loaded.narrative == "Pasa una hora."
+
+def test_get_active_by_external_turn_id_returns_turn_record(
+    turn_repository,
+):
+    turn_v1 = turn_repository.create(
+        session_id="session-1",
+        player_input="Cojo la espada.",
+        narrative="Narrativa v1",
+        operation_count=1,
+        successful_operation_count=1,
+        failed_operation_count=0,
+        all_operations_succeeded=True,
+        world_changed=True,
+        external_turn_id="external-123",
+        version=1,
+        status="active",
+        snapshot='{"entities": [], "items": []}',
+    )
+
+    active_turn = (
+        turn_repository.get_active_by_external_turn_id(
+            "external-123"
+        )
+    )
+
+    assert active_turn is not None
+    assert active_turn.id == turn_v1.id
+    assert active_turn.external_turn_id == "external-123"
+    assert active_turn.version == 1
+    assert active_turn.status == "active"
+    assert active_turn.snapshot == '{"entities": [], "items": []}'
+
+
+def test_get_versions_by_external_turn_id_returns_all_versions(
+    turn_repository,
+):
+    turn_repository.create(
+        session_id="session-1",
+        player_input="Cojo la espada.",
+        narrative="Narrativa v1",
+        operation_count=1,
+        successful_operation_count=1,
+        failed_operation_count=0,
+        all_operations_succeeded=True,
+        world_changed=True,
+        external_turn_id="external-123",
+        version=1,
+        status="superseded",
+        snapshot='{"version": 1}',
+    )
+
+    turn_repository.create(
+        session_id="session-1",
+        player_input="Cojo la espada.",
+        narrative="Narrativa v2",
+        operation_count=0,
+        successful_operation_count=0,
+        failed_operation_count=0,
+        all_operations_succeeded=True,
+        world_changed=False,
+        external_turn_id="external-123",
+        version=2,
+        status="active",
+        snapshot='{"version": 2}',
+    )
+
+    versions = (
+        turn_repository.get_versions_by_external_turn_id(
+            "external-123"
+        )
+    )
+
+    assert len(versions) == 2
+
+    assert versions[0].version == 1
+    assert versions[0].status == "superseded"
+    assert versions[0].snapshot == '{"version": 1}'
+
+    assert versions[1].version == 2
+    assert versions[1].status == "active"
+    assert versions[1].snapshot == '{"version": 2}'
+
+
+def test_get_versions_by_external_turn_id_preserves_snapshot(
+    turn_repository,
+):
+    snapshot_v1 = '{"entities": [{"id": 1}], "items": []}'
+    snapshot_v2 = '{"entities": [], "items": [{"id": 2}]}'
+
+    turn_repository.create(
+        session_id="session-1",
+        player_input="Acción v1",
+        narrative="Narrativa v1",
+        operation_count=1,
+        successful_operation_count=1,
+        failed_operation_count=0,
+        all_operations_succeeded=True,
+        world_changed=True,
+        external_turn_id="external-123",
+        version=1,
+        status="superseded",
+        snapshot=snapshot_v1,
+    )
+
+    turn_repository.create(
+        session_id="session-1",
+        player_input="Acción v2",
+        narrative="Narrativa v2",
+        operation_count=0,
+        successful_operation_count=0,
+        failed_operation_count=0,
+        all_operations_succeeded=True,
+        world_changed=False,
+        external_turn_id="external-123",
+        version=2,
+        status="active",
+        snapshot=snapshot_v2,
+    )
+
+    versions = (
+        turn_repository.get_versions_by_external_turn_id(
+            "external-123"
+        )
+    )
+
+    assert versions[0].snapshot == snapshot_v1
+    assert versions[1].snapshot == snapshot_v2

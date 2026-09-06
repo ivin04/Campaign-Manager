@@ -888,3 +888,191 @@ def test_integration_service_preserves_operation_order(
     # --------------------------------------------------------
 
     assert captured["conn"] is not None
+
+def test_regenerate_turn_restores_snapshot_and_allows_new_version(
+    client,
+    db_connection,
+):
+    external_turn_id = "test-external-turn"
+
+    # ---------------------------------------------------------
+    # V1 - First generation
+    # ---------------------------------------------------------
+
+    response_v1 = client.post(
+        "/integration/turn",
+        json={
+            "player_input": (
+                "Cojo la espada oxidada "
+                "y la guardo en mi inventario."
+            ),
+            "narrative": (
+                "Narrativa original."
+            ),
+            "external_turn_id": external_turn_id,
+            "turn_version": 1,
+        },
+    )
+
+    assert response_v1.status_code == 200
+
+    data_v1 = response_v1.json()
+
+    assert data_v1["turn_version"] == 1
+    assert data_v1["external_turn_id"] == external_turn_id
+    assert data_v1["operation_count"] == 1
+    assert data_v1["successful_operation_count"] == 1
+    assert data_v1["failed_operation_count"] == 0
+    assert data_v1["all_operations_succeeded"] is True
+    assert data_v1["world_changed"] is True
+
+    # Verify that the first version is active.
+    row = db_connection.execute(
+        """
+        SELECT
+            version,
+            status,
+            operation_count,
+            world_changed,
+            snapshot IS NOT NULL AS has_snapshot
+        FROM turns
+        WHERE external_turn_id = ?
+        """,
+        (external_turn_id,),
+    ).fetchone()
+
+    assert row["version"] == 1
+    assert row["status"] == "active"
+    assert row["operation_count"] == 1
+    assert row["world_changed"] == 1
+    assert row["has_snapshot"] == 1
+
+    # ---------------------------------------------------------
+    # V2 - Regeneration
+    # ---------------------------------------------------------
+
+    response_v2 = client.post(
+        "/integration/turn",
+        json={
+            "player_input": (
+                "Cojo la espada oxidada "
+                "y la guardo en mi inventario."
+            ),
+            "narrative": (
+                "Narrativa alternativa."
+            ),
+            "external_turn_id": external_turn_id,
+            "turn_version": 2,
+        },
+    )
+
+    assert response_v2.status_code == 200
+
+    data_v2 = response_v2.json()
+
+    assert data_v2["turn_version"] == 2
+    assert data_v2["external_turn_id"] == external_turn_id
+    assert data_v2["operation_count"] == 0
+    assert data_v2["successful_operation_count"] == 0
+    assert data_v2["failed_operation_count"] == 0
+    assert data_v2["all_operations_succeeded"] is True
+    assert data_v2["world_changed"] is False
+
+    # ---------------------------------------------------------
+    # Verify V1 -> superseded and V2 -> active
+    # ---------------------------------------------------------
+
+    rows = db_connection.execute(
+        """
+        SELECT
+            version,
+            status,
+            operation_count,
+            world_changed,
+            snapshot IS NOT NULL AS has_snapshot
+        FROM turns
+        WHERE external_turn_id = ?
+        ORDER BY version
+        """,
+        (external_turn_id,),
+    ).fetchall()
+
+    assert len(rows) == 2
+
+    assert rows[0]["version"] == 1
+    assert rows[0]["status"] == "superseded"
+    assert rows[0]["operation_count"] == 1
+    assert rows[0]["world_changed"] == 1
+    assert rows[0]["has_snapshot"] == 1
+
+    assert rows[1]["version"] == 2
+    assert rows[1]["status"] == "active"
+    assert rows[1]["operation_count"] == 0
+    assert rows[1]["world_changed"] == 0
+    assert rows[1]["has_snapshot"] == 1
+
+    # ---------------------------------------------------------
+    # V3 - Regeneration again
+    # ---------------------------------------------------------
+
+    response_v3 = client.post(
+        "/integration/turn",
+        json={
+            "player_input": (
+                "Cojo la espada oxidada "
+                "y la guardo en mi inventario."
+            ),
+            "narrative": (
+                "Narrativa tercera."
+            ),
+            "external_turn_id": external_turn_id,
+            "turn_version": 3,
+        },
+    )
+
+    assert response_v3.status_code == 200
+
+    data_v3 = response_v3.json()
+
+    assert data_v3["turn_version"] == 3
+    assert data_v3["external_turn_id"] == external_turn_id
+    assert data_v3["operation_count"] == 1
+    assert data_v3["successful_operation_count"] == 1
+    assert data_v3["failed_operation_count"] == 0
+    assert data_v3["all_operations_succeeded"] is True
+    assert data_v3["world_changed"] is True
+
+    # ---------------------------------------------------------
+    # Final state
+    # ---------------------------------------------------------
+
+    rows = db_connection.execute(
+        """
+        SELECT
+            version,
+            status,
+            operation_count,
+            world_changed,
+            snapshot IS NOT NULL AS has_snapshot
+        FROM turns
+        WHERE external_turn_id = ?
+        ORDER BY version
+        """,
+        (external_turn_id,),
+    ).fetchall()
+
+    assert len(rows) == 3
+
+    assert rows[0]["version"] == 1
+    assert rows[0]["status"] == "superseded"
+
+    assert rows[1]["version"] == 2
+    assert rows[1]["status"] == "superseded"
+
+    assert rows[2]["version"] == 3
+    assert rows[2]["status"] == "active"
+
+    assert all(
+        row["has_snapshot"] == 1
+        for row in rows
+    )
