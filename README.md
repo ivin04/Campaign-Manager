@@ -369,7 +369,7 @@ http://127.0.0.1:8765/docs
 
 ## Requirements
 
-* Python 3.11+
+* Python 3.12+
 * Ollama
 * A compatible local LLM model
 * SillyTavern (for the integration workflow)
