@@ -1903,3 +1903,293 @@ def test_e2e_silly_tavern_turn_persists_world_change(
     assert row["description"] == (
         "Una antigua cripta oculta bajo la montaña."
     )
+
+
+def test_silly_tavern_turn_same_version_different_content_conflicts(
+    monkeypatch,
+):
+    (
+        service,
+        _context_builder,
+        extractor,
+        _world_service,
+        _turn_repository,
+    ) = _build_service()
+
+    monkeypatch.setattr(
+        extractor,
+        "extract",
+        lambda narrative, context: [],
+    )
+
+    first_result = service.process_turn(
+        player_input="Abro la puerta.",
+        narrative="La puerta se abre lentamente.",
+        external_turn_id="conflict-test-001",
+        turn_version=1,
+    )
+
+    assert first_result.narrative == (
+        "La puerta se abre lentamente."
+    )
+
+    from services.silly_tavern_integration_service import (
+        SillyTavernIntegrationServiceConflictError,
+    )
+
+    with pytest.raises(
+        SillyTavernIntegrationServiceConflictError
+    ):
+        service.process_turn(
+            player_input="Abro la puerta.",
+            narrative="La puerta permanece cerrada.",
+            external_turn_id="conflict-test-001",
+            turn_version=1,
+        )
+
+def test_e2e_silly_tavern_turn_persists_character_hp_change(
+    monkeypatch,
+):
+    from database import get_conn
+    from models.character_state import CharacterState
+    from models.entity import Entity
+    from operations.character_operations import (
+        ChangeCharacterHpOperation,
+    )
+    from repositories.campaign_repository import (
+        CampaignRepository,
+    )
+    from repositories.character_repository import (
+        CharacterRepository,
+    )
+    from repositories.entity_repository import (
+        EntityRepository,
+    )
+    from repositories.turn_repository import (
+        TurnRepository,
+    )
+    from services.campaign_state_service import (
+        CampaignStateService,
+    )
+    from services.context_builder import (
+        ContextBuilder,
+    )
+    from services.llm_world_extractor import (
+        LLMWorldExtractor,
+    )
+    from services.operation_parser import (
+        OperationParser,
+    )
+    from services.silly_tavern_integration_service import (
+        SillyTavernIntegrationService,
+    )
+    from services.world_service import (
+        WorldService,
+    )
+
+    entity_repository = EntityRepository()
+    character_repository = CharacterRepository()
+    campaign_repository = CampaignRepository()
+
+    entity = entity_repository.save_entity(
+        Entity(
+            name="Aldren",
+            entity_type="character",
+            description="Aldren, aventurero.",
+            notes="",
+            active=True,
+        )
+    )
+
+    character = character_repository.save_character(
+        CharacterState(
+            entity_id=entity.id,
+            level=1,
+            class_name="Fighter",
+            current_hp=10,
+            max_hp=10,
+            armor_class=16,
+            strength=16,
+            dexterity=12,
+            constitution=14,
+            intelligence=10,
+            wisdom=10,
+            charisma=10,
+            proficiency_bonus=2,
+            metadata={},
+        )
+    )
+
+    campaign_repository.update_active_character(
+        campaign_id=1,
+        character_id=character.entity_id,
+    )
+
+    world_service = WorldService()
+
+    campaign_state_service = CampaignStateService(
+        campaign_repository=campaign_repository,
+        character_repository=character_repository,
+        entity_repository=entity_repository,
+        world_service=world_service,
+    )
+
+    extractor = LLMWorldExtractor(
+        provider=lambda prompt: '{"operations": []}',
+        operation_parser=OperationParser(),
+    )
+
+    service = SillyTavernIntegrationService(
+        campaign_state_service=campaign_state_service,
+        context_builder=ContextBuilder(),
+        extractor=extractor,
+        world_service=world_service,
+        turn_repository=TurnRepository(),
+    )
+
+    def fake_extract(narrative, context):
+        assert context.active_character is not None
+        assert context.active_character.entity_id == entity.id
+
+        return [
+            ChangeCharacterHpOperation(
+                entity_id=entity.id,
+                amount=-4,
+            )
+        ]
+
+    monkeypatch.setattr(
+        extractor,
+        "extract",
+        fake_extract,
+    )
+
+    result = service.process_turn(
+        player_input="Sufro daño por una trampa.",
+        narrative=(
+            "Una trampa oculta alcanza a Aldren "
+            "y le causa 4 puntos de daño."
+        ),
+        external_turn_id="e2e-hp-test-001",
+        turn_version=1,
+    )
+
+    assert result.operation_count == 1
+    assert result.successful_operation_count == 1
+    assert result.failed_operation_count == 0
+    assert result.all_operations_succeeded is True
+    assert result.world_changed is True
+
+    character_after = character_repository.get_character(
+        entity.id
+    )
+
+    assert character_after is not None
+    assert character_after.current_hp == 6
+
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT current_hp
+            FROM character_states
+            WHERE entity_id = ?
+            """,
+            (entity.id,),
+        ).fetchone()
+
+    assert row is not None
+    assert row["current_hp"] == 6
+
+def test_world_service_rolls_back_all_operations_when_one_fails():
+    from models.entity import Entity
+    from operations.character_operations import (
+        ChangeCharacterHpOperation,
+    )
+    from operations.world_operations import (
+        CreateEntityOperation,
+    )
+    from repositories.character_repository import (
+        CharacterRepository,
+    )
+    from repositories.entity_repository import (
+        EntityRepository,
+    )
+    from services.world_service import WorldService
+
+    entity_repository = EntityRepository()
+    character_repository = CharacterRepository()
+
+    character_entity = entity_repository.save_entity(
+        Entity(
+            name="Aldren",
+            entity_type="character",
+            description="Aldren, aventurero.",
+            notes="",
+            active=True,
+        )
+    )
+
+    from models.character_state import CharacterState
+
+    character_repository.save_character(
+        CharacterState(
+            entity_id=character_entity.id,
+            current_hp=10,
+            max_hp=10,
+        )
+    )
+
+    world_service = WorldService()
+
+    world_service.load()
+
+    initial_entity_count = len(
+        world_service.get_world().entities
+    )
+
+    results = world_service.apply_turn_operations(
+        world_operations=[
+            CreateEntityOperation(
+                name="Entidad temporal",
+                entity_type="location",
+            )
+        ],
+        character_operations=[
+            ChangeCharacterHpOperation(
+                entity_id=999999,
+                amount=-4,
+            )
+        ],
+    )
+
+    assert len(results) == 2
+
+    assert results[0].success
+    assert not results[1].success
+
+    assert len(
+        world_service.get_world().entities
+    ) == initial_entity_count
+
+    assert all(
+        entity.name != "Entidad temporal"
+        for entity in world_service.get_world().entities.values()
+    )
+
+    world = world_service.get_world()
+
+    assert len(world.entities) == initial_entity_count
+
+    assert not any(
+        entity.name == "Entidad temporal"
+        for entity in world.entities.values()
+    )
+
+    character_after = (
+        character_repository.get_character(
+            character_entity.id
+        )
+    )
+
+    assert character_after is not None
+    assert character_after.current_hp == 10
