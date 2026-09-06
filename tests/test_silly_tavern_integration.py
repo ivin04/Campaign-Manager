@@ -891,12 +891,46 @@ def test_integration_service_preserves_operation_order(
 
 def test_regenerate_turn_restores_snapshot_and_allows_new_version(
     client,
-    db_connection,
+    monkeypatch,
 ):
+    from database import get_conn
+    from operations.world_operations import (
+        CreateItemInstanceOperation,
+    )
+
     external_turn_id = "test-external-turn"
 
+    # =========================================================
+    # Usamos el extractor real del servicio de SillyTavern,
+    # pero hacemos que devuelva operaciones deterministas.
+    # Así el test NO depende de Ollama.
+    # =========================================================
+
+    service = __import__(
+        "app"
+    ).silly_tavern_integration_service
+
+    create_instance_operation = (
+        CreateItemInstanceOperation(
+            item_id=16,
+            instance_number=1,
+            owner_id=10,
+            condition="oxidado",
+        )
+    )
+
+    monkeypatch.setattr(
+        service.extractor,
+        "extract",
+        lambda narrative, context: (
+            [create_instance_operation]
+            if narrative == "Narrativa con espada."
+            else []
+        ),
+    )
+
     # ---------------------------------------------------------
-    # V1 - First generation
+    # V1 - Primera generación
     # ---------------------------------------------------------
 
     response_v1 = client.post(
@@ -906,9 +940,7 @@ def test_regenerate_turn_restores_snapshot_and_allows_new_version(
                 "Cojo la espada oxidada "
                 "y la guardo en mi inventario."
             ),
-            "narrative": (
-                "Narrativa original."
-            ),
+            "narrative": "Narrativa con espada.",
             "external_turn_id": external_turn_id,
             "turn_version": 1,
         },
@@ -919,36 +951,74 @@ def test_regenerate_turn_restores_snapshot_and_allows_new_version(
     data_v1 = response_v1.json()
 
     assert data_v1["turn_version"] == 1
-    assert data_v1["external_turn_id"] == external_turn_id
+    assert data_v1["external_turn_id"] == (
+        external_turn_id
+    )
+
     assert data_v1["operation_count"] == 1
     assert data_v1["successful_operation_count"] == 1
     assert data_v1["failed_operation_count"] == 0
     assert data_v1["all_operations_succeeded"] is True
     assert data_v1["world_changed"] is True
 
-    # Verify that the first version is active.
-    row = db_connection.execute(
-        """
-        SELECT
-            version,
-            status,
-            operation_count,
-            world_changed,
-            snapshot IS NOT NULL AS has_snapshot
-        FROM turns
-        WHERE external_turn_id = ?
-        """,
-        (external_turn_id,),
-    ).fetchone()
+    # ---------------------------------------------------------
+    # Comprobamos que V1 creó la instancia.
+    # ---------------------------------------------------------
 
-    assert row["version"] == 1
-    assert row["status"] == "active"
-    assert row["operation_count"] == 1
-    assert row["world_changed"] == 1
-    assert row["has_snapshot"] == 1
+    with get_conn() as conn:
+        instance_v1 = conn.execute(
+            """
+            SELECT
+                id,
+                item_id,
+                instance_number,
+                owner_id,
+                condition,
+                active
+            FROM item_instances
+            WHERE item_id = 16
+              AND owner_id = 10
+            """
+        ).fetchone()
+
+        turns_v1 = conn.execute(
+            """
+            SELECT
+                version,
+                status,
+                operation_count,
+                world_changed,
+                snapshot IS NOT NULL AS has_snapshot
+            FROM turns
+            WHERE external_turn_id = ?
+            ORDER BY version
+            """,
+            (external_turn_id,),
+        ).fetchall()
+
+    assert instance_v1 is not None
+
+    assert instance_v1["item_id"] == 16
+    assert instance_v1["instance_number"] == 1
+    assert instance_v1["owner_id"] == 10
+    assert instance_v1["condition"] == "oxidado"
+    assert instance_v1["active"] == 1
+
+    assert len(turns_v1) == 1
+    assert turns_v1[0]["version"] == 1
+    assert turns_v1[0]["status"] == "active"
+    assert turns_v1[0]["operation_count"] == 1
+    assert turns_v1[0]["world_changed"] == 1
+    assert turns_v1[0]["has_snapshot"] == 1
 
     # ---------------------------------------------------------
-    # V2 - Regeneration
+    # V2 - Regeneración
+    #
+    # Esta narrativa NO contiene "espada", por lo que el
+    # extractor devuelve cero operaciones.
+    #
+    # Lo importante es que antes de procesar V2 el servicio
+    # restaure el snapshot de V1.
     # ---------------------------------------------------------
 
     response_v2 = client.post(
@@ -958,9 +1028,7 @@ def test_regenerate_turn_restores_snapshot_and_allows_new_version(
                 "Cojo la espada oxidada "
                 "y la guardo en mi inventario."
             ),
-            "narrative": (
-                "Narrativa alternativa."
-            ),
+            "narrative": "Narrativa alternativa.",
             "external_turn_id": external_turn_id,
             "turn_version": 2,
         },
@@ -971,7 +1039,10 @@ def test_regenerate_turn_restores_snapshot_and_allows_new_version(
     data_v2 = response_v2.json()
 
     assert data_v2["turn_version"] == 2
-    assert data_v2["external_turn_id"] == external_turn_id
+    assert data_v2["external_turn_id"] == (
+        external_turn_id
+    )
+
     assert data_v2["operation_count"] == 0
     assert data_v2["successful_operation_count"] == 0
     assert data_v2["failed_operation_count"] == 0
@@ -979,40 +1050,63 @@ def test_regenerate_turn_restores_snapshot_and_allows_new_version(
     assert data_v2["world_changed"] is False
 
     # ---------------------------------------------------------
-    # Verify V1 -> superseded and V2 -> active
+    # V1 debe quedar superseded.
+    # V2 debe quedar active.
     # ---------------------------------------------------------
 
-    rows = db_connection.execute(
-        """
-        SELECT
-            version,
-            status,
-            operation_count,
-            world_changed,
-            snapshot IS NOT NULL AS has_snapshot
-        FROM turns
-        WHERE external_turn_id = ?
-        ORDER BY version
-        """,
-        (external_turn_id,),
-    ).fetchall()
+    with get_conn() as conn:
+        turns_v2 = conn.execute(
+            """
+            SELECT
+                version,
+                status,
+                operation_count,
+                world_changed,
+                snapshot IS NOT NULL AS has_snapshot
+            FROM turns
+            WHERE external_turn_id = ?
+            ORDER BY version
+            """,
+            (external_turn_id,),
+        ).fetchall()
 
-    assert len(rows) == 2
+        instance_v2 = conn.execute(
+            """
+            SELECT id
+            FROM item_instances
+            WHERE item_id = 16
+              AND owner_id = 10
+            """
+        ).fetchone()
 
-    assert rows[0]["version"] == 1
-    assert rows[0]["status"] == "superseded"
-    assert rows[0]["operation_count"] == 1
-    assert rows[0]["world_changed"] == 1
-    assert rows[0]["has_snapshot"] == 1
+    assert len(turns_v2) == 2
 
-    assert rows[1]["version"] == 2
-    assert rows[1]["status"] == "active"
-    assert rows[1]["operation_count"] == 0
-    assert rows[1]["world_changed"] == 0
-    assert rows[1]["has_snapshot"] == 1
+    assert turns_v2[0]["version"] == 1
+    assert turns_v2[0]["status"] == "superseded"
+    assert turns_v2[0]["operation_count"] == 1
+    assert turns_v2[0]["has_snapshot"] == 1
+
+    assert turns_v2[1]["version"] == 2
+    assert turns_v2[1]["status"] == "active"
+    assert turns_v2[1]["operation_count"] == 0
+    assert turns_v2[1]["world_changed"] == 0
+    assert turns_v2[1]["has_snapshot"] == 1
+
+    # =========================================================
+    # PUNTO CLAVE DEL TEST:
+    #
+    # La instancia creada por V1 debe haber desaparecido al
+    # restaurar el snapshot.
+    # =========================================================
+
+    assert instance_v2 is None
 
     # ---------------------------------------------------------
-    # V3 - Regeneration again
+    # V3 - Nueva regeneración
+    #
+    # Volvemos a usar la narrativa que genera la operación.
+    # Esto prueba que después del rollback podemos aplicar
+    # una nueva versión desde el estado restaurado.
     # ---------------------------------------------------------
 
     response_v3 = client.post(
@@ -1022,9 +1116,7 @@ def test_regenerate_turn_restores_snapshot_and_allows_new_version(
                 "Cojo la espada oxidada "
                 "y la guardo en mi inventario."
             ),
-            "narrative": (
-                "Narrativa tercera."
-            ),
+            "narrative": "Narrativa con espada.",
             "external_turn_id": external_turn_id,
             "turn_version": 3,
         },
@@ -1035,7 +1127,10 @@ def test_regenerate_turn_restores_snapshot_and_allows_new_version(
     data_v3 = response_v3.json()
 
     assert data_v3["turn_version"] == 3
-    assert data_v3["external_turn_id"] == external_turn_id
+    assert data_v3["external_turn_id"] == (
+        external_turn_id
+    )
+
     assert data_v3["operation_count"] == 1
     assert data_v3["successful_operation_count"] == 1
     assert data_v3["failed_operation_count"] == 0
@@ -1043,36 +1138,67 @@ def test_regenerate_turn_restores_snapshot_and_allows_new_version(
     assert data_v3["world_changed"] is True
 
     # ---------------------------------------------------------
-    # Final state
+    # Estado final
     # ---------------------------------------------------------
 
-    rows = db_connection.execute(
-        """
-        SELECT
-            version,
-            status,
-            operation_count,
-            world_changed,
-            snapshot IS NOT NULL AS has_snapshot
-        FROM turns
-        WHERE external_turn_id = ?
-        ORDER BY version
-        """,
-        (external_turn_id,),
-    ).fetchall()
+    with get_conn() as conn:
+        final_turns = conn.execute(
+            """
+            SELECT
+                version,
+                status,
+                operation_count,
+                world_changed,
+                snapshot IS NOT NULL AS has_snapshot
+            FROM turns
+            WHERE external_turn_id = ?
+            ORDER BY version
+            """,
+            (external_turn_id,),
+        ).fetchall()
 
-    assert len(rows) == 3
+        final_instance = conn.execute(
+            """
+            SELECT
+                id,
+                item_id,
+                instance_number,
+                owner_id,
+                condition,
+                active
+            FROM item_instances
+            WHERE item_id = 16
+              AND owner_id = 10
+            """
+        ).fetchone()
 
-    assert rows[0]["version"] == 1
-    assert rows[0]["status"] == "superseded"
+    assert len(final_turns) == 3
 
-    assert rows[1]["version"] == 2
-    assert rows[1]["status"] == "superseded"
+    # V1
+    assert final_turns[0]["version"] == 1
+    assert final_turns[0]["status"] == "superseded"
+    assert final_turns[0]["operation_count"] == 1
+    assert final_turns[0]["world_changed"] == 1
+    assert final_turns[0]["has_snapshot"] == 1
 
-    assert rows[2]["version"] == 3
-    assert rows[2]["status"] == "active"
+    # V2
+    assert final_turns[1]["version"] == 2
+    assert final_turns[1]["status"] == "superseded"
+    assert final_turns[1]["operation_count"] == 0
+    assert final_turns[1]["world_changed"] == 0
+    assert final_turns[1]["has_snapshot"] == 1
 
-    assert all(
-        row["has_snapshot"] == 1
-        for row in rows
-    )
+    # V3
+    assert final_turns[2]["version"] == 3
+    assert final_turns[2]["status"] == "active"
+    assert final_turns[2]["operation_count"] == 1
+    assert final_turns[2]["world_changed"] == 1
+    assert final_turns[2]["has_snapshot"] == 1
+
+    # La instancia vuelve a existir después de V3.
+    assert final_instance is not None
+    assert final_instance["item_id"] == 16
+    assert final_instance["instance_number"] == 1
+    assert final_instance["owner_id"] == 10
+    assert final_instance["condition"] == "oxidado"
+    assert final_instance["active"] == 1
