@@ -1323,3 +1323,241 @@ def test_regenerate_turn_restores_snapshot_and_allows_new_version(
     assert final_instance["owner_id"] == owner_id
     assert final_instance["condition"] == "oxidado"
     assert final_instance["active"] == 1
+
+def test_exact_retry_returns_persisted_turn_without_running_extractor(
+    client,
+    monkeypatch,
+):
+    from database import get_conn
+
+    service = __import__(
+        "app"
+    ).silly_tavern_integration_service
+
+    external_turn_id = "retry-test-turn"
+
+    extractor_calls = []
+
+    def fake_extract(
+        narrative,
+        context,
+    ):
+        extractor_calls.append(
+            {
+                "narrative": narrative,
+                "context": context,
+            }
+        )
+
+        return []
+
+    monkeypatch.setattr(
+        service.extractor,
+        "extract",
+        fake_extract,
+    )
+
+    payload = {
+        "player_input": "Abro la puerta.",
+        "narrative": "La puerta se abre.",
+        "external_turn_id": external_turn_id,
+        "turn_version": 1,
+    }
+
+    # =========================================================
+    # PRIMERA PETICIÓN
+    # =========================================================
+
+    response_first = client.post(
+        "/integration/turn",
+        json=payload,
+    )
+
+    assert response_first.status_code == 200
+
+    data_first = response_first.json()
+
+    assert data_first["external_turn_id"] == (
+        external_turn_id
+    )
+
+    assert data_first["turn_version"] == 1
+
+    assert data_first["operation_count"] == 0
+
+    assert len(extractor_calls) == 1
+
+    # =========================================================
+    # RETRY EXACTO
+    # =========================================================
+    #
+    # Debe devolverse el turno persistido.
+    #
+    # IMPORTANTE:
+    # El extractor NO debe volver a ejecutarse.
+    # =========================================================
+
+    response_retry = client.post(
+        "/integration/turn",
+        json=payload,
+    )
+
+    assert response_retry.status_code == 200
+
+    data_retry = response_retry.json()
+
+    assert data_retry == data_first
+
+    assert len(extractor_calls) == 1
+
+    # =========================================================
+    # COMPROBAR QUE SOLO EXISTE UNA VERSIÓN
+    # =========================================================
+
+    with get_conn() as conn:
+        turns = conn.execute(
+            """
+            SELECT
+                external_turn_id,
+                version,
+                status
+            FROM turns
+            WHERE external_turn_id = ?
+            ORDER BY version
+            """,
+            (external_turn_id,),
+        ).fetchall()
+
+    assert len(turns) == 1
+
+    assert turns[0]["external_turn_id"] == (
+        external_turn_id
+    )
+
+    assert turns[0]["version"] == 1
+
+    assert turns[0]["status"] == "active"
+
+def test_same_turn_version_with_different_content_returns_conflict(
+    client,
+    monkeypatch,
+):
+    from database import get_conn
+
+    service = __import__(
+        "app"
+    ).silly_tavern_integration_service
+
+    external_turn_id = "conflict-test-turn"
+
+    extractor_calls = []
+
+    def fake_extract(
+        narrative,
+        context,
+    ):
+        extractor_calls.append(
+            {
+                "narrative": narrative,
+                "context": context,
+            }
+        )
+
+        return []
+
+    monkeypatch.setattr(
+        service.extractor,
+        "extract",
+        fake_extract,
+    )
+
+    payload = {
+        "player_input": "Abro la puerta.",
+        "narrative": "La puerta se abre.",
+        "external_turn_id": external_turn_id,
+        "turn_version": 1,
+    }
+
+    # =========================================================
+    # PRIMERA PETICIÓN
+    # =========================================================
+
+    response_first = client.post(
+        "/integration/turn",
+        json=payload,
+    )
+
+    assert response_first.status_code == 200
+
+    assert len(extractor_calls) == 1
+
+    # =========================================================
+    # SEGUNDA PETICIÓN
+    # =========================================================
+    #
+    # Mismo external_turn_id + misma versión,
+    # pero narrativa diferente.
+    #
+    # Esto NO es un retry válido.
+    # Debe producir conflicto.
+    # =========================================================
+
+    conflicting_payload = {
+        "player_input": "Abro la puerta.",
+        "narrative": "Detrás de la puerta aparece un dragón.",
+        "external_turn_id": external_turn_id,
+        "turn_version": 1,
+    }
+
+    response_conflict = client.post(
+        "/integration/turn",
+        json=conflicting_payload,
+    )
+
+    assert response_conflict.status_code == 409
+
+    assert (
+        "external_turn_id and version already exist"
+        in response_conflict.json()["detail"]
+    )
+
+    # El extractor no debe ejecutarse para el conflicto.
+    assert len(extractor_calls) == 1
+
+    # =========================================================
+    # COMPROBAR QUE NO SE CREÓ OTRA VERSIÓN
+    # =========================================================
+
+    with get_conn() as conn:
+        turns = conn.execute(
+            """
+            SELECT
+                external_turn_id,
+                version,
+                status,
+                player_input,
+                narrative
+            FROM turns
+            WHERE external_turn_id = ?
+            ORDER BY version
+            """,
+            (external_turn_id,),
+        ).fetchall()
+
+    assert len(turns) == 1
+
+    assert turns[0]["external_turn_id"] == (
+        external_turn_id
+    )
+
+    assert turns[0]["version"] == 1
+
+    assert turns[0]["status"] == "active"
+
+    assert turns[0]["player_input"] == (
+        "Abro la puerta."
+    )
+
+    assert turns[0]["narrative"] == (
+        "La puerta se abre."
+    )
