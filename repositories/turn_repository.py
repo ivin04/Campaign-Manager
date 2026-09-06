@@ -528,6 +528,36 @@ class TurnRepository:
             external_turn_id=row["external_turn_id"],
         )
 
+    @staticmethod
+    def _row_to_turn_record(
+        row: dict,
+    ) -> TurnRecord:
+
+        return TurnRecord(
+            id=row["id"],
+            session_id=row["session_id"],
+            player_input=row["player_input"],
+            narrative=row["narrative"],
+            operation_count=row["operation_count"],
+            successful_operation_count=(
+                row["successful_operation_count"]
+            ),
+            failed_operation_count=(
+                row["failed_operation_count"]
+            ),
+            all_operations_succeeded=bool(
+                row["all_operations_succeeded"]
+            ),
+            world_changed=bool(
+                row["world_changed"]
+            ),
+            created_at=row["created_at"],
+            external_turn_id=row["external_turn_id"],
+            version=row["version"],
+            status=row["status"],
+            snapshot=row["snapshot"],
+        )
+
     def get_active_by_external_turn_id(
         self,
         external_turn_id: str,
