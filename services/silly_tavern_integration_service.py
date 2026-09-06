@@ -7,6 +7,9 @@ from models.turn_record import TurnRecord
 from models.turn_resolution_result import TurnResolutionResult
 
 from repositories.turn_repository import TurnRepository
+from repositories.world_snapshot_repository import (
+    WorldSnapshotRepository,
+)
 
 from services.campaign_state_service import (
     CampaignStateService,
@@ -14,13 +17,10 @@ from services.campaign_state_service import (
 )
 from services.context_builder import ContextBuilder
 from services.llm_world_extractor import (
-    LLMWorldExtractor,
     LLMExtractionError,
+    LLMWorldExtractor,
 )
 from services.world_service import WorldService
-from repositories.world_snapshot_repository import (
-    WorldSnapshotRepository,
-)
 
 
 class SillyTavernIntegrationServiceError(RuntimeError):
@@ -403,16 +403,16 @@ class SillyTavernIntegrationService:
         # SEPARAR OPERACIONES
         # --------------------------------------------------------
 
-        from operations.world_operations import (
-            WorldOperation,
-        )
-
         from operations.character_operations import (
             CharacterOperation,
         )
 
         from operations.referenced_operation import (
             ReferencedOperation,
+        )
+
+        from operations.world_operations import (
+            WorldOperation,
         )
 
         world_operations = []

@@ -1059,7 +1059,7 @@ def test_apply_operations_marks_world_changed_when_operation_changes_state():
         == "Aldric el Mercader"
     )
 
-def test_apply_operations_rejects_unknown_operation_reference():
+def test_update_entity_rejects_unknown_operation_reference():
     service = WorldService()
 
     operation = UpdateEntityOperation(
