@@ -756,6 +756,101 @@ def test_prompt_includes_known_items_and_item_instances():
     assert "location_id=2" in prompt
     assert "condition=intacto" in prompt
 
+def test_prompt_explains_existing_item_instance_pickup():
+    provider = FakeProvider(
+        '{"operations": []}'
+    )
+
+    parser = FakeParser()
+
+    extractor = LLMWorldExtractor(
+        provider=provider,
+        operation_parser=parser,
+    )
+
+    world = WorldState()
+
+    world.entities[1] = Entity(
+        id=1,
+        name="Darian",
+        entity_type="character",
+    )
+
+    world.items[10] = Item(
+        id=10,
+        name="Espada de hierro",
+        description="Una espada sencilla.",
+    )
+
+    world.item_instances[25] = ItemInstance(
+        id=25,
+        item_id=10,
+        instance_number=1,
+        owner_id=None,
+        location_id=None,
+        condition="intacto",
+        notes="",
+        active=True,
+    )
+
+    extractor.extract(
+        "Darian recoge la espada y se la guarda.",
+        make_context(world=world),
+    )
+
+    prompt = provider.calls[0]
+
+    assert "INSTANCIAS DE OBJETOS CONOCIDAS" in prompt
+    assert "REGLA FUNDAMENTAL DE TRANSICIÓN DE ESTADO" in prompt
+    assert "REGLAS PARA RECOGER OBJETOS" in prompt
+    assert "owner_id=ID de Darian" in prompt
+    assert "- ID 25: Espada de hierro" in prompt
+    assert "owner_id=None" in prompt
+    assert "location_id=None" in prompt
+
+
+def test_prompt_requires_existing_instance_to_be_updated_instead_of_created():
+    provider = FakeProvider(
+        '{"operations": []}'
+    )
+
+    parser = FakeParser()
+
+    extractor = LLMWorldExtractor(
+        provider=provider,
+        operation_parser=parser,
+    )
+
+    world = WorldState()
+
+    world.items[10] = Item(
+        id=10,
+        name="Jarra de cerveza",
+        description="Una jarra.",
+    )
+
+    world.item_instances[25] = ItemInstance(
+        id=25,
+        item_id=10,
+        instance_number=1,
+        owner_id=None,
+        location_id=None,
+        condition="llena",
+        notes="",
+        active=True,
+    )
+
+    extractor.extract(
+        "Darian recoge la jarra de cerveza y se la guarda.",
+        make_context(world=world),
+    )
+
+    prompt = provider.calls[0]
+
+    assert "No crees una nueva instancia" in prompt
+    assert "instancia física existente" in prompt
+    assert "update_item_instance" in prompt
+
 def test_prompt_documents_update_item_instance():
     provider = FakeProvider(
         '{"operations": []}'
