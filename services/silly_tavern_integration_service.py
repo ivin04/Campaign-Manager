@@ -606,6 +606,8 @@ class SillyTavernIntegrationService:
                             conn=conn,
                         )
 
+                        existing_turn = None
+
                     if existing_turn is not None:
 
                         same_input = (
