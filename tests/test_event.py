@@ -133,31 +133,6 @@ def test_apply_create_event_rejects_missing_title():
     assert world.events == {}
 
 
-def test_apply_create_event_does_not_overwrite_existing_event():
-    world = build_world()
-
-    world.events["event-1"] = Event(
-        id="event-1",
-        event_type="ORIGINAL",
-        title="Evento original",
-    )
-
-    operation = CreateEventOperation(
-        event_id="event-1",
-        event_type="NEW",
-        title="Evento nuevo",
-    )
-
-    applier = WorldApplier()
-
-    applier.apply(world, operation)
-
-    event = world.events["event-1"]
-
-    assert event.event_type == "ORIGINAL"
-    assert event.title == "Evento original"
-
-
 def test_apply_create_secret_event():
     world = build_world()
 

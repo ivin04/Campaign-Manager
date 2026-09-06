@@ -52,19 +52,6 @@ def test_get_current_session_returns_none_when_campaign_has_no_session(
 
     assert repository.get_current_session(1) is None
 
-
-def test_get_current_session_returns_none_when_campaign_has_no_session(
-    isolated_database,
-):
-    repository = CampaignRepository()
-
-    campaign = repository.get_campaign(1)
-
-    assert campaign is not None
-    assert campaign["current_session_id"] is None
-
-    assert repository.get_current_session(1) is None
-
 def test_fresh_database_creates_default_campaign():
     repository = CampaignRepository()
 

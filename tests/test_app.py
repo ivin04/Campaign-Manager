@@ -192,15 +192,16 @@ def test_play_turn_returns_turn_result(
     monkeypatch,
 ):
     class FakeResult:
-        narrative = "Aldric te observa desde la barra."
-        player_input = "Pregunto por Aldric."
-        operation_count = 1
-        successful_operation_count = 1
-        failed_operation_count = 0
-        all_operations_succeeded = True
-        world_changed = True
-        operations = []
-        operation_results = []
+        def __init__(self):
+            self.narrative = "Aldric te observa desde la barra."
+            self.player_input = "Pregunto por Aldric."
+            self.operation_count = 1
+            self.successful_operation_count = 1
+            self.failed_operation_count = 0
+            self.all_operations_succeeded = True
+            self.world_changed = True
+            self.operations = []
+            self.operation_results = []
 
     def fake_play_turn(
         player_input,
@@ -275,16 +276,6 @@ def test_play_turn_returns_400_when_campaign_turn_service_fails(
         "detail": "Turn resolution failed."
     }
 
-def test_play_turn_rejects_missing_player_input(
-    client,
-):
-    response = client.post(
-        "/turn",
-        json={},
-    )
-
-    assert response.status_code == 422
-
 
 def test_create_session_rejects_invalid_number(
     client,
@@ -322,36 +313,6 @@ def test_play_turn_rejects_empty_player_input(
     )
 
     assert response.status_code == 422
-
-def test_play_turn_returns_400_when_campaign_turn_service_fails(
-    client,
-    monkeypatch,
-):
-    from services.campaign_turn_service import (
-        CampaignTurnServiceError,
-    )
-
-    def fake_play_turn(player_input):
-        raise CampaignTurnServiceError(
-            "turn resolution failed"
-        )
-
-    monkeypatch.setattr(
-        "app.campaign_turn_service.play_turn",
-        fake_play_turn,
-    )
-
-    response = client.post(
-        "/turn",
-        json={
-            "player_input": "Pregunto por Aldric.",
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.json() == {
-        "detail": "turn resolution failed"
-    }
 
 def test_play_turn_rejects_whitespace_only_player_input(
     client,

@@ -887,7 +887,10 @@ def test_save_world_is_idempotent(tmp_path):
     finally:
         database.DB_PATH = original_db_path
 
-def test_save_world_is_atomic_when_persistence_fails(monkeypatch, tmp_path):
+def test_save_world_is_atomic_when_item_persistence_fails(
+    monkeypatch,
+    tmp_path,
+):
 
     original_db_path = database.DB_PATH
     database.DB_PATH = tmp_path / "test_campaign.db"
@@ -1284,10 +1287,6 @@ def test_save_world_accepts_external_connection():
 def test_save_world_does_not_open_connection_when_one_is_provided(
     monkeypatch,
 ):
-    repository = WorldRepository()
-
-    world = WorldState()
-
     def fail_get_conn():
         raise AssertionError(
             "save_world must not open a new connection "

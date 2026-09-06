@@ -354,7 +354,7 @@ def test_get_world_is_called_before_resolution():
 
     result = make_result()
 
-    service, resolver, world_service, campaign_state_service = (
+    service, resolver, world_service, _campaign_state_service = (
         make_service(
                 result=result
             )
@@ -501,7 +501,7 @@ def test_unexpected_resolution_error_is_wrapped():
 
 def test_invalid_resolution_result_is_rejected():
 
-    service, resolver, _, _ = make_service(
+    service, _resolver, _, _ = make_service(
         result=object()
     )
 
@@ -677,7 +677,7 @@ def test_save_delegates_to_world_service():
     )
 
 
-def test_save_failure_is_wrapped():
+def test_explicit_save_failure_is_wrapped():
 
     service, _, world_service, _  = (
         make_service()
@@ -1481,7 +1481,7 @@ def test_play_turn_serializes_concurrent_turns_and_persists_in_order():
             service.play_turn(
                 "Primer turno."
             )
-        except Exception as exc:
+        except Exception as exc: # noqa: BLE001
             first_exception.append(exc)
 
     def run_second():
@@ -1489,7 +1489,7 @@ def test_play_turn_serializes_concurrent_turns_and_persists_in_order():
             service.play_turn(
                 "Segundo turno."
             )
-        except Exception as exc:
+        except Exception as exc: # noqa: BLE001
             second_exception.append(exc)
 
     first_thread = threading.Thread(
@@ -1625,8 +1625,6 @@ def test_invalid_resolution_result_restores_world():
     world_service.world.entities[1] = (
         "original"
     )
-
-    original_world = world_service.world
 
     dm_service = object.__new__(DMService)
     extractor = object.__new__(LLMWorldExtractor)
@@ -1912,7 +1910,7 @@ def test_play_turn_serializes_concurrent_calls():
     def run_turn(player_input):
         try:
             service.play_turn(player_input)
-        except Exception as exc:
+        except Exception as exc: # noqa: BLE001
             errors.append(exc)
 
     thread_a = threading.Thread(

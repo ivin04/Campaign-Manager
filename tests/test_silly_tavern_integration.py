@@ -466,7 +466,7 @@ def test_integration_service_uses_context_builder_for_context(
         context_builder,
         _extractor,
         _world_service,
-        turn_repository,
+        _turn_repository,
     ) = _build_service()
 
     calls = []

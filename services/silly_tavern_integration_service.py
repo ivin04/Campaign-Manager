@@ -1,23 +1,26 @@
 from __future__ import annotations
 
 from database import get_conn
+
 from models.turn_context import TurnContext
 from models.turn_record import TurnRecord
 from models.turn_resolution_result import TurnResolutionResult
+
 from repositories.turn_repository import TurnRepository
-from repositories.world_snapshot_repository import (
-    WorldSnapshotRepository,
-)
+
 from services.campaign_state_service import (
     CampaignStateService,
     CampaignStateServiceError,
 )
 from services.context_builder import ContextBuilder
 from services.llm_world_extractor import (
-    LLMExtractionError,
     LLMWorldExtractor,
+    LLMExtractionError,
 )
 from services.world_service import WorldService
+from repositories.world_snapshot_repository import (
+    WorldSnapshotRepository,
+)
 
 
 class SillyTavernIntegrationServiceError(RuntimeError):
@@ -367,23 +370,6 @@ class SillyTavernIntegrationService:
             )
 
         # --------------------------------------------------------
-        # HISTORIAL
-        # --------------------------------------------------------
-
-        try:
-            recent_turns = (
-                self.turn_repository.list_recent_turns(
-                    session_id=session_id,
-                    limit=10,
-                )
-            )
-
-        except Exception as exc:
-            raise SillyTavernIntegrationServiceError(
-                "failed to load recent turn history"
-            ) from exc
-
-        # --------------------------------------------------------
         # EXTRAER OPERACIONES
         # --------------------------------------------------------
 
@@ -417,14 +403,16 @@ class SillyTavernIntegrationService:
         # SEPARAR OPERACIONES
         # --------------------------------------------------------
 
+        from operations.world_operations import (
+            WorldOperation,
+        )
+
         from operations.character_operations import (
             CharacterOperation,
         )
+
         from operations.referenced_operation import (
             ReferencedOperation,
-        )
-        from operations.world_operations import (
-            WorldOperation,
         )
 
         world_operations = []

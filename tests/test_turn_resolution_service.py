@@ -409,7 +409,7 @@ def test_extractor_failure_is_wrapped():
         ):
             raise RuntimeError("extract failed")
 
-    service, dm, _, applier = (
+    service, dm, _, _applier = (
         make_service()
     )
 
@@ -451,7 +451,7 @@ def test_invalid_extractor_result_is_rejected():
                 "not an operation"
             ]
 
-    service, dm, _, applier = (
+    service, dm, _, _applier = (
         make_service()
     )
 

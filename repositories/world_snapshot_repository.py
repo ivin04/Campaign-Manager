@@ -100,7 +100,7 @@ class WorldSnapshotRepository:
             ) from exc
 
         if not isinstance(data, dict):
-            raise ValueError(
+            raise TypeError(
                 "World snapshot must contain an object"
             )
 

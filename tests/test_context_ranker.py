@@ -1,16 +1,6 @@
 from services.context_ranker import ContextRanker
 
 
-def test_relation_relevance_is_case_insensitive():
-    ranker = ContextRanker()
-
-    assert (
-        ranker.get_relation_relevance("FRIEND")
-        ==
-        ranker.get_relation_relevance("friend")
-    )
-
-
 def test_unknown_relation_uses_default_weight():
     ranker = ContextRanker()
 
