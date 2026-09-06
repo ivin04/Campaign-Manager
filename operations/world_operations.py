@@ -3,6 +3,7 @@ from typing import Any
 
 from operations.operation_reference import OperationReference
 
+_UNSET = object()
 
 # ============================================================
 # BASE
@@ -129,19 +130,22 @@ class UpdateItemInstanceOperation(WorldOperation):
     """
     Modifica únicamente los campos proporcionados de una
     instancia física existente.
+
+    Un campo omitido significa "no modificar".
+    None significa establecer explícitamente NULL.
     """
 
     instance_id: int | OperationReference
 
-    owner_id: int | OperationReference | None = None
+    owner_id: int | OperationReference | None | object = _UNSET
 
-    location_id: int | OperationReference | None = None
+    location_id: int | OperationReference | None | object = _UNSET
 
-    condition: str | None = None
+    condition: str | None | object = _UNSET
 
-    notes: str | None = None
+    notes: str | None | object = _UNSET
 
-    active: bool | None = None
+    active: bool | None | object = _UNSET
 
 
 # ============================================================
