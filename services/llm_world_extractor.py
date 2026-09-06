@@ -109,15 +109,15 @@ class LLMWorldExtractor:
         context: TurnContext,
     ) -> str:
         """
-        Construye un prompt determinista para extraer cambios
-        persistentes del turno.
-
-        El LLM interpreta únicamente hechos explícitos.
-        Los IDs solo pueden utilizarse para entidades ya existentes.
-        Las entidades nuevas se crean sin ID.
+        Construye el prompt para extraer cambios persistentes
+        del turno a partir de hechos explícitos de la narrativa.
         """
 
         world = context.world
+
+        # ------------------------------------------------------------
+        # ENTIDADES CONOCIDAS
+        # ------------------------------------------------------------
 
         entity_lines = []
 
@@ -126,8 +126,7 @@ class LLMWorldExtractor:
 
             if (
                 context.active_character is not None
-                and entity_id
-                == context.active_character.entity_id
+                and entity_id == context.active_character.entity_id
             ):
                 marker = " [PERSONAJE ACTIVO]"
 
@@ -138,12 +137,15 @@ class LLMWorldExtractor:
                 f"{marker}"
             )
 
-        if entity_lines:
-            known_entities = "\n".join(
-                entity_lines
-            )
-        else:
-            known_entities = "- Ninguna"
+        known_entities = (
+            "\n".join(entity_lines)
+            if entity_lines
+            else "- Ninguna"
+        )
+
+        # ------------------------------------------------------------
+        # ITEMS CONOCIDOS
+        # ------------------------------------------------------------
 
         item_lines = []
 
@@ -153,11 +155,15 @@ class LLMWorldExtractor:
                 f"{item.name}"
             )
 
-        if item_lines:
-            known_items = "\n".join(item_lines)
-        else:
-            known_items = "- Ninguno"
+        known_items = (
+            "\n".join(item_lines)
+            if item_lines
+            else "- Ninguno"
+        )
 
+        # ------------------------------------------------------------
+        # INSTANCIAS FÍSICAS CONOCIDAS
+        # ------------------------------------------------------------
 
         item_instance_lines = []
 
@@ -173,23 +179,112 @@ class LLMWorldExtractor:
             item_instance_lines.append(
                 f"- ID {instance_id}: "
                 f"{item_name} "
-                f"(instancia #{instance.instance_number}, "
+                f"(item_id={instance.item_id}, "
+                f"instance_number={instance.instance_number}, "
                 f"owner_id={instance.owner_id}, "
                 f"location_id={instance.location_id}, "
                 f"condition={instance.condition}, "
                 f"active={instance.active})"
             )
 
-        if item_instance_lines:
-            known_item_instances = "\n".join(
-                item_instance_lines
-            )
-        else:
-            known_item_instances = "- Ninguna"
-
-        active_character = (
-            context.active_character
+        known_item_instances = (
+            "\n".join(item_instance_lines)
+            if item_instance_lines
+            else "- Ninguna"
         )
+
+        # ------------------------------------------------------------
+        # RECURSOS CONOCIDOS
+        # ------------------------------------------------------------
+
+        resource_lines = []
+
+        for resource_id, resource in world.resources.items():
+            resource_lines.append(
+                f"- ID {resource_id}: "
+                f"{resource.name} "
+                f"(tipo={resource.resource_type}, "
+                f"unidad={resource.unit})"
+            )
+
+        known_resources = (
+            "\n".join(resource_lines)
+            if resource_lines
+            else "- Ninguno"
+        )
+
+        # ------------------------------------------------------------
+        # RELACIONES CONOCIDAS
+        # ------------------------------------------------------------
+
+        relation_lines = []
+
+        for relation_id, relation in world.relations.items():
+            subject = world.entities.get(
+                relation.subject_id
+            )
+            target = world.entities.get(
+                relation.target_id
+            )
+
+            subject_name = (
+                subject.name
+                if subject is not None
+                else f"Entidad {relation.subject_id}"
+            )
+
+            target_name = (
+                target.name
+                if target is not None
+                else f"Entidad {relation.target_id}"
+            )
+
+            relation_lines.append(
+                f"- ID {relation_id}: "
+                f"{subject_name} "
+                f"(ID {relation.subject_id}) "
+                f"--[{relation.relation_type}]--> "
+                f"{target_name} "
+                f"(ID {relation.target_id}), "
+                f"active={relation.active}, "
+                f"metadata={relation.metadata}"
+            )
+
+        known_relations = (
+            "\n".join(relation_lines)
+            if relation_lines
+            else "- Ninguna"
+        )
+
+        # ------------------------------------------------------------
+        # EVENTOS CONOCIDOS
+        # ------------------------------------------------------------
+
+        event_lines = []
+
+        for event_id, event in world.events.items():
+            event_lines.append(
+                f"- ID {event_id}: "
+                f"type={event.event_type}, "
+                f"title={event.title}, "
+                f"description={event.description}, "
+                f"consequences={event.consequences}, "
+                f"session_id={event.session_id}, "
+                f"secret={event.secret}, "
+                f"metadata={event.metadata}"
+            )
+
+        known_events = (
+            "\n".join(event_lines)
+            if event_lines
+            else "- Ninguno"
+        )
+
+        # ------------------------------------------------------------
+        # PERSONAJE ACTIVO
+        # ------------------------------------------------------------
+
+        active_character = context.active_character
 
         if active_character is None:
             character_block = (
@@ -227,76 +322,153 @@ class LLMWorldExtractor:
 
         return (
             "Eres un extractor de estado persistente "
-            "de un mundo de D&D.\n"
+            "para un mundo de D&D 5e (2014).\n"
             "\n"
-            "Tu tarea es convertir únicamente hechos "
-            "explícitamente confirmados en la narrativa "
-            "en operaciones estructuradas.\n"
+
+            "TU ÚNICA FUNCIÓN:\n"
+            "Analizar la narrativa proporcionada y convertir "
+            "ÚNICAMENTE hechos explícitamente ocurridos o "
+            "información explícitamente revelada en operaciones "
+            "estructuradas de persistencia.\n"
             "\n"
-            "NO narres.\n"
-            "NO expliques.\n"
-            "NO añadas texto fuera del JSON.\n"
-            "NO inventes hechos.\n"
+
+            "NO eres el Dungeon Master.\n"
+            "NO continúes la historia.\n"
+            "NO inventes información.\n"
+            "NO interpretes intenciones como hechos.\n"
+            "NO hagas tiradas.\n"
+            "NO calcules resultados que no aparezcan en la narrativa.\n"
             "NO ejecutes operaciones.\n"
+            "NO expliques tus decisiones.\n"
+            "NO escribas texto fuera del JSON final.\n"
             "\n"
-            "Solo registra información que haya ocurrido "
-            "o haya sido revelada explícitamente en la "
-            "narrativa.\n"
+
+            "Tu trabajo consiste exclusivamente en responder:\n"
+            "\"¿Qué hechos persistentes nuevos o cambios de estado "
+            "han quedado confirmados por esta narrativa?\"\n"
             "\n"
-            "CUÁNDO CREAR UNA ENTIDAD NUEVA:\n"
-            "- Si aparece por primera vez una persona, NPC, "
-            "criatura, lugar u otra entidad identificable "
-            "por un nombre explícito y la narrativa revela "
-            "información útil para el estado del mundo, "
-            "puedes usar create_entity.\n"
-            "- create_entity NO recibe entity_id.\n"
-            "- El ID de una entidad nueva lo genera el backend.\n"
-            "- No uses create_entity para una entidad que "
-            "ya aparezca en ENTIDADES CONOCIDAS.\n"
+
+            "============================================================\n"
+            "REGLAS FUNDAMENTALES\n"
+            "============================================================\n"
             "\n"
-            "REGLAS DE IDENTIFICADORES:\n"
-            "- Usa únicamente IDs que aparezcan en el contexto "
-            "proporcionado por el backend.\n"
-            "- NO inventes IDs.\n"
-            "- entity_id identifica entidades.\n"
-            "- item_id identifica definiciones de objetos.\n"
-            "- instance_id identifica instancias físicas de objetos.\n"
-            "- resource_id identifica recursos.\n"
-            "- relation_id identifica relaciones existentes.\n"
-            "- event_id identifica eventos históricos.\n"
-            "- El personaje activo está marcado explícitamente.\n"
-            "- Para change_character_hp utiliza el entity_id "
-            "real del personaje correspondiente.\n"
+
+            "1. SOLO HECHOS CONFIRMADOS\n"
+            "- Crea una operación únicamente si la narrativa confirma "
+            "que algo ocurrió o que una información quedó establecida.\n"
+            "- No conviertas intenciones, deseos, planes, amenazas, "
+            "posibilidades, rumores no confirmados o acciones hipotéticas "
+            "en cambios persistentes.\n"
+            "- \"Va a atacar\" NO significa que haya atacado.\n"
+            "- \"Intenta abrir la puerta\" NO significa necesariamente "
+            "que la puerta se haya abierto.\n"
+            "- \"Quizá sea un espía\" NO crea una relación de espionaje.\n"
+            "- \"Podría haber una trampa\" NO crea un evento de trampa.\n"
             "\n"
-            "IMPORTANTE:\n"
-            "- Solo crea una operación si el hecho está "
-            "explícitamente descrito en la narrativa.\n"
-            "- No deduzcas daño, curación, objetos, recursos "
-            "o relaciones que no estén confirmados.\n"
-            "- No conviertas una intención en un cambio "
-            "persistente si la narrativa no confirma "
-            "que ocurrió.\n"
-            "- Si no existe ningún cambio persistente, "
-            "devuelve una lista de operaciones vacía.\n"
+
+            "2. CAMBIOS REALES DE ESTADO\n"
+            "Si una acción confirmada modifica el estado persistente "
+            "del mundo, debes registrarla.\n"
             "\n"
-            "OPERACIONES DISPONIBLES:\n"
+            "Ejemplos:\n"
+            "- Un personaje recibe daño -> change_character_hp.\n"
+            "- Un personaje es curado -> change_character_hp.\n"
+            "- Aparece un NPC nuevo con nombre e información relevante "
+            "-> create_entity.\n"
+            "- Se descubre información nueva sobre un NPC existente "
+            "-> update_entity.\n"
+            "- Se recoge un objeto físico existente -> modificar "
+            "su instancia si cambia su propietario.\n"
+            "- Se entrega un objeto a otra entidad -> transfer_item.\n"
+            "- Dos personajes establecen una relación persistente "
+            "explícitamente -> create_relation.\n"
+            "- Una relación existente cambia explícitamente "
+            "-> update_relation.\n"
+            "- Una relación deja de existir -> remove_relation.\n"
+            "- Ocurre un acontecimiento histórico relevante para "
+            "el mundo -> create_event.\n"
             "\n"
-            "1. CREAR ENTIDAD:\n"
+
+            "3. NO DUPLICAR INFORMACIÓN\n"
+            "- Antes de crear algo nuevo, comprueba las listas "
+            "de elementos conocidos.\n"
+            "- Si una entidad ya existe, utiliza su ID.\n"
+            "- Si una relación ya existe, actualízala en lugar de crear "
+            "otra relación equivalente.\n"
+            "- Si un evento ya existe y la narrativa simplemente vuelve "
+            "a mencionarlo, NO lo dupliques.\n"
+            "- Si una instancia física ya existe, actualiza esa instancia "
+            "en lugar de crear otra.\n"
+            "\n"
+
+            "4. IDENTIFICADORES\n"
+            "- NO inventes IDs numéricos.\n"
+            "- NO inventes IDs de entidades.\n"
+            "- NO inventes item_id.\n"
+            "- NO inventes instance_id.\n"
+            "- NO inventes resource_id.\n"
+            "- NO inventes relation_id para actualizar o eliminar "
+            "una relación existente.\n"
+            "- NO inventes event_id para actualizar información existente.\n"
+            "- Los IDs de entidades, items, instancias y recursos "
+            "deben proceder del contexto.\n"
+            "- Las relaciones y eventos nuevos sí necesitan un identificador "
+            "estable generado por ti, pero ese identificador debe ser "
+            "descriptivo, determinista y único dentro del mundo.\n"
+            "\n"
+
+            "Ejemplos válidos de IDs nuevos:\n"
+            "- \"aldren_guardia_ciudad\"\n"
+            "- \"edrik_debe_dinero_a_aldren\"\n"
+            "- \"cripta_puerta_abierta\"\n"
+            "- \"explorador_muerto_cripta\"\n"
+            "\n"
+
+            "No utilices IDs aleatorios ni IDs numéricos para relaciones "
+            "o eventos nuevos.\n"
+            "\n"
+
+            "5. PERSONAJE ACTIVO\n"
+            "- El personaje marcado como [PERSONAJE ACTIVO] es el personaje "
+            "jugador actual.\n"
+            "- No asumas un nombre concreto para él.\n"
+            "- Nunca utilices nombres ficticios como \"Darian\" salvo que "
+            "ese nombre aparezca realmente en el contexto o la narrativa.\n"
+            "- Cuando la narrativa diga \"el personaje\", \"el aventurero\", "
+            "\"el jugador\" o equivalente y exista un personaje activo, "
+            "utiliza su entity_id.\n"
+            "- Para change_character_hp utiliza el entity_id real del "
+            "personaje activo o del personaje afectado.\n"
+            "\n"
+
+            "============================================================\n"
+            "ENTIDADES\n"
+            "============================================================\n"
+            "\n"
+
+            "CREAR ENTIDAD:\n"
             "{\n"
             '  "type": "create_entity",\n'
             '  "name": "Aldren",\n'
             '  "entity_type": "npc",\n'
             '  "description": "Propietario de la taberna.",\n'
-            '  "notes": "Vive en Vorder\'s Hold.",\n'
+            "  \"notes\": \"Vive en Vorder's Hold.\",\n"
             '  "active": true\n'
             "}\n"
             "\n"
-            "Usa create_entity cuando aparezca una entidad "
-            "nueva que deba formar parte del estado persistente "
-            "del mundo.\n"
+
+            "Usa create_entity cuando aparezca una entidad nueva "
+            "identificable y la narrativa aporte información que "
+            "merezca formar parte del estado persistente.\n"
             "\n"
 
-            "2. MODIFICAR ENTIDAD:\n"
+            "No crees entidades para referencias genéricas sin identidad "
+            "útil, como \"un hombre\", \"una sombra\" o \"unos guardias\", "
+            "salvo que la narrativa establezca que esa entidad concreta "
+            "tiene relevancia persistente.\n"
+            "\n"
+
+            "MODIFICAR ENTIDAD:\n"
             "{\n"
             '  "type": "update_entity",\n'
             '  "entity_id": 2,\n'
@@ -304,11 +476,21 @@ class LLMWorldExtractor:
             '  "notes": "Ahora sabemos que pertenece a la guardia."\n'
             "}\n"
             "\n"
-            "Usa únicamente el ID de una entidad incluida en "
-            "ENTIDADES CONOCIDAS.\n"
+
+            "Usa únicamente el entity_id de ENTIDADES CONOCIDAS.\n"
+            "Solo proporciona los campos que deban cambiar.\n"
             "\n"
 
-            "3. CREAR TIPO DE OBJETO:\n"
+            "============================================================\n"
+            "OBJETOS E INSTANCIAS FÍSICAS\n"
+            "============================================================\n"
+            "\n"
+
+            "Un ITEM es una definición de objeto.\n"
+            "Una ITEM INSTANCE es una copia física concreta.\n"
+            "\n"
+
+            "CREAR ITEM:\n"
             "{\n"
             '  "type": "create_item",\n'
             '  "name": "Espada de hierro",\n'
@@ -318,143 +500,133 @@ class LLMWorldExtractor:
             '  "notes": ""\n'
             "}\n"
             "\n"
-            "create_item crea la definición del objeto, "
-            "no una copia física concreta.\n"
-            "\n"
 
-            "4. CREAR INSTANCIA FÍSICA DE OBJETO:\n"
+            "CREAR INSTANCIA:\n"
             "{\n"
             '  "type": "create_item_instance",\n'
             '  "item_id": 10,\n'
             '  "instance_number": 1,\n'
-            '  "owner_id": 2,\n'
+            '  "owner_id": null,\n'
             '  "location_id": 3,\n'
             '  "condition": "intacto",\n'
-            '  "notes": "Tiene una inscripción en la empuñadura.",\n'
+            '  "notes": "Tiene un símbolo grabado.",\n'
             '  "active": true\n'
             "}\n"
             "\n"
-            "create_item_instance crea una copia física concreta "
-            "de un Item existente.\n"
+
+            "IMPORTANTE:\n"
+            "- create_item crea el tipo/definición del objeto.\n"
+            "- create_item_instance crea una copia física concreta.\n"
+            "- create_item_instance requiere un item_id existente.\n"
+            "- No inventes item_id.\n"
             "\n"
 
-            "IMPORTANTE: item_id debe corresponder a un Item "
-            "existente. No inventes IDs.\n"
+            "CREAR INSTANCIA CUANDO:\n"
+            "- La narrativa presenta un objeto físico concreto que debe "
+            "poder rastrearse individualmente.\n"
+            "- El objeto es relevante para el estado del mundo.\n"
+            "- Puede distinguirse razonablemente como una copia concreta.\n"
             "\n"
 
-            "5. TRANSFERIR OBJETO:\n"
+            "NO CREAR INSTANCIA CUANDO:\n"
+            "- Solo se menciona genéricamente un tipo de objeto.\n"
+            "- La narrativa no permite determinar que exista una copia "
+            "física persistente relevante.\n"
+            "\n"
+
+            "TRANSFERIR OBJETO:\n"
             "{\n"
             '  "type": "transfer_item",\n'
             '  "instance_id": 25,\n'
             '  "new_owner_id": 7\n'
             "}\n"
             "\n"
-            "Usa transfer_item cuando una instancia física "
-            "existente cambia de propietario.\n"
+
+            "Usa transfer_item cuando una instancia física existente "
+            "cambia explícitamente de propietario.\n"
             "\n"
 
-            "6. ACTUALIZAR INSTANCIA DE OBJETO:\n"
+            "ACTUALIZAR INSTANCIA:\n"
             "{\n"
             '  "type": "update_item_instance",\n'
             '  "instance_id": 25,\n'
             '  "condition": "dañado",\n'
-            '  "notes": "La hoja tiene una grieta.",\n'
-            '  "active": true\n'
+            '  "notes": "La hoja tiene una grieta."\n'
             "}\n"
             "\n"
-            "update_item_instance modifica únicamente los campos "
-            "proporcionados de una instancia física existente.\n"
-            "Los campos no proporcionados no deben modificarse.\n"
-            "\n"
-            "IMPORTANTE SOBRE INSTANCIAS FÍSICAS DE OBJETOS:\n"
-            "- Las instancias físicas existentes aparecen en INSTANCIAS DE OBJETOS "
-            "CONOCIDAS con su instance_id, item_id, owner_id y location_id.\n"
-            "- Cuando la narrativa modifica una instancia física existente, "
-            "debes generar una operación sobre ESA instancia.\n"
-            "- No crees una nueva instancia si la narrativa se refiere a un objeto "
-            "que ya aparece como instancia conocida.\n"
-            "\n"
-            "REGLA FUNDAMENTAL DE TRANSICIÓN DE ESTADO:\n"
-            "- Compara el estado conocido de la instancia con lo que la narrativa "
-            "confirma que ha ocurrido.\n"
-            "- Si existe un cambio persistente confirmado, genera una operación "
-            "que represente ese cambio.\n"
-            "- No devuelvas una lista vacía simplemente porque la acción ya esté "
-            "descrita en pasado en la narrativa.\n"
-            "- Una acción como recoger, soltar, entregar, recibir, equipar, "
-            "desequipar o mover una instancia debe producir una operación cuando "
-            "cambie alguno de sus campos persistentes.\n"
-            "\n"
-            "REGLAS SOBRE owner_id:\n"
-            "- Si una instancia existente no tiene propietario "
-            "(owner_id=null) y la narrativa confirma que Darian u otra entidad "
-            "pasa a poseerla, establece owner_id con el ID de esa entidad.\n"
-            "- Si la narrativa confirma que una instancia deja de pertenecer "
-            "a una entidad, usa owner_id=null.\n"
-            "- Si la instancia ya pertenece al personaje y la narrativa solamente "
-            "confirma que la recoge, no cambies owner_id innecesariamente.\n"
-            "- No cambies el propietario solamente porque el personaje manipule "
-            "físicamente el objeto.\n"
-            "\n"
-            "REGLAS SOBRE location_id:\n"
-            "- Si la narrativa confirma que una instancia deja de estar en una "
-            "ubicación identificable, usa location_id=null cuando no exista otra "
-            "ubicación conocida que pueda utilizarse.\n"
-            "- Si la narrativa confirma que una instancia pasa a una ubicación "
-            "existente con ID conocido, usa ese location_id.\n"
-            "- Si una superficie, mesa, suelo u otro lugar físico no tiene una "
-            "entidad con ID conocido, NO inventes un location_id.\n"
-            "- No cambies location_id simplemente porque el objeto haya sido "
-            "mencionado en una localización narrativa que no puede representarse "
-            "con un ID conocido.\n"
-            "\n"
-            "REGLAS PARA RECOGER OBJETOS:\n"
-            "- Si la narrativa dice que una entidad recoge una instancia física "
-            "existente y pasa a tenerla consigo, comprueba owner_id y genera "
-            "update_item_instance si el propietario cambia.\n"
-            "- Ejemplo: si la instancia 25 tiene owner_id=null y la narrativa dice "
-            "\"Darian recoge la espada y se la guarda\", utiliza:\n"
-            "{\n"
-            '  \"type\": \"update_item_instance\",\n'
-            '  \"instance_id\": 25,\n'
-            '  \"owner_id\": ID_DE_DARIAN\n'
-            "}\n"
-            "- Si la instancia ya pertenece a Darian, no generes una operación "
-            "de propietario redundante.\n"
-            "- Si además existe un cambio persistente de ubicación representable "
-            "con un ID conocido, registra también ese cambio.\n"
-            "\n"
-            "REGLAS PARA SOLTAR O DEJAR OBJETOS:\n"
-            "- Si la narrativa confirma que una entidad deja de llevar consigo "
-            "una instancia, elimina owner_id usando null cuando corresponda.\n"
-            "- Si además pasa a una ubicación conocida, establece location_id "
-            "con el ID correspondiente.\n"
-            "- Si la nueva ubicación no puede representarse con una entidad "
-            "conocida, no inventes un location_id.\n"
-            "\n"
-            "IMPORTANTE SOBRE CAMPOS OPCIONALES:\n"
-            "- Campo omitido = no modificar ese campo.\n"
-            "- Campo con valor null = borrar explícitamente ese valor.\n"
-            "- Nunca uses null para representar un campo que simplemente "
-            "desconoces.\n"
-            "- Nunca inventes IDs.\n"
-            "\n"
-            "Ejemplos conceptuales:\n"
-            "- \"Darian entrega la espada a Neria\" -> transfer_item con "
-            "instance_id de la espada y new_owner_id=ID de Neria.\n"
-            "- \"Darian recoge la espada del suelo\" -> update_item_instance "
-            "con instance_id de la espada y owner_id=ID de Darian si la instancia "
-            "no tenía propietario.\n"
-            "- \"Darian deja la espada\" -> elimina owner_id con null si deja "
-            "de ser de su propiedad.\n"
-            "- \"Darian deja la espada sobre la mesa\" -> si la mesa no tiene "
-            "ID conocido, no inventes location_id; modifica únicamente los campos "
-            "cuyo cambio persistente pueda representarse de forma segura.\n"
-            "- \"Darian vuelve a recoger la espada\" -> si la instancia conocida "
-            "había quedado sin propietario y ahora Darian vuelve a poseerla, "
-            "restaura owner_id=ID de Darian.\n"
 
-            "7. CREAR RECURSO:\n"
+            "REGLA FUNDAMENTAL DE TRANSICIÓN DE ESTADO:\n"
+            "- Si la narrativa describe una acción sobre un objeto físico "
+            "que ya aparece en INSTANCIAS DE OBJETOS CONOCIDAS, debes "
+            "modificar esa instancia existente.\n"
+            "- No crees una nueva instancia para representar una transición "
+            "de estado de una instancia ya conocida.\n"
+            "- Recoger un objeto existente cambia su propietario si la "
+            "narrativa confirma quién lo recoge.\n"
+            "- Entregar un objeto existente cambia su propietario al receptor.\n"
+            "- Dejar un objeto existente elimina su propietario si deja de "
+            "pertenecer al personaje, pero no inventes una ubicación.\n"
+            "- Cambiar el estado físico de un objeto existente actualiza "
+            "su instancia correspondiente.\n"
+            "- Solo crea una nueva instancia cuando la narrativa establezca "
+            "que existe una copia física distinta que todavía no está "
+            "representada en el mundo.\n"
+            "\n"
+
+            "REGLAS PARA RECOGER OBJETOS:\n"
+            "- Cuando la narrativa confirme que el personaje recoge un objeto "
+            "físico, busca primero una instancia existente cuyo item_id "
+            "corresponda al objeto recogido.\n"
+            "- Si existe una instancia física conocida que corresponde al objeto, "
+            "NO crees una nueva instancia.\n"
+            "- Si la instancia existente no tiene propietario y la narrativa "
+            "confirma que el personaje la recoge, asigna el entity_id del "
+            "personaje activo como nuevo propietario.\n"
+            "- Al recoger un objeto, owner_id debe ser el ID del personaje que "
+            "pasa a ser su propietario. Por ejemplo, si el personaje es Darian, "
+            "debes utilizar owner_id=ID de Darian.\n"
+            "- Si la instancia ya pertenece a otra entidad y la narrativa "
+            "confirma que el personaje la recibe, utiliza transfer_item.\n"
+            "- Si el objeto recogido no tiene ninguna instancia física conocida "
+            "y la narrativa confirma que existe una copia física concreta, "
+            "puede ser necesario crear una instancia, pero solo si existe un "
+            "item_id conocido o puede crearse primero su definición mediante "
+            "create_item.\n"
+            "- No crees una segunda instancia simplemente porque el objeto "
+            "vuelva a aparecer en una narrativa posterior.\n"
+            "- No inventes instance_id, item_id, owner_id ni location_id.\n"
+            "\n"
+
+            "REGLAS DE INSTANCIAS:\n"
+            "- Si una instancia conocida cambia de propietario, "
+            "actualiza el propietario.\n"
+            "- Si una instancia conocida cambia de condición, "
+            "actualiza la condición.\n"
+            "- Si una instancia conocida cambia de ubicación y la nueva "
+            "ubicación tiene un ID conocido, actualiza location_id.\n"
+            "- Si la nueva ubicación no puede representarse con un ID "
+            "conocido, NO inventes un location_id.\n"
+            "- Campo omitido = no modificar.\n"
+            "- null = borrar explícitamente el valor.\n"
+            "- No utilices null simplemente porque desconozcas el valor.\n"
+
+            "Ejemplos:\n"
+            "- \"El personaje recoge la espada y se la guarda\" -> "
+            "update_item_instance o transfer_item según el estado "
+            "actual de la instancia.\n"
+            "- \"El personaje entrega la espada a Neria\" -> transfer_item.\n"
+            "- \"El personaje deja la espada en el suelo\" -> elimina "
+            "owner_id si deja de poseerla; no inventes location_id.\n"
+            "- \"La espada se rompe\" -> update_item_instance con "
+            "condition si la condición puede representarse.\n"
+            "\n"
+
+            "============================================================\n"
+            "RECURSOS\n"
+            "============================================================\n"
+            "\n"
+
+            "CREAR RECURSO:\n"
             "{\n"
             '  "type": "create_resource",\n'
             '  "name": "Oro",\n'
@@ -464,7 +636,7 @@ class LLMWorldExtractor:
             "}\n"
             "\n"
 
-            "8. OBTENER RECURSO:\n"
+            "GANAR RECURSO:\n"
             "{\n"
             '  "type": "gain_resource",\n'
             '  "resource_id": 10,\n'
@@ -472,11 +644,8 @@ class LLMWorldExtractor:
             '  "amount": 50\n'
             "}\n"
             "\n"
-            "Usa gain_resource cuando una entidad recibe "
-            "una cantidad de un recurso.\n"
-            "\n"
 
-            "9. GASTAR RECURSO:\n"
+            "GASTAR RECURSO:\n"
             "{\n"
             '  "type": "spend_resource",\n'
             '  "resource_id": 10,\n'
@@ -484,12 +653,8 @@ class LLMWorldExtractor:
             '  "amount": 20\n'
             "}\n"
             "\n"
-            "Usa spend_resource cuando una entidad pierde "
-            "una cantidad de un recurso como consecuencia "
-            "de un hecho confirmado.\n"
-            "\n"
 
-            "10. TRANSFERIR RECURSO:\n"
+            "TRANSFERIR RECURSO:\n"
             "{\n"
             '  "type": "transfer_resource",\n'
             '  "resource_id": 10,\n'
@@ -499,10 +664,31 @@ class LLMWorldExtractor:
             "}\n"
             "\n"
 
-            "11. CREAR RELACIÓN:\n"
+            "Solo utiliza recursos cuando la narrativa confirme "
+            "el cambio cuantitativo.\n"
+            "\n"
+
+            "No inventes cantidades.\n"
+            "No conviertas una compra hipotética en gasto real.\n"
+            "\n"
+
+            "============================================================\n"
+            "RELACIONES\n"
+            "============================================================\n"
+            "\n"
+
+            "Una RELACIÓN representa una conexión persistente entre "
+            "dos entidades del mundo.\n"
+            "\n"
+
+            "Una conversación, encuentro, saludo, discusión o interacción "
+            "momentánea NO constituye automáticamente una relación.\n"
+            "\n"
+
+            "CREAR RELACIÓN:\n"
             "{\n"
             '  "type": "create_relation",\n'
-            '  "relation_id": "aldren_guardia",\n'
+            '  "relation_id": "aldren_guardia_ciudad",\n'
             '  "subject_id": 2,\n'
             '  "relation_type": "miembro_de",\n'
             '  "target_id": 7,\n'
@@ -510,10 +696,35 @@ class LLMWorldExtractor:
             "}\n"
             "\n"
 
-            "12. MODIFICAR RELACIÓN:\n"
+            "Crea una relación cuando la narrativa establezca explícitamente "
+            "una conexión persistente como:\n"
+            "- pertenece a una organización;\n"
+            "- es miembro de una facción;\n"
+            "- es familiar de otra entidad;\n"
+            "- es aliado de otra entidad;\n"
+            "- es enemigo de otra entidad;\n"
+            "- trabaja para otra entidad;\n"
+            "- debe dinero a otra entidad;\n"
+            "- está casado con otra entidad;\n"
+            "- tiene una relación política, comercial o social persistente.\n"
+            "\n"
+
+            "NO crees relaciones para:\n"
+            "- hablar con alguien;\n"
+            "- conocer a alguien;\n"
+            "- estar físicamente junto a alguien;\n"
+            "- atacar a alguien una sola vez;\n"
+            "- ayudar a alguien una sola vez;\n"
+            "- sospechar de alguien;\n"
+            "- ser amable o antipático durante una conversación;\n"
+            "- cualquier interacción momentánea que no establezca "
+            "una relación persistente.\n"
+            "\n"
+
+            "MODIFICAR RELACIÓN:\n"
             "{\n"
             '  "type": "update_relation",\n'
-            '  "relation_id": "aldren_guardia",\n'
+            '  "relation_id": "aldren_guardia_ciudad",\n'
             '  "relation_type": "aliado_de",\n'
             '  "target_id": 7,\n'
             '  "metadata": {},\n'
@@ -521,20 +732,47 @@ class LLMWorldExtractor:
             "}\n"
             "\n"
 
-            "13. ELIMINAR RELACIÓN:\n"
-            "{\n"
-            '  "type": "remove_relation",\n'
-            '  "relation_id": "aldren_guardia"\n'
-            "}\n"
-            "\n"
-            "remove_relation no borra físicamente la relación. "
-            "La desactiva.\n"
+            "Usa update_relation cuando una relación existente cambia "
+            "explícitamente.\n"
             "\n"
 
-            "14. CREAR EVENTO:\n"
+            "ELIMINAR RELACIÓN:\n"
+            "{\n"
+            '  "type": "remove_relation",\n'
+            '  "relation_id": "aldren_guardia_ciudad"\n'
+            "}\n"
+            "\n"
+
+            "remove_relation desactiva una relación existente.\n"
+            "\n"
+
+            "IMPORTANTE SOBRE RELACIONES:\n"
+            "- Para modificar o eliminar una relación existente utiliza "
+            "su relation_id real de RELACIONES CONOCIDAS.\n"
+            "- No crees una segunda relación equivalente.\n"
+            "- Si una relación existente ya expresa el hecho narrado, "
+            "no hagas nada salvo que haya un cambio real.\n"
+            "- subject_id y target_id deben ser IDs de entidades conocidas.\n"
+            "\n"
+
+            "============================================================\n"
+            "EVENTOS\n"
+            "============================================================\n"
+            "\n"
+
+            "Un EVENTO representa un acontecimiento histórico relevante "
+            "que ha ocurrido en el mundo.\n"
+            "\n"
+
+            "No registres cada acción narrativa como evento.\n"
+            "Los eventos deben reservarse para acontecimientos con "
+            "relevancia futura, histórica o causal.\n"
+            "\n"
+
+            "CREAR EVENTO:\n"
             "{\n"
             '  "type": "create_event",\n'
-            '  "event_id": "puerta_cripta_abierta",\n'
+            '  "event_id": "cripta_puerta_abierta",\n'
             '  "event_type": "world_event",\n'
             '  "title": "La puerta de la cripta se abre",\n'
             '  "description": "La antigua puerta fue abierta.",\n'
@@ -545,26 +783,149 @@ class LLMWorldExtractor:
             "}\n"
             "\n"
 
-            "15. CAMBIAR HP:\n"
+            "CREA UN EVENTO cuando ocurra algo como:\n"
+            "- apertura o destrucción de una localización importante;\n"
+            "- muerte relevante;\n"
+            "- descubrimiento importante;\n"
+            "- inicio o final de una guerra o conflicto;\n"
+            "- traición significativa;\n"
+            "- aparición de una amenaza importante;\n"
+            "- cambio político relevante;\n"
+            "- descubrimiento de un secreto importante;\n"
+            "- acontecimiento que razonablemente pueda afectar "
+            "a turnos futuros.\n"
+            "\n"
+
+            "NO crees eventos para:\n"
+            "- caminar unos metros;\n"
+            "- hablar con un NPC sin consecuencia relevante;\n"
+            "- abrir una puerta normal sin importancia futura;\n"
+            "- sacar un arma;\n"
+            "- realizar una acción cotidiana;\n"
+            "- cualquier detalle puramente narrativo sin relevancia "
+            "persistente.\n"
+            "\n"
+
+            "Si el mismo acontecimiento ya aparece en EVENTOS CONOCIDOS, "
+            "no lo dupliques.\n"
+            "\n"
+
+            "Si la narrativa modifica explícitamente un evento existente "
+            "pero no existe una operación específica de actualización "
+            "de eventos, NO inventes una operación nueva. Conserva el "
+            "evento existente y registra únicamente los cambios que "
+            "sí puedan representarse mediante las operaciones disponibles.\n"
+            "\n"
+
+            "============================================================\n"
+            "HP Y ESTADO DEL PERSONAJE\n"
+            "============================================================\n"
+            "\n"
+
+            "CAMBIAR HP:\n"
             "{\n"
             '  "type": "change_character_hp",\n'
             '  "entity_id": 1,\n'
             '  "amount": -5\n'
             "}\n"
             "\n"
-            "Usa change_character_hp únicamente cuando el "
-            "daño o la curación hayan ocurrido realmente "
-            "en la narrativa.\n"
+
+            "Usa change_character_hp cuando la narrativa confirme "
+            "que un personaje ha recibido daño o curación.\n"
             "\n"
-            "REGLA GENERAL:\n"
-            "Cada operación debe representar un hecho que haya "
-            "ocurrido realmente o que haya sido revelado "
-            "explícitamente en la narrativa.\n"
-            "No conviertas intenciones, posibilidades, amenazas "
-            "o acciones hipotéticas en cambios persistentes.\n"
+
+            "Daño -> amount negativo.\n"
+            "Curación -> amount positivo.\n"
             "\n"
-            "Devuelve exclusivamente un objeto JSON válido "
-            "con esta estructura:\n"
+
+            "Ejemplos:\n"
+            "- \"Aldren recibe 4 puntos de daño\" -> amount=-4.\n"
+            "- \"Aldren pierde 4 HP\" -> amount=-4.\n"
+            "- \"Aldren recupera 6 HP\" -> amount=6.\n"
+            "- \"La trampa hiere a Aldren\" NO permite inventar cuántos "
+            "HP pierde si la narrativa no especifica una cantidad "
+            "y no existe otro resultado mecánico explícito que indique "
+            "la cantidad.\n"
+            "\n"
+
+            "NO calcules HP final manualmente.\n"
+            "NO establezcas current_hp directamente.\n"
+            "NO inventes daño basándote en el tipo de ataque.\n"
+            "El backend aplicará el cambio.\n"
+            "\n"
+
+            "============================================================\n"
+            "PRIORIZACIÓN\n"
+            "============================================================\n"
+            "\n"
+
+            "Cuando una narrativa contiene varios hechos persistentes, "
+            "genera todas las operaciones necesarias.\n"
+            "\n"
+
+            "Ejemplo:\n"
+            "\"El personaje derrota al guardia, recoge su espada y "
+            "descubre que pertenecía a la Guardia de Hierro.\"\n"
+            "\n"
+
+            "Puede implicar:\n"
+            "- cambio de estado del guardia si existe una representación "
+            "persistente adecuada;\n"
+            "- cambio de propietario de la espada si existe una instancia;\n"
+            "- nueva información sobre el guardia;\n"
+            "- una relación con la Guardia de Hierro si la pertenencia "
+            "queda explícitamente establecida.\n"
+            "\n"
+
+            "Pero NO debes crear operaciones solo porque algo sea "
+            "razonable o probable.\n"
+            "\n"
+
+            "============================================================\n"
+            "REGLA DE CAMBIO MÍNIMO\n"
+            "============================================================\n"
+            "\n"
+
+            "Realiza el cambio persistente mínimo necesario para representar "
+            "el hecho confirmado.\n"
+            "\n"
+
+            "No sobrescribas información existente innecesariamente.\n"
+            "No sustituyas una descripción completa si solo se ha revelado "
+            "un dato nuevo.\n"
+            "No cambies campos que no hayan cambiado.\n"
+            "No generes operaciones redundantes.\n"
+            "\n"
+
+            "============================================================\n"
+            "PROCESO MENTAL INTERNO\n"
+            "============================================================\n"
+            "\n"
+
+            "Antes de responder, sigue internamente este proceso:\n"
+            "1. Identifica hechos explícitos en la narrativa.\n"
+            "2. Descarta intenciones, hipótesis y posibilidades.\n"
+            "3. Compara cada hecho con el estado conocido.\n"
+            "4. Identifica si modifica una entidad, objeto, instancia, "
+            "recurso, relación, evento o HP.\n"
+            "5. Reutiliza IDs existentes siempre que sea posible.\n"
+            "6. Genera únicamente las operaciones necesarias.\n"
+            "7. Comprueba que ningún ID inventado aparezca en operaciones "
+            "que requieren una entidad existente.\n"
+            "8. Comprueba que no hayas duplicado una entidad, instancia, "
+            "relación o evento existente.\n"
+            "9. Devuelve únicamente JSON válido.\n"
+            "\n"
+
+            "============================================================\n"
+            "FORMATO DE SALIDA\n"
+            "============================================================\n"
+            "\n"
+
+            "Debes devolver EXCLUSIVAMENTE un objeto JSON válido.\n"
+            "\n"
+
+            "Formato:\n"
             "{\n"
             '  "operations": [\n'
             "    {\n"
@@ -576,27 +937,60 @@ class LLMWorldExtractor:
             "  ]\n"
             "}\n"
             "\n"
-            "Si no hay ningún cambio persistente:\n"
+
+            "Si no existe ningún cambio persistente:\n"
             "{\n"
             '  "operations": []\n'
             "}\n"
             "\n"
+
+            "NO uses Markdown.\n"
+            "NO uses bloques ```json.\n"
+            "NO añadas explicaciones antes o después del JSON.\n"
+            "\n"
+
+            "============================================================\n"
+            "CONTEXTO ACTUAL DEL MUNDO\n"
+            "============================================================\n"
+            "\n"
+
             "PERSONAJE ACTIVO:\n"
             f"{character_block}\n"
             "\n"
+
             "ENTIDADES CONOCIDAS:\n"
             f"{known_entities}\n"
             "\n"
+
             "ITEMS CONOCIDOS:\n"
             f"{known_items}\n"
             "\n"
-            "INSTANCIAS DE ITEMS CONOCIDAS:\n"
+
+            "INSTANCIAS DE OBJETOS CONOCIDAS "
+            "(INSTANCIAS DE ITEMS CONOCIDAS):\n"
             f"{known_item_instances}\n"
             "\n"
-            "Texto narrativo:\n"
+
+            "RECURSOS CONOCIDOS:\n"
+            f"{known_resources}\n"
+            "\n"
+
+            "RELACIONES CONOCIDAS:\n"
+            f"{known_relations}\n"
+            "\n"
+
+            "EVENTOS CONOCIDOS:\n"
+            f"{known_events}\n"
+            "\n"
+
+            "============================================================\n"
+            "NARRATIVA A ANALIZAR\n"
+            "============================================================\n"
+            "\n"
+
             f"{text}\n"
         )
-
+    
     # ============================================================
     # RESPONSE PARSING
     # ============================================================
