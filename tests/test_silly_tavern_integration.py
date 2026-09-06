@@ -2193,3 +2193,200 @@ def test_world_service_rolls_back_all_operations_when_one_fails():
 
     assert character_after is not None
     assert character_after.current_hp == 10
+
+def test_e2e_turn_rolls_back_world_and_turn_when_operation_fails(
+    monkeypatch,
+):
+    """
+    Comprueba que un turno es completamente atómico.
+
+    ```
+    Si una operación válida modifica el mundo pero una operación
+    posterior falla, ninguna modificación del turno debe quedar
+    persistida en SQLite y no debe existir TurnRecord.
+
+    Pipeline probado:
+
+        extractor
+            ↓
+        WorldService
+            ↓
+        SQLite transaction
+            ↓
+        rollback
+
+    El extractor está controlado para que el test sea determinista.
+    """
+
+    from database import get_conn
+    from operations.world_operations import (
+        CreateEntityOperation,
+    )
+    from repositories.campaign_repository import (
+        CampaignRepository,
+    )
+    from repositories.character_repository import (
+        CharacterRepository,
+    )
+    from repositories.entity_repository import (
+        EntityRepository,
+    )
+    from repositories.turn_repository import (
+        TurnRepository,
+    )
+    from services.campaign_state_service import (
+        CampaignStateService,
+    )
+    from services.context_builder import (
+        ContextBuilder,
+    )
+    from services.llm_world_extractor import (
+        LLMWorldExtractor,
+    )
+    from services.operation_parser import (
+        OperationParser,
+    )
+    from services.silly_tavern_integration_service import (
+        SillyTavernIntegrationService,
+        SillyTavernIntegrationServiceError,
+    )
+    from services.world_service import (
+        WorldService,
+    )
+
+    # --------------------------------------------------------
+    # Construir un pipeline completamente real.
+    # --------------------------------------------------------
+
+    world_service = WorldService()
+
+    campaign_state_service = CampaignStateService(
+        campaign_repository=CampaignRepository(),
+        character_repository=CharacterRepository(),
+        entity_repository=EntityRepository(),
+        world_service=world_service,
+    )
+
+    context_builder = ContextBuilder()
+
+    extractor = LLMWorldExtractor(
+        provider=lambda prompt: '{"operations": []}',
+        operation_parser=OperationParser(),
+    )
+
+    turn_repository = TurnRepository()
+
+    service = SillyTavernIntegrationService(
+        campaign_state_service=campaign_state_service,
+        context_builder=context_builder,
+        extractor=extractor,
+        world_service=world_service,
+        turn_repository=turn_repository,
+    )
+
+    # --------------------------------------------------------
+    # Las dos operaciones del turno.
+    #
+    # La primera es válida.
+    # La segunda será inválida.
+    # --------------------------------------------------------
+
+    valid_operation = CreateEntityOperation(
+        name="Entidad temporal",
+        entity_type="npc",
+        description="Esta entidad no debe sobrevivir al rollback.",
+    )
+
+    invalid_operation = CreateEntityOperation(
+        name="Entidad inválida",
+        entity_type="npc",
+        description="Esta operación nunca debe persistirse.",
+    )
+
+    def fake_extract(narrative, context):
+        return [
+            valid_operation,
+            invalid_operation,
+        ]
+
+    monkeypatch.setattr(
+        extractor,
+        "extract",
+        fake_extract,
+    )
+
+    # --------------------------------------------------------
+    # Forzamos el fallo de la segunda operación.
+    #
+    # La primera operación ya habrá sido aplicada cuando
+    # la segunda provoque la excepción.
+    # --------------------------------------------------------
+
+    original_apply = world_service.apply_turn_operations
+
+    def failing_apply(
+        world_operations,
+        character_operations,
+        *,
+        conn=None,
+        ordered_operations=None,
+    ):
+        operations = tuple(ordered_operations)
+
+        assert len(operations) == 2
+
+        # Aplicamos únicamente la primera operación.
+        original_apply(
+            world_operations=(operations[0],),
+            character_operations=(),
+            conn=conn,
+            ordered_operations=(operations[0],),
+        )
+
+        # Simulamos un fallo posterior dentro del mismo turno.
+        raise RuntimeError(
+            "forced failure after first operation"
+        )
+
+    monkeypatch.setattr(
+        world_service,
+        "apply_turn_operations",
+        failing_apply,
+    )
+
+    # --------------------------------------------------------
+    # Ejecutar el turno.
+    #
+    # process_turn debe convertir la excepción en el error
+    # específico del servicio.
+    # --------------------------------------------------------
+
+    with pytest.raises(SillyTavernIntegrationServiceError):
+        service.process_turn(
+            external_turn_id="rollback-test-turn",
+            turn_version=1,
+            player_input="Haz aparecer dos entidades.",
+            narrative="La primera entidad aparece, pero la segunda provoca un fallo.",
+        )
+
+    with get_conn() as conn:
+        entity_row = conn.execute(
+            """
+            SELECT id
+            FROM entities
+            WHERE name = ?
+            """,
+            ("Entidad temporal",),
+        ).fetchone()
+
+        turn_row = conn.execute(
+            """
+            SELECT id
+            FROM turns
+            WHERE external_turn_id = ?
+            """,
+            ("rollback-test-turn",),
+        ).fetchone()
+
+    assert entity_row is None
+    assert turn_row is None

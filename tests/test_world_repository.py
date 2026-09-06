@@ -1335,3 +1335,116 @@ def test_load_world_uses_provided_connection():
             and entity.name == "Entidad transaccional"
             for entity in loaded.entities.values()
         )
+
+def test_load_world_sees_restored_snapshot_before_commit(tmp_path):
+    original_db_path = database.DB_PATH
+    database.DB_PATH = tmp_path / "test_campaign.db"
+
+    try:
+        init_db()
+
+        repository = WorldRepository()
+
+        from repositories.world_snapshot_repository import (
+            WorldSnapshotRepository,
+        )
+
+        snapshot_repository = WorldSnapshotRepository()
+
+        # --------------------------------------------------------
+        # ESTADO A
+        # --------------------------------------------------------
+
+        world_a = WorldState(
+            entities={
+                1: Entity(
+                    id=1,
+                    name="Fungoso",
+                    entity_type="character",
+                    description="Estado original.",
+                    notes="",
+                    active=True,
+                )
+            }
+        )
+
+        repository.save_world(world_a)
+
+        # --------------------------------------------------------
+        # CREAR SNAPSHOT A
+        # --------------------------------------------------------
+
+        with database.get_conn() as conn:
+            snapshot = snapshot_repository.create_snapshot(conn)
+
+        # --------------------------------------------------------
+        # ESTADO B
+        # --------------------------------------------------------
+
+        world_b = WorldState(
+            entities={
+                1: Entity(
+                    id=1,
+                    name="Fungoso",
+                    entity_type="character",
+                    description="Estado regenerado.",
+                    notes="",
+                    active=True,
+                ),
+                2: Entity(
+                    id=2,
+                    name="Goblin",
+                    entity_type="creature",
+                    description="Enemigo nuevo.",
+                    notes="",
+                    active=True,
+                ),
+            }
+        )
+
+        repository.save_world(world_b)
+
+        # Confirmamos que B está realmente en SQLite.
+        loaded_b = repository.load_world()
+
+        assert loaded_b.entities == world_b.entities
+
+        # --------------------------------------------------------
+        # RESTAURAR A DENTRO DE UNA TRANSACCIÓN
+        # --------------------------------------------------------
+
+        with database.get_conn() as conn:
+
+            snapshot_repository.restore_snapshot(
+                conn,
+                snapshot,
+            )
+
+            # IMPORTANTE:
+            # Todavía no hemos hecho COMMIT.
+            #
+            # La lectura debe realizarse con ESTA MISMA conexión.
+            loaded_inside_transaction = repository.load_world(
+                conn=conn,
+            )
+
+            assert loaded_inside_transaction.entities == (
+                world_a.entities
+            )
+
+            assert loaded_inside_transaction.entities[1].description == (
+                "Estado original."
+            )
+
+            assert 2 not in loaded_inside_transaction.entities
+
+        # --------------------------------------------------------
+        # DESPUÉS DEL COMMIT
+        # --------------------------------------------------------
+
+        loaded_after_commit = repository.load_world()
+
+        assert loaded_after_commit.entities == world_a.entities
+
+    finally:
+        database.DB_PATH = original_db_path
