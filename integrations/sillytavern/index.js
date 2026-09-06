@@ -22,11 +22,10 @@ const defaultSettings = {
 let settings = null;
 
 let lastProcessedTurnKey = null;
-
 let lastProcessedTurnVersionKey = null;
 
-let currentTurnExternalId = null;
-let currentTurnVersion = 1;
+const turnVersions = new Map();
+const turnNarratives = new Map();
 
 // ============================================================
 // CAMPAIGN MANAGER CONTEXT FOR GENERATION
@@ -795,6 +794,9 @@ function registerChatLifecycleDetection() {
 
             lastProcessedTurnVersionKey =
                 null;
+         
+            turnVersions.clear();
+            turnNarratives.clear();
 
             void clearCampaignManagerContext();
 
@@ -908,10 +910,55 @@ async function createStableTurnId(
     return hashHex;
 }
 
+function getTurnVersion(
+    externalTurnId,
+    narrativeText,
+) {
+    const normalizedNarrative =
+        narrativeText.trim();
+
+    const previousNarrative =
+        turnNarratives.get(
+            externalTurnId,
+        );
+
+    if (
+        previousNarrative ===
+        normalizedNarrative
+    ) {
+        return (
+            turnVersions.get(
+                externalTurnId,
+            ) ?? 1
+        );
+    }
+
+    const previousVersion =
+        turnVersions.get(
+            externalTurnId,
+        ) ?? 0;
+
+    const nextVersion =
+        previousVersion + 1;
+
+    turnVersions.set(
+        externalTurnId,
+        nextVersion,
+    );
+
+    turnNarratives.set(
+        externalTurnId,
+        normalizedNarrative,
+    );
+
+    return nextVersion;
+}
+
 async function sendTurnToBackend(
     externalTurnId,
     playerInput,
     narrativeText,
+    turnVersion,
 ) {
     const currentSettings =
         getSettings();
@@ -941,6 +988,9 @@ async function sendTurnToBackend(
     const payload = {
         external_turn_id:
             externalTurnId,
+
+        turn_version:
+            turnVersion,
 
         player_input:
             playerInput,
@@ -1131,15 +1181,27 @@ async function onMessageReceived() {
      * Different AI swipes therefore intentionally
      * share the same external_turn_id.
      */
+    const turnVersion =
+        getTurnVersion(
+            externalTurnId,
+            narrativeText,
+        );
+
+    const turnVersionKey =
+        `${externalTurnId}:${turnVersion}`;
+
     if (
-        lastProcessedTurnKey ===
-        externalTurnId
+        lastProcessedTurnVersionKey ===
+        turnVersionKey
     ) {
         log(
-            'Turn already processed locally. Skipping duplicate.',
+            'Turn version already processed locally. Skipping duplicate.',
             {
                 external_turn_id:
                     externalTurnId,
+
+                turn_version:
+                    turnVersion,
             },
         );
 
@@ -1148,6 +1210,9 @@ async function onMessageReceived() {
 
     lastProcessedTurnKey =
         externalTurnId;
+
+    lastProcessedTurnVersionKey =
+        turnVersionKey;
 
     log(
         'Turn detected:',
@@ -1174,15 +1239,16 @@ async function onMessageReceived() {
         externalTurnId,
         playerInput,
         narrativeText,
+        turnVersion,
     ).catch((error) => {
         /*
          * Allow retry if the backend failed.
          */
         if (
-            lastProcessedTurnKey ===
-            externalTurnId
+            lastProcessedTurnVersionKey ===
+            turnVersionKey
         ) {
-            lastProcessedTurnKey =
+            lastProcessedTurnVersionKey =
                 null;
         }
 
