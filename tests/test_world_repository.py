@@ -1,4 +1,3 @@
-import json
 
 import database
 from database import init_db
@@ -1085,9 +1084,9 @@ def test_save_world_removes_missing_relations_and_events(tmp_path):
 
 def test_save_world_rolls_back_deletes_when_later_save_fails(monkeypatch):
     from database import get_conn
-    from repositories.world_repository import WorldRepository
-    from models.world_state import WorldState
     from models.entity import Entity
+    from models.world_state import WorldState
+    from repositories.world_repository import WorldRepository
 
     repository = WorldRepository()
 
@@ -1167,10 +1166,10 @@ def test_save_world_rolls_back_deletes_when_later_save_fails(monkeypatch):
     assert rows[1]["description"] == "original"
 
 def test_save_world_does_not_mutate_world_when_persistence_fails(monkeypatch):
-    from repositories.world_repository import WorldRepository
-    from models.world_state import WorldState
     from models.entity import Entity
     from models.relation import Relation
+    from models.world_state import WorldState
+    from repositories.world_repository import WorldRepository
 
     repository = WorldRepository()
 
@@ -1217,8 +1216,8 @@ def test_save_world_does_not_mutate_world_when_persistence_fails(monkeypatch):
     assert "relation-1" in world.relations
 
 def test_next_entity_id_does_not_reuse_deleted_ids():
-    from models.world_state import WorldState
     from models.entity import Entity
+    from models.world_state import WorldState
     from services.world_applier import WorldApplier
 
     world = WorldState(

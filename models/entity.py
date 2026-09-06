@@ -1,5 +1,4 @@
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 
 @dataclass
@@ -11,7 +10,7 @@ class Entity:
     personaje, objeto, lugar, facción, criatura, etc.
     """
 
-    id: Optional[int] = None
+    id: int | None = None
 
     name: str = ""
 

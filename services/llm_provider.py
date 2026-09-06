@@ -57,9 +57,8 @@ class LLMProvider(ABC):
 # dependencia FakeLLMProvider -> LLMProvider.
 from services.fake_llm_provider import FakeLLMProvider
 
-
 __all__ = [
+    "FakeLLMProvider",
     "LLMProvider",
     "LLMProviderError",
-    "FakeLLMProvider",
 ]

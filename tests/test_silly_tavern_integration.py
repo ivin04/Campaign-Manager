@@ -1,11 +1,11 @@
-import pytest
 import traceback
+
+import pytest
 
 from models.schemas import (
     SillyTavernContextIn,
     SillyTavernTurnIn,
 )
-
 
 # ============================================================
 # SCHEMAS
@@ -373,8 +373,17 @@ def test_integration_turn_endpoint_returns_400_on_service_error(
 
 
 def _build_service():
-    from services.silly_tavern_integration_service import (
-        SillyTavernIntegrationService,
+    from repositories.campaign_repository import (
+        CampaignRepository,
+    )
+    from repositories.character_repository import (
+        CharacterRepository,
+    )
+    from repositories.entity_repository import (
+        EntityRepository,
+    )
+    from repositories.turn_repository import (
+        TurnRepository,
     )
     from services.campaign_state_service import (
         CampaignStateService,
@@ -388,20 +397,11 @@ def _build_service():
     from services.operation_parser import (
         OperationParser,
     )
+    from services.silly_tavern_integration_service import (
+        SillyTavernIntegrationService,
+    )
     from services.world_service import (
         WorldService,
-    )
-    from repositories.turn_repository import (
-        TurnRepository,
-    )
-    from repositories.campaign_repository import (
-        CampaignRepository,
-    )
-    from repositories.character_repository import (
-        CharacterRepository,
-    )
-    from repositories.entity_repository import (
-        EntityRepository,
     )
 
     world_service = WorldService()
@@ -430,7 +430,7 @@ def _build_service():
         operation_parser=OperationParser(),
     )
 
-    turn_repository = TurnRepository()
+    _turn_repository = TurnRepository()
 
     service = (
         SillyTavernIntegrationService(
@@ -440,7 +440,7 @@ def _build_service():
             context_builder=context_builder,
             extractor=extractor,
             world_service=world_service,
-            turn_repository=turn_repository,
+            _turn_repository=_turn_repository,
         )
     )
 
@@ -449,7 +449,7 @@ def _build_service():
         context_builder,
         extractor,
         world_service,
-        turn_repository,
+        _turn_repository,
     )
 
 
@@ -896,11 +896,10 @@ def test_regenerate_turn_restores_snapshot_and_allows_new_version(
 ):
     from database import get_conn
     from models.entity import Entity
-    from models.item import Item
-    from repositories.entity_repository import EntityRepository
     from operations.world_operations import (
         CreateItemInstanceOperation,
     )
+    from repositories.entity_repository import EntityRepository
 
     external_turn_id = "test-external-turn"
 

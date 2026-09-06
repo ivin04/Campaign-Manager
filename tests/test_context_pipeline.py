@@ -12,7 +12,6 @@ from models.resource import Resource, ResourceBalance
 from models.world_state import WorldState
 from services.context_builder import ContextBuilder
 
-
 # ============================================================
 # HELPERS
 # ============================================================

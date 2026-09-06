@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -18,7 +17,7 @@ class Resource:
         munición
     """
 
-    id: Optional[int] = None
+    id: int | None = None
 
     name: str = ""
 
@@ -34,7 +33,7 @@ class ResourceBalance:
     Cantidad de un recurso que posee una entidad.
     """
 
-    id: Optional[int] = None
+    id: int | None = None
 
     resource_id: int = 0
 

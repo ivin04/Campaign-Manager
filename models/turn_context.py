@@ -4,9 +4,10 @@ from dataclasses import dataclass
 
 from models.campaign_state import CampaignState
 from models.character_state import CharacterState
+from models.entity import Entity
 from models.session_state import SessionState
 from models.world_state import WorldState
-from models.entity import Entity
+
 
 @dataclass(frozen=True)
 class TurnContext:

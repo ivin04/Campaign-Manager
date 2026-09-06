@@ -1,10 +1,10 @@
 from dataclasses import dataclass, field
 
 from .entity import Entity
-from .item import Item, ItemInstance
-from .resource import Resource, ResourceBalance
-from .relation import Relation
 from .event import Event
+from .item import Item, ItemInstance
+from .relation import Relation
+from .resource import Resource, ResourceBalance
 
 
 @dataclass

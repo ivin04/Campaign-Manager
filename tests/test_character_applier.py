@@ -9,9 +9,8 @@ from operations.character_operations import (
 from services.character_applier import (
     CharacterApplier,
     CharacterApplierError,
+    CharacterServiceError,
 )
-from models.operation_result import OperationStatus
-from services.character_applier import CharacterServiceError
 
 
 class RecordingCharacterService:

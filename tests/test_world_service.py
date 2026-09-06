@@ -1,34 +1,29 @@
 import pytest
+
 import database
-
+from database import init_db
 from models.entity import Entity
-from models.world_state import WorldState
-
-from services.world_service import WorldService
-
-from repositories.world_repository import WorldRepository
-
 from models.operation_result import (
     OperationResult,
     OperationStatus,
 )
-
+from models.world_state import WorldState
+from operations.operation_reference import OperationReference
+from operations.referenced_operation import ReferencedOperation
 from operations.world_operations import (
     CreateEntityOperation,
-    CreateItemOperation,
     CreateItemInstanceOperation,
+    CreateItemOperation,
     CreateRelationOperation,
+    CreateResourceOperation,
     GainResourceOperation,
     SpendResourceOperation,
     TransferResourceOperation,
-    CreateResourceOperation,
+    UpdateEntityOperation,
 )
+from repositories.world_repository import WorldRepository
+from services.world_service import WorldService
 
-from operations.operation_reference import OperationReference
-from operations.referenced_operation import ReferencedOperation
-from operations.world_operations import UpdateEntityOperation
-
-from database import init_db
 
 class FakeRepository:
 
@@ -723,12 +718,8 @@ def test_apply_turn_operations_rolls_back_when_character_operation_returns_failu
         OperationResult,
         OperationStatus,
     )
-    from models.world_state import WorldState
     from operations.character_operations import (
         ChangeCharacterHpOperation,
-    )
-    from services.character_applier import (
-        CharacterApplier,
     )
     from services.world_service import (
         WorldService,
@@ -838,7 +829,6 @@ def test_apply_turn_operations_resolves_generated_character_reference(
         OperationResult,
         OperationStatus,
     )
-
     from operations.character_operations import (
         ChangeCharacterHpOperation,
     )
@@ -1006,9 +996,9 @@ def test_apply_operations_rejects_duplicate_operation_reference():
     assert service.world.entities == {}
 
 def test_apply_operations_accepts_no_change_as_success_without_marking_world_changed():
+    from models.entity import Entity
     from models.operation_result import OperationStatus
     from operations.world_operations import UpdateEntityOperation
-    from models.entity import Entity
 
     service = WorldService()
 
@@ -1037,8 +1027,8 @@ def test_apply_operations_accepts_no_change_as_success_without_marking_world_cha
     assert service.world.entities[1].name == "Aldric"
 
 def test_apply_operations_marks_world_changed_when_operation_changes_state():
-    from operations.world_operations import UpdateEntityOperation
     from models.entity import Entity
+    from operations.world_operations import UpdateEntityOperation
 
     service = WorldService()
 

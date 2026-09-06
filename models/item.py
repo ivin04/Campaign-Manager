@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -13,7 +12,7 @@ class Item:
     Esta clase NO representa una copia física concreta.
     """
 
-    id: Optional[int] = None
+    id: int | None = None
 
     name: str = ""
 
@@ -41,15 +40,15 @@ class ItemInstance:
             #2 -> Templo perdido
     """
 
-    id: Optional[int] = None
+    id: int | None = None
 
     item_id: int = 0
 
     instance_number: int = 1
 
-    owner_id: Optional[int] = None
+    owner_id: int | None = None
 
-    location_id: Optional[int] = None
+    location_id: int | None = None
 
     condition: str = ""
 

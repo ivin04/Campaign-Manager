@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 
 class ContextRanker:
@@ -29,7 +29,7 @@ class ContextRanker:
 
     DEFAULT_RELATION_RELEVANCE = 0.70
 
-    RELATION_RELEVANCE_WEIGHTS = {
+    RELATION_RELEVANCE_WEIGHTS: ClassVar[dict[str, float]] = {
         # Relaciones sociales / narrativas fuertes
         "friend": 1.00,
         "friendship": 1.00,

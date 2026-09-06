@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
-from models.world_state import WorldState
 from models.turn_record import TurnRecord
-from services.memory_search_service import MemorySearchService
-from services.context_ranker import ContextRanker
+from models.world_state import WorldState
 from services.context_expander import ContextExpander
+from services.context_ranker import ContextRanker
+from services.memory_search_service import MemorySearchService
 
 
 class ContextBuilder:
@@ -47,7 +47,7 @@ class ContextBuilder:
     # CONTEXT CANDIDATE SCORING
     # ============================================================
 
-    CATEGORY_BASE_SCORES = {
+    CATEGORY_BASE_SCORES: ClassVar[dict[str, float]] = {
         "entities": 1.00,
         "relations": 0.80,
         "events": 0.70,
@@ -58,7 +58,7 @@ class ContextBuilder:
         "recent_turns": 0.90,
     }
 
-    CATEGORY_PRIORITY = {
+    CATEGORY_PRIORITY: ClassVar[dict[str, int]] = {
         "entities": 0,
         "relations": 1,
         "events": 2,

@@ -2,23 +2,20 @@ import pytest
 
 from models.entity import Entity
 from models.item import Item, ItemInstance
+from models.operation_result import OperationStatus
 from models.world_state import WorldState
-
 from operations.operation_reference import OperationReference
 from operations.world_operations import (
+    _UNSET,
     CreateItemInstanceOperation,
     UpdateItemInstanceOperation,
-    _UNSET
 )
-
 from services.operation_parser import (
-    OperationParser,
     OperationParseError,
+    OperationParser,
 )
-
-from models.operation_result import OperationStatus
-
 from services.world_applier import WorldApplier
+
 
 def build_world():
     fungoso = Entity(

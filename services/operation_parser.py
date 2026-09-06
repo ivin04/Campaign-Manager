@@ -2,34 +2,30 @@ from __future__ import annotations
 
 import json
 from dataclasses import MISSING
-from typing import Any
+from typing import Any, ClassVar
 
+from operations.character_operations import (
+    ChangeCharacterHpOperation,
+)
+from operations.operation_reference import OperationReference
+from operations.referenced_operation import ReferencedOperation
+from operations.turn_operations import TurnOperation
 from operations.world_operations import (
     CreateEntityOperation,
-    UpdateEntityOperation,
     CreateEventOperation,
+    CreateItemInstanceOperation,
+    CreateItemOperation,
     CreateRelationOperation,
+    CreateResourceOperation,
     GainResourceOperation,
     RemoveRelationOperation,
     SpendResourceOperation,
     TransferItemOperation,
     TransferResourceOperation,
-    UpdateRelationOperation,
-    CreateItemOperation,
-    CreateItemInstanceOperation,
-    CreateResourceOperation,
+    UpdateEntityOperation,
     UpdateItemInstanceOperation,
+    UpdateRelationOperation,
 )
-
-from operations.character_operations import (
-    ChangeCharacterHpOperation,
-)
-
-from operations.turn_operations import TurnOperation
-
-from operations.operation_reference import OperationReference
-
-from operations.referenced_operation import ReferencedOperation
 
 
 class OperationParseError(ValueError):
@@ -49,7 +45,7 @@ class OperationParser:
     Semantic validation belongs to WorldApplier / WorldService.
     """
 
-    _BUILDERS = {
+    _BUILDERS: ClassVar = {
         "create_entity": CreateEntityOperation,
         "update_entity": UpdateEntityOperation,
 

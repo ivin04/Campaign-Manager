@@ -1,19 +1,16 @@
 import pytest
 
 from models.entity import Entity
-from models.world_state import WorldState
 from models.relation import Relation
-
-from services.operation_parser import (
-    OperationParser,
-    OperationParseError,
-)
-
+from models.world_state import WorldState
 from operations.world_operations import (
     CreateEntityOperation,
     UpdateEntityOperation,
 )
-
+from services.operation_parser import (
+    OperationParseError,
+    OperationParser,
+)
 from services.world_applier import WorldApplier
 from services.world_service import WorldService
 

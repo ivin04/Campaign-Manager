@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from models.turn_record import TurnRecord
-
 from database import (
     execute,
     execute_in_conn,
+    get_conn,
     one,
     one_in_conn,
     rows,
-    get_conn,
 )
+from models.turn_record import TurnRecord
 
 
 class TurnRepository:

@@ -5,6 +5,7 @@ from typing import Any
 
 from models.world_state import WorldState
 
+
 class MemorySearchService:
     """
     Busca información relevante dentro del WorldState.
@@ -610,7 +611,6 @@ class MemorySearchService:
             "in",
             "on",
             "for",
-            "me",
             "you",
             "it",
         }

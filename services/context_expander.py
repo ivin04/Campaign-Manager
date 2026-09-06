@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from models.world_state import WorldState
-from services.world_serializer import WorldSerializer
 from services.context_ranker import ContextRanker
+from services.world_serializer import WorldSerializer
 
 
 class ContextExpander:

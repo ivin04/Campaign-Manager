@@ -1,44 +1,34 @@
 import copy
-
 from dataclasses import fields, replace
 
 from database import get_conn
-
+from models.operation_result import OperationResult
+from models.world_application_result import (
+    WorldApplicationResult,
+)
+from models.world_state import WorldState
+from operations.character_operations import CharacterOperation
 from operations.operation_reference import OperationReference
 from operations.referenced_operation import ReferencedOperation
-
-from models.world_state import WorldState
-from models.operation_result import OperationResult
-
-from operations.character_operations import CharacterOperation
-
 from operations.world_operations import (
     WorldOperation,
 )
-
-from repositories.world_repository import (
-    WorldRepository,
-)
-
 from repositories.character_repository import (
     CharacterRepository,
 )
-
+from repositories.world_repository import (
+    WorldRepository,
+)
+from services.character_applier import (
+    CharacterApplier,
+)
+from services.character_service import (
+    CharacterService,
+)
 from services.world_applier import (
     WorldApplier,
 )
 
-from services.character_applier import (
-    CharacterApplier,
-)
-
-from services.character_service import (
-    CharacterService,
-)
-
-from models.world_application_result import (
-    WorldApplicationResult,
-)
 
 class _WorldTurnOperationFailure(Exception):
     def __init__(self, results):

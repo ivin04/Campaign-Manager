@@ -1,38 +1,33 @@
 import math
 
-from models.world_state import WorldState
-from models.relation import Relation
-from models.event import Event
-from models.resource import ResourceBalance
 from models.entity import Entity
+from models.event import Event
 from models.item import Item, ItemInstance
-from models.resource import Resource
-
 from models.operation_result import (
     OperationResult,
     OperationStatus,
 )
-
+from models.relation import Relation
+from models.resource import Resource, ResourceBalance
+from models.world_state import WorldState
 from operations.world_operations import (
-    WorldOperation,
-    CreateEntityOperation,
-    UpdateEntityOperation,
-    TransferItemOperation,
-    GainResourceOperation,
-    SpendResourceOperation,
-    TransferResourceOperation,
-    CreateRelationOperation,
-    UpdateRelationOperation,
-    RemoveRelationOperation,
-    CreateEventOperation,
-    CreateItemOperation,
-    CreateItemInstanceOperation,
-    CreateResourceOperation,
-    UpdateItemInstanceOperation,
     _UNSET,
+    CreateEntityOperation,
+    CreateEventOperation,
+    CreateItemInstanceOperation,
+    CreateItemOperation,
+    CreateRelationOperation,
+    CreateResourceOperation,
+    GainResourceOperation,
+    RemoveRelationOperation,
+    SpendResourceOperation,
+    TransferItemOperation,
+    TransferResourceOperation,
+    UpdateEntityOperation,
+    UpdateItemInstanceOperation,
+    UpdateRelationOperation,
+    WorldOperation,
 )
-
-from operations.operation_reference import OperationReference
 
 
 class WorldApplier:
@@ -205,25 +200,27 @@ class WorldApplier:
                 entity.name = name
                 changed = True
 
-        if operation.entity_type is not None:
-            if entity.entity_type != operation.entity_type:
-                entity.entity_type = operation.entity_type
-                changed = True
+        if (
+            operation.entity_type is not None
+            and entity.entity_type != operation.entity_type
+        ):
+            entity.entity_type = operation.entity_type
+            changed = True
 
-        if operation.description is not None:
-            if entity.description != operation.description:
-                entity.description = operation.description
-                changed = True
+        if (
+            operation.description is not None
+            and entity.description != operation.description
+        ):
+            entity.description = operation.description
+            changed = True
 
-        if operation.notes is not None:
-            if entity.notes != operation.notes:
-                entity.notes = operation.notes
-                changed = True
+        if operation.notes is not None and entity.notes != operation.notes:
+            entity.notes = operation.notes
+            changed = True
 
-        if operation.active is not None:
-            if entity.active != operation.active:
-                entity.active = operation.active
-                changed = True
+        if operation.active is not None and entity.active != operation.active:
+            entity.active = operation.active
+            changed = True
 
         if not changed:
             return OperationResult(
@@ -306,9 +303,11 @@ class WorldApplier:
                 operation=operation,
             )
 
-        if operation.owner_id is not None:
-            if operation.owner_id not in world.entities:
-                return OperationResult(
+        if (
+            operation.owner_id is not None
+            and operation.owner_id not in world.entities
+        ):
+            return OperationResult(
                     status=OperationStatus.NOT_FOUND,
                     message=(
                         f"Owner '{operation.owner_id}' "
@@ -317,9 +316,11 @@ class WorldApplier:
                     operation=operation,
                 )
 
-        if operation.location_id is not None:
-            if operation.location_id not in world.entities:
-                return OperationResult(
+        if (
+            operation.location_id is not None
+            and operation.location_id not in world.entities
+        ):
+            return OperationResult(
                     status=OperationStatus.NOT_FOUND,
                     message=(
                         f"Location '{operation.location_id}' "
@@ -453,11 +454,11 @@ class WorldApplier:
         # Validate owner before modifying anything.
         # None is valid here and means "remove owner".
         # ------------------------------------------------------------
-        if operation.owner_id is not _UNSET:
-            if (
-                operation.owner_id is not None
-                and operation.owner_id not in world.entities
-            ):
+        if (
+            operation.owner_id is not _UNSET
+            and operation.owner_id is not None
+            and operation.owner_id not in world.entities
+        ):
                 return OperationResult(
                     status=OperationStatus.NOT_FOUND,
                     message=(
@@ -472,11 +473,11 @@ class WorldApplier:
         # Validate location before modifying anything.
         # None is valid here and means "remove location".
         # ------------------------------------------------------------
-        if operation.location_id is not _UNSET:
-            if (
-                operation.location_id is not None
-                and operation.location_id not in world.entities
-            ):
+        if (
+            operation.location_id is not _UNSET
+            and operation.location_id is not None
+            and operation.location_id not in world.entities
+        ):
                 return OperationResult(
                     status=OperationStatus.NOT_FOUND,
                     message=(
@@ -1061,15 +1062,16 @@ class WorldApplier:
                 relation.target_id = target_id
                 changed = True
 
-        if operation.metadata is not None:
-            if relation.metadata != operation.metadata:
-                relation.metadata = operation.metadata
-                changed = True
+        if (
+            operation.metadata is not None
+            and relation.metadata != operation.metadata
+        ):
+            relation.metadata = operation.metadata
+            changed = True
 
-        if operation.active is not None:
-            if relation.active != operation.active:
-                relation.active = operation.active
-                changed = True
+        if operation.active is not None and relation.active != operation.active:
+            relation.active = operation.active
+            changed = True
 
         if not changed:
             return OperationResult(

@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 from models.turn_context import TurnContext
-from models.world_state import WorldState
 from services.context_builder import ContextBuilder
 from services.llm_provider import LLMProvider
 

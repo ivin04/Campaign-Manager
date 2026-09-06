@@ -2,18 +2,18 @@ import json
 
 import pytest
 
-from models.world_state import WorldState
-from models.turn_context import TurnContext
 from models.campaign_state import CampaignState
 from models.character_state import CharacterState
 from models.entity import Entity
-from models.operation_result import OperationResult
 from models.item import Item, ItemInstance
+from models.turn_context import TurnContext
+from models.world_state import WorldState
 from operations.world_operations import CreateEntityOperation, WorldOperation
 from services.llm_world_extractor import (
     LLMExtractionError,
     LLMWorldExtractor,
 )
+
 
 class FakeOperation(WorldOperation):
     pass

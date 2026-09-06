@@ -95,8 +95,8 @@ class WorldSnapshotRepository:
         try:
             data = json.loads(snapshot)
         except json.JSONDecodeError as exc:
-            raise ValueError(
-                "Invalid world snapshot JSON"
+            raise TypeError(
+                "World snapshot must contain an object"
             ) from exc
 
         if not isinstance(data, dict):
@@ -133,14 +133,14 @@ class WorldSnapshotRepository:
             table_rows = data[table]
 
             if not isinstance(table_rows, list):
-                raise ValueError(
+                raise TypeError(
                     f"Snapshot table '{table}' must contain a list"
                 )
 
             for row in table_rows:
 
                 if not isinstance(row, dict):
-                    raise ValueError(
+                    raise TypeError(
                         f"Snapshot row in '{table}' "
                         "must contain an object"
                     )

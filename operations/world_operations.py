@@ -19,7 +19,6 @@ class WorldOperation:
     necesarios para realizar cada cambio.
     """
 
-    pass
 
 
 # ============================================================

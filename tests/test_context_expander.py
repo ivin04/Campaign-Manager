@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import pytest
-
 from models.entity import Entity
 from models.event import Event
 from models.relation import Relation
 from models.world_state import WorldState
 from services.context_expander import ContextExpander
+
 
 def build_world() -> WorldState:
     fungoso = Entity(

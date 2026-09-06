@@ -3,8 +3,8 @@ from __future__ import annotations
 from database import (
     execute,
     one,
-    rows,
     one_in_conn,
+    rows,
 )
 from models.entity import Entity
 

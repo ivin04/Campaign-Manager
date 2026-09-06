@@ -8,7 +8,6 @@ class CharacterOperation:
 
     Las operaciones de personaje no modifican WorldState.
     """
-    pass
 
 
 @dataclass(frozen=True)

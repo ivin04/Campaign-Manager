@@ -7,10 +7,6 @@ from operations.character_operations import (
 )
 from operations.world_operations import WorldOperation
 
-from models.operation_result import (
-    OperationStatus,
-)
-
 
 @dataclass(frozen=True)
 class TurnResolutionResult:
@@ -57,7 +53,7 @@ class TurnResolutionResult:
     def from_persisted_turn(
         cls,
         turn,
-    ) -> "TurnResolutionResult":
+    ) -> TurnResolutionResult:
         """
         Reconstruye la representación de un turno ya persistido.
 

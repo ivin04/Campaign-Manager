@@ -1,22 +1,21 @@
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
 
 class CampaignUpdate(BaseModel):
-    name: Optional[str] = Field(
+    name: str | None = Field(
         default=None,
         max_length=200,
     )
-    system: Optional[str] = Field(
+    system: str | None = Field(
         default=None,
         max_length=100,
     )
-    tone: Optional[str] = Field(
+    tone: str | None = Field(
         default=None,
         max_length=100,
     )
-    summary: Optional[str] = Field(
+    summary: str | None = Field(
         default=None,
         max_length=5000,
     )

@@ -1,9 +1,7 @@
 from models.entity import Entity
 from models.event import Event
 from models.world_state import WorldState
-
 from operations.world_operations import CreateEventOperation
-
 from services.world_applier import WorldApplier
 
 

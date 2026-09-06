@@ -1,13 +1,16 @@
 from models.entity import Entity
 from models.item import Item, ItemInstance
 from models.world_state import WorldState
-
-from operations.world_operations import TransferItemOperation, CreateEntityOperation, CreateItemOperation, CreateItemInstanceOperation
+from operations.operation_reference import OperationReference
 from operations.referenced_operation import ReferencedOperation
-from operations.operation_reference import OperationReference  
-
-from services.world_service import WorldService
+from operations.world_operations import (
+    CreateEntityOperation,
+    CreateItemInstanceOperation,
+    CreateItemOperation,
+    TransferItemOperation,
+)
 from services.world_applier import WorldApplier
+from services.world_service import WorldService
 
 
 def build_world():

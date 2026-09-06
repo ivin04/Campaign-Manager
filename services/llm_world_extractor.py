@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from models.turn_context import TurnContext
 from operations.turn_operations import TurnOperation

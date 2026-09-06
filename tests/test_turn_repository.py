@@ -1,8 +1,9 @@
 import pytest
 
 from models.turn_record import TurnRecord
-from repositories.turn_repository import TurnRepository
 from repositories.campaign_repository import CampaignRepository
+from repositories.turn_repository import TurnRepository
+
 
 def test_save_turn_and_get_turn(
     isolated_database,
@@ -715,8 +716,8 @@ def test_save_turn_with_connection_does_not_commit_transaction(
     isolated_database,
 ):
     from database import get_conn
-    from repositories.turn_repository import TurnRepository
     from models.turn_record import TurnRecord
+    from repositories.turn_repository import TurnRepository
 
     repository = TurnRepository()
 
@@ -768,8 +769,8 @@ def test_save_turn_with_connection_does_not_commit_transaction(
 def test_save_turn_without_connection_persists_turn(
     isolated_database,
 ):
-    from repositories.turn_repository import TurnRepository
     from models.turn_record import TurnRecord
+    from repositories.turn_repository import TurnRepository
 
     repository = TurnRepository()
 

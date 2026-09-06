@@ -8,9 +8,7 @@ from models.entity import Entity
 from models.event import Event
 from models.item import Item
 from models.relation import Relation
-from models.resource import Resource
 from models.world_state import WorldState
-
 
 client = TestClient(app)
 

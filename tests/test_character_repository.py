@@ -1,6 +1,5 @@
 import database
 from database import get_conn, init_db
-
 from models.character_state import CharacterState
 from repositories.character_repository import CharacterRepository
 

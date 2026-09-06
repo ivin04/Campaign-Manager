@@ -1,17 +1,17 @@
 import pytest
 
-from services.operation_parser import OperationParser, OperationParseError
-
 from operations.operation_reference import OperationReference
+from operations.referenced_operation import ReferencedOperation
 from operations.world_operations import (
     CreateRelationOperation,
     GainResourceOperation,
     SpendResourceOperation,
     TransferResourceOperation,
-    UpdateRelationOperation,
     UpdateEntityOperation,
+    UpdateRelationOperation,
 )
-from operations.referenced_operation import ReferencedOperation
+from services.operation_parser import OperationParseError, OperationParser
+
 
 def test_operation_parser_normalizes_update_entity_id_from_string():
     parser = OperationParser()

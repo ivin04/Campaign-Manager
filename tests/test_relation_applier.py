@@ -3,13 +3,11 @@ import pytest
 from models.entity import Entity
 from models.relation import Relation
 from models.world_state import WorldState
-
 from operations.world_operations import (
     CreateRelationOperation,
     UpdateRelationOperation,
 )
-
-from services.operation_parser import OperationParser, OperationParseError
+from services.operation_parser import OperationParseError, OperationParser
 from services.world_applier import WorldApplier
 
 

@@ -62,7 +62,6 @@ import pytest
 
 from services.operation_parser import (
     OperationParseError,
-    OperationParser,
 )
 
 

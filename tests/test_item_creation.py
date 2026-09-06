@@ -1,12 +1,10 @@
 from models.entity import Entity
 from models.item import Item
 from models.world_state import WorldState
-
 from operations.world_operations import (
-    CreateItemOperation,
     CreateItemInstanceOperation,
+    CreateItemOperation,
 )
-
 from services.world_applier import WorldApplier
 
 

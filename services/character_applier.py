@@ -2,11 +2,9 @@ from models.operation_result import (
     OperationResult,
     OperationStatus,
 )
-
 from operations.character_operations import (
     ChangeCharacterHpOperation,
 )
-
 from services.character_service import (
     CharacterService,
     CharacterServiceError,

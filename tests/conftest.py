@@ -1,8 +1,8 @@
 import pytest
+from fastapi.testclient import TestClient
 
 from models.world_state import WorldState
 
-from fastapi.testclient import TestClient
 
 @pytest.fixture
 def empty_world():

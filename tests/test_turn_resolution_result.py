@@ -2,17 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from models.operation_result import OperationResult
+from models.operation_result import OperationResult, OperationStatus
 from models.turn_resolution_result import TurnResolutionResult
-from models.operation_result import OperationStatus
-
-from models.turn_resolution_result import (
-    TurnResolutionResult,
-)
 from operations.character_operations import (
     ChangeCharacterHpOperation,
 )
-
 from operations.world_operations import (
     WorldOperation,
 )

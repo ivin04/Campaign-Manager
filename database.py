@@ -1,8 +1,8 @@
 import sqlite3
-from pathlib import Path
 from contextlib import contextmanager
-from migrations import run_migrations
+from pathlib import Path
 
+from migrations import run_migrations
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
