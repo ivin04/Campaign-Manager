@@ -330,6 +330,76 @@ class SillyTavernIntegrationService:
                 )
 
         # --------------------------------------------------------
+        # FAST IDEMPOTENCY CHECK
+        # --------------------------------------------------------
+        #
+        # Si este turno ya está procesado, no tiene sentido
+        # ejecutar el LLMWorldExtractor otra vez.
+        #
+        # Esta comprobación NO sustituye la comprobación
+        # autoritativa dentro de BEGIN IMMEDIATE que aparece
+        # más abajo. Solo evita trabajo innecesario.
+        # --------------------------------------------------------
+
+        if normalized_external_turn_id is not None:
+            try:
+                with get_conn() as conn:
+                    existing_turn = (
+                        self.turn_repository
+                        .get_active_by_external_turn_id(
+                            normalized_external_turn_id,
+                            conn=conn,
+                        )
+                    )
+
+            except Exception as exc:
+                raise SillyTavernIntegrationServiceError(
+                    "failed to check external turn idempotency"
+                ) from exc
+
+            if existing_turn is not None:
+
+                if turn_version == existing_turn.version:
+                    same_input = (
+                        existing_turn.player_input
+                        == normalized_input
+                    )
+
+                    same_narrative = (
+                        existing_turn.narrative
+                        == normalized_narrative
+                    )
+
+                    if not (
+                        same_input
+                        and same_narrative
+                    ):
+                        raise (
+                            SillyTavernIntegrationServiceConflictError(
+                                "external_turn_id and version already "
+                                "exist with different turn content: "
+                                f"{normalized_external_turn_id}/"
+                                f"{turn_version}"
+                            )
+                        )
+
+                    return (
+                        TurnResolutionResult
+                        .from_persisted_turn(
+                            existing_turn
+                        )
+                    )
+
+                if turn_version < existing_turn.version:
+                    raise (
+                        SillyTavernIntegrationServiceConflictError(
+                            "turn version is older than the active version: "
+                            f"{turn_version} < "
+                            f"{existing_turn.version}"
+                        )
+                    )
+                
+        # --------------------------------------------------------
         # CONTEXTO
         # --------------------------------------------------------
 
