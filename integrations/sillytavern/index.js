@@ -815,74 +815,40 @@ function registerChatLifecycleDetection() {
 async function createStableTurnId(
     playerMessage,
 ) {
-    let chatId = '';
+    const chatId = getCurrentChatId();
 
-    try {
-        if (typeof getCurrentChatId === 'function') {
-            chatId = String(
-                getCurrentChatId() ?? '',
-            );
-        }
-    } catch (error) {
-        warn(
-            'Could not obtain current SillyTavern chat id.',
-            error,
+    if (!chatId) {
+        throw new Error(
+            'Could not determine the current SillyTavern chat id.',
         );
     }
 
-    /*
-     * SillyTavern messages have a stable `mesid`
-     * inside the current chat.
-     *
-     * The logical Campaign Manager turn must be
-     * identified by the user message, not by the
-     * generated narrative.
-     *
-     * This is important because a single user message
-     * can have multiple AI swipes/regenerations.
-     */
-    const messageId =
-        playerMessage &&
-        playerMessage.mesid !== undefined &&
-        playerMessage.mesid !== null
-            ? String(playerMessage.mesid)
-            : '';
+    const playerMessageIndex =
+        chat.findIndex(
+            (message) =>
+                message === playerMessage,
+        );
 
-    /*
-     * Fallback for older/custom SillyTavern message
-     * objects that do not expose mesid.
-     *
-     * Do NOT include the narrative here.
-     */
-    const fallbackIndex =
-        playerMessage &&
-        playerMessage.__campaignManagerIndex !== undefined
-            ? String(
-                playerMessage.__campaignManagerIndex,
-            )
-            : '';
+    if (playerMessageIndex < 0) {
+        throw new Error(
+            'Could not determine the SillyTavern user message index.',
+        );
+    }
 
     const identityPart =
-        messageId ||
-        fallbackIndex;
+        String(playerMessageIndex);
 
-    if (!identityPart) {
-        throw new Error(
-            'Could not determine a stable SillyTavern user message identity.',
-        );
-    }
-
-    const rawValue = [
+    const input = [
         'campaign-manager-turn-v2',
         chatId,
         identityPart,
-    ].join('\n');
+    ].join('|');
 
     const encoder =
         new TextEncoder();
 
     const data =
-        encoder.encode(rawValue);
+        encoder.encode(input);
 
     const hashBuffer =
         await crypto.subtle.digest(
@@ -892,15 +858,13 @@ async function createStableTurnId(
 
     const hashArray =
         Array.from(
-            new Uint8Array(
-                hashBuffer,
-            ),
+            new Uint8Array(hashBuffer),
         );
 
     const hashHex =
         hashArray
             .map(
-                byte =>
+                (byte) =>
                     byte
                         .toString(16)
                         .padStart(2, '0'),
@@ -1162,6 +1126,28 @@ async function onMessageReceived() {
     let externalTurnId;
 
     try {
+        console.log(
+            '[Campaign Manager] Player message object:',
+            playerMessage,
+        );
+
+        console.log(
+            '[Campaign Manager] Player message keys:',
+            Object.keys(playerMessage ?? {}),
+        );
+
+        const playerMessageIndex =
+            chat.findIndex(
+                (message) =>
+                    message === playerMessage,
+            );
+
+        if (playerMessageIndex < 0) {
+            throw new Error(
+                'Could not find the received user message in the current SillyTavern chat.',
+            );
+        }
+
         externalTurnId =
             await createStableTurnId(
                 playerMessage,
