@@ -2666,3 +2666,185 @@ def test_failed_regeneration_rolls_back_snapshot_restore(
         turn["version"] == 2
         for turn in turns_after
     )
+
+def test_turn_persists_after_world_service_restart(
+    client,
+    monkeypatch,
+):
+    from database import get_conn
+    from operations.world_operations import (
+        CreateEntityOperation,
+    )
+    from services.world_service import WorldService
+
+    service = __import__("app").silly_tavern_integration_service
+
+    external_turn_id = "restart-persistence-test"
+
+    created_entity_operation = CreateEntityOperation(
+        name="NPC persistente",
+        entity_type="npc",
+        description="Debe sobrevivir al reinicio.",
+    )
+
+    monkeypatch.setattr(
+        service.extractor,
+        "extract",
+        lambda narrative, context: (
+            [created_entity_operation]
+            if narrative == "Narrativa persistente."
+            else []
+        ),
+    )
+
+    # =========================================================
+    # 1. CREAR ESTADO
+    # =========================================================
+
+    response = client.post(
+        "/integration/turn",
+        json={
+            "player_input": "Creo un NPC.",
+            "narrative": "Narrativa persistente.",
+            "external_turn_id": external_turn_id,
+            "turn_version": 1,
+        },
+    )
+
+    assert response.status_code == 200, (
+        f"Turno inicial devolvió "
+        f"{response.status_code}: "
+        f"{response.text}"
+    )
+
+    data = response.json()
+
+    assert data["turn_version"] == 1
+    assert data["world_changed"] is True
+    assert data["operation_count"] == 1
+    assert data["successful_operation_count"] == 1
+    assert data["failed_operation_count"] == 0
+    assert data["all_operations_succeeded"] is True
+
+    # =========================================================
+    # 2. COMPROBAR QUE ESTÁ PERSISTIDO EN SQLITE
+    # =========================================================
+
+    with get_conn() as conn:
+        entity_before = conn.execute(
+            """
+            SELECT
+                id,
+                name,
+                entity_type,
+                description,
+                notes,
+                active
+            FROM entities
+            WHERE name = ?
+            """,
+            ("NPC persistente",),
+        ).fetchone()
+
+        turn_before = conn.execute(
+            """
+            SELECT
+                id,
+                external_turn_id,
+                version,
+                status,
+                snapshot
+            FROM turns
+            WHERE external_turn_id = ?
+            """,
+            (external_turn_id,),
+        ).fetchone()
+
+    assert entity_before is not None
+    assert entity_before["name"] == "NPC persistente"
+    assert entity_before["entity_type"] == "npc"
+    assert entity_before["description"] == (
+        "Debe sobrevivir al reinicio."
+    )
+
+    assert turn_before is not None
+    assert turn_before["version"] == 1
+    assert turn_before["status"] == "active"
+
+    # =========================================================
+    # 3. SIMULAR REINICIO DE LA APLICACIÓN
+    # =========================================================
+
+    restarted_world_service = WorldService()
+    restarted_world_service.load()
+
+    # Sustituimos el singleton utilizado por la aplicación
+    # por una instancia completamente nueva.
+    monkeypatch.setattr(
+        __import__("app"),
+        "world_service",
+        restarted_world_service,
+    )
+
+    # =========================================================
+    # 4. COMPROBAR QUE EL WORLD STATE SE RECARGA DESDE SQLITE
+    # =========================================================
+
+    assert (
+        restarted_world_service.world.entities
+        is not None
+    )
+
+    assert any(
+        entity.name == "NPC persistente"
+        for entity in restarted_world_service.world.entities.values()
+    )
+
+    persisted_entity = next(
+        entity
+        for entity
+        in restarted_world_service.world.entities.values()
+        if entity.name == "NPC persistente"
+    )
+
+    assert persisted_entity.entity_type == "npc"
+    assert persisted_entity.description == (
+        "Debe sobrevivir al reinicio."
+    )
+
+    # =========================================================
+    # 5. COMPROBAR DE NUEVO DIRECTAMENTE EN SQLITE
+    # =========================================================
+
+    with get_conn() as conn:
+        entity_after = conn.execute(
+            """
+            SELECT
+                id,
+                name,
+                entity_type,
+                description,
+                notes,
+                active
+            FROM entities
+            WHERE name = ?
+            """,
+            ("NPC persistente",),
+        ).fetchone()
+
+        turn_after = conn.execute(
+            """
+            SELECT
+                id,
+                external_turn_id,
+                version,
+                status,
+                snapshot
+            FROM turns
+            WHERE external_turn_id = ?
+            """,
+            (external_turn_id,),
+        ).fetchone()
+
+    assert dict(entity_after) == dict(entity_before)
+    assert dict(turn_after) == dict(turn_before)
