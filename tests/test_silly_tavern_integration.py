@@ -2390,3 +2390,279 @@ def test_e2e_turn_rolls_back_world_and_turn_when_operation_fails(
 
     assert entity_row is None
     assert turn_row is None
+
+def test_failed_regeneration_rolls_back_snapshot_restore(
+    client,
+    monkeypatch,
+):
+    from database import get_conn
+
+    service = __import__(
+        "app"
+    ).silly_tavern_integration_service
+
+    external_turn_id = (
+        "failed-regeneration-test"
+    )
+
+    # =========================================================
+    # V1 - CREAR ESTADO INICIAL
+    # =========================================================
+
+    from operations.world_operations import (
+        CreateEntityOperation,
+    )
+
+    created_entity_operation = (
+        CreateEntityOperation(
+            name="Entidad V1",
+            entity_type="npc",
+            description="Estado original.",
+        )
+    )
+
+    monkeypatch.setattr(
+        service.extractor,
+        "extract",
+        lambda narrative, context: (
+            [created_entity_operation]
+            if narrative == "Narrativa V1."
+            else []
+        ),
+    )
+
+    response_v1 = client.post(
+        "/integration/turn",
+        json={
+            "player_input": "Creo una entidad.",
+            "narrative": "Narrativa V1.",
+            "external_turn_id": external_turn_id,
+            "turn_version": 1,
+        },
+    )
+
+    assert response_v1.status_code == 200, (
+        f"V1 devolvió "
+        f"{response_v1.status_code}: "
+        f"{response_v1.text}"
+    )
+
+    data_v1 = response_v1.json()
+
+    assert data_v1["turn_version"] == 1
+    assert data_v1["external_turn_id"] == (
+        external_turn_id
+    )
+    assert data_v1["operation_count"] == 1
+    assert data_v1["successful_operation_count"] == 1
+    assert data_v1["failed_operation_count"] == 0
+    assert data_v1["all_operations_succeeded"] is True
+    assert data_v1["world_changed"] is True
+
+    # =========================================================
+    # CAPTURAR ESTADO ANTES DE LA REGENERACIÓN
+    # =========================================================
+
+    with get_conn() as conn:
+        entities_before = conn.execute(
+            """
+            SELECT
+                id,
+                name,
+                entity_type,
+                description,
+                notes,
+                active
+            FROM entities
+            ORDER BY id
+            """
+        ).fetchall()
+
+        turns_before = conn.execute(
+            """
+            SELECT
+                id,
+                external_turn_id,
+                version,
+                status,
+                operation_count,
+                successful_operation_count,
+                failed_operation_count,
+                all_operations_succeeded,
+                world_changed,
+                snapshot
+            FROM turns
+            WHERE external_turn_id = ?
+            ORDER BY version
+            """,
+            (external_turn_id,),
+        ).fetchall()
+
+    assert len(turns_before) == 1
+    assert turns_before[0]["version"] == 1
+    assert turns_before[0]["status"] == "active"
+
+    assert any(
+        entity["name"] == "Entidad V1"
+        for entity in entities_before
+    )
+
+    # =========================================================
+    # FORZAR FALLO DESPUÉS DEL RESTORE
+    # =========================================================
+    #
+    # El flujo real del servicio hace:
+    #
+    #   restore_snapshot()
+    #   load()
+    #   supersede_turn()
+    #   apply_turn_operations()
+    #
+    # Por tanto, si hacemos fallar apply_turn_operations(),
+    # el fallo ocurre DESPUÉS de haber restaurado el snapshot.
+    #
+    # La transacción SQLite debe hacer rollback de:
+    #
+    #   - restore_snapshot()
+    #   - supersede_turn()
+    #   - cualquier cambio posterior
+    #
+    # y V1 debe seguir exactamente igual.
+    # =========================================================
+
+    def fail_after_snapshot_restore(
+        world_operations,
+        character_operations,
+        *,
+        conn=None,
+        ordered_operations=None,
+    ):
+        raise RuntimeError(
+            "forced regeneration failure"
+        )
+
+    monkeypatch.setattr(
+        service.world_service,
+        "apply_turn_operations",
+        fail_after_snapshot_restore,
+    )
+
+    # =========================================================
+    # V2 - REGENERACIÓN FALLIDA
+    # =========================================================
+
+    response_v2 = client.post(
+        "/integration/turn",
+        json={
+            "player_input": "Genero una alternativa.",
+            "narrative": "Narrativa V2.",
+            "external_turn_id": external_turn_id,
+            "turn_version": 2,
+        },
+    )
+
+    assert response_v2.status_code == 400
+
+    # =========================================================
+    # COMPROBAR ROLLBACK COMPLETO
+    # =========================================================
+
+    with get_conn() as conn:
+        entities_after = conn.execute(
+            """
+            SELECT
+                id,
+                name,
+                entity_type,
+                description,
+                notes,
+                active
+            FROM entities
+            ORDER BY id
+            """
+        ).fetchall()
+
+        turns_after = conn.execute(
+            """
+            SELECT
+                id,
+                external_turn_id,
+                version,
+                status,
+                operation_count,
+                successful_operation_count,
+                failed_operation_count,
+                all_operations_succeeded,
+                world_changed,
+                snapshot
+            FROM turns
+            WHERE external_turn_id = ?
+            ORDER BY version
+            """,
+            (external_turn_id,),
+        ).fetchall()
+
+    # ---------------------------------------------------------
+    # EL WORLD STATE DEBE SER EXACTAMENTE EL MISMO
+    # ---------------------------------------------------------
+
+    assert [
+        dict(row)
+        for row in entities_after
+    ] == [
+        dict(row)
+        for row in entities_before
+    ]
+
+    # ---------------------------------------------------------
+    # V2 NO DEBE HABER QUEDADO PERSISTIDA
+    # ---------------------------------------------------------
+
+    assert len(turns_after) == 1
+
+    # ---------------------------------------------------------
+    # V1 SIGUE SIENDO EL TURNO ACTIVO
+    # ---------------------------------------------------------
+
+    assert turns_after[0]["id"] == (
+        turns_before[0]["id"]
+    )
+
+    assert turns_after[0]["external_turn_id"] == (
+        external_turn_id
+    )
+
+    assert turns_after[0]["version"] == 1
+
+    assert turns_after[0]["status"] == "active"
+
+    assert turns_after[0]["operation_count"] == 1
+
+    assert turns_after[0][
+        "successful_operation_count"
+    ] == 1
+
+    assert turns_after[0][
+        "failed_operation_count"
+    ] == 0
+
+    assert turns_after[0][
+        "all_operations_succeeded"
+    ] == 1
+
+    assert turns_after[0]["world_changed"] == 1
+
+    # El snapshot original tampoco debe haber cambiado.
+    assert turns_after[0]["snapshot"] == (
+        turns_before[0]["snapshot"]
+    )
+
+    # =========================================================
+    # IMPORTANTE:
+    # No existe ninguna versión 2 persistida.
+    # =========================================================
+
+    assert not any(
+        turn["version"] == 2
+        for turn in turns_after
+    )
