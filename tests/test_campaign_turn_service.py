@@ -2138,3 +2138,125 @@ def test_play_turn_uses_provided_turn_execution_lock():
         service.turn_execution_lock
         is turn_execution_lock
     )
+
+
+def test_failed_turn_rolls_back_created_entity_but_persists_turn(
+    isolated_database,
+):
+    from database import one
+    from models.entity import Entity
+    from models.operation_result import (
+        OperationResult,
+        OperationStatus,
+    )
+    from models.turn_resolution_result import (
+        TurnResolutionResult,
+    )
+    from operations.world_operations import (
+        CreateEntityOperation,
+    )
+    from repositories.entity_repository import (
+        EntityRepository,
+    )
+
+    operation = CreateEntityOperation(
+        name="Entidad temporal",
+        entity_type="npc",
+        description="No debería persistir.",
+        notes="",
+        active=True,
+    )
+
+    result = TurnResolutionResult(
+        player_input="Exploro.",
+        narrative="Algo sale mal.",
+        operations=(operation,),
+        operation_results=(
+            OperationResult(
+                status=OperationStatus.INVALID,
+                message="Forced failure.",
+                operation=operation,
+            ),
+        ),
+    )
+
+    class MutatingFailingResolutionService(
+        RecordingTurnResolutionService
+    ):
+        def resolve_turn(
+            self,
+            turn_context,
+            player_input,
+            *,
+            recent_turns=None,
+            conn=None,
+        ):
+            entity = Entity(
+                name="Entidad temporal",
+                entity_type="npc",
+                description="No debería persistir.",
+                notes="",
+                active=True,
+            )
+
+            EntityRepository().save_entity(
+                entity,
+                conn=conn,
+            )
+
+            return super().resolve_turn(
+                turn_context,
+                player_input,
+                recent_turns=recent_turns,
+                conn=conn,
+            )
+
+    resolver = MutatingFailingResolutionService(
+        result
+    )
+
+    world_service = RecordingWorldService()
+
+    turn_repository = TurnRepository()
+
+    service = CampaignTurnService(
+        turn_resolution_service=resolver,
+        world_service=world_service,
+        turn_repository=turn_repository,
+        turn_execution_lock=TurnExecutionLock(),
+    )
+
+    returned = service.play_turn(
+        "Exploro."
+    )
+
+    assert returned.all_operations_succeeded is False
+
+    entity = one(
+        """
+        SELECT id
+        FROM entities
+        WHERE name=?
+        """,
+        ("Entidad temporal",),
+    )
+
+    assert entity is None
+
+    turns = turn_repository.list_turns()
+
+    assert len(turns) == 1
+
+    assert turns[0].player_input == "Exploro."
+
+    assert turns[0].narrative == "Algo sale mal."
+
+    assert turns[0].operation_count == 1
+
+    assert turns[0].successful_operation_count == 0
+
+    assert turns[0].failed_operation_count == 1
+
+    assert turns[0].all_operations_succeeded is False
+
+    assert turns[0].world_changed is False

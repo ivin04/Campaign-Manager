@@ -138,3 +138,103 @@ def test_create_character_activates_character(
     )
 
     assert active_character_id == character.entity_id
+
+def test_create_character_rolls_back_all_changes_on_activation_failure(
+    character_creation_service,
+    monkeypatch,
+):
+    data = CharacterCreate(
+        name="Boromir",
+        class_name="Fighter",
+        level=1,
+        max_hp=14,
+        current_hp=14,
+        armor_class=16,
+        strength=16,
+        dexterity=12,
+        constitution=14,
+        intelligence=10,
+        wisdom=10,
+        charisma=12,
+        proficiency_bonus=2,
+    )
+
+    created_entity_id = None
+
+    original_save_character = (
+        character_creation_service.character_repository
+        .save_character
+    )
+
+    def capture_character_and_continue(
+        character,
+        *,
+        conn=None,
+    ):
+        nonlocal created_entity_id
+
+        created_entity_id = character.entity_id
+
+        return original_save_character(
+            character,
+            conn=conn,
+        )
+
+    monkeypatch.setattr(
+        character_creation_service.character_repository,
+        "save_character",
+        capture_character_and_continue,
+    )
+
+    def failing_update_active_character(
+        campaign_id,
+        character_id,
+        *,
+        conn=None,
+    ):
+        raise RuntimeError(
+            "forced activation failure"
+        )
+
+    monkeypatch.setattr(
+        character_creation_service.campaign_repository,
+        "update_active_character",
+        failing_update_active_character,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="forced activation failure",
+    ):
+        character_creation_service.create_character(
+            campaign_id=1,
+            data=data,
+            activate=True,
+        )
+
+    assert created_entity_id is not None
+
+    entity_repository = EntityRepository()
+    character_repository = CharacterRepository()
+    campaign_repository = CampaignRepository()
+
+    assert (
+        entity_repository.get_entity(
+            created_entity_id
+        )
+        is None
+    )
+
+    assert (
+        character_repository.get_character(
+            created_entity_id
+        )
+        is None
+    )
+
+    assert (
+        campaign_repository.get_active_character_id(
+            campaign_id=1
+        )
+        is None
+    )

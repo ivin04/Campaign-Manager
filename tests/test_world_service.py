@@ -1382,3 +1382,158 @@ def test_operation_reference_uses_generated_id_from_result_data():
     assert references == {
         "npc": 42,
     }
+
+def test_apply_turn_operations_rolls_back_character_database_changes_on_failure(
+    isolated_database,
+    monkeypatch,
+):
+    from models.schemas import CharacterCreate
+    from operations.character_operations import (
+        ChangeCharacterHpOperation,
+    )
+    from repositories.campaign_repository import (
+        CampaignRepository,
+    )
+    from repositories.character_repository import (
+        CharacterRepository,
+    )
+    from repositories.entity_repository import (
+        EntityRepository,
+    )
+    from services.character_creation_service import (
+        CharacterCreationService,
+    )
+
+    # --------------------------------------------------------
+    # Crear un personaje real en SQLite
+    # --------------------------------------------------------
+
+    character_creation_service = CharacterCreationService(
+        campaign_repository=CampaignRepository(),
+        entity_repository=EntityRepository(),
+        character_repository=CharacterRepository(),
+    )
+
+    character = character_creation_service.create_character(
+        campaign_id=1,
+        data=CharacterCreate(
+            name="Rollback Test Character",
+            class_name="Fighter",
+            level=1,
+            max_hp=20,
+            current_hp=20,
+            armor_class=16,
+            strength=16,
+            dexterity=12,
+            constitution=14,
+            intelligence=10,
+            wisdom=10,
+            charisma=10,
+            proficiency_bonus=2,
+        ),
+        activate=False,
+    )
+
+    character_id = character.entity_id
+
+    character_repository = CharacterRepository()
+
+    original_character = (
+        character_repository.get_character(
+            character_id
+        )
+    )
+
+    assert original_character is not None
+    assert original_character.current_hp == 20
+
+    # --------------------------------------------------------
+    # El save REAL se ejecuta primero.
+    #
+    # Después provocamos el fallo.
+    #
+    # Esto garantiza que SQLite ya ha recibido el UPDATE
+    # cuando la operación termina en failure.
+    # --------------------------------------------------------
+
+    original_save_character = (
+        CharacterRepository.save_character
+    )
+
+    def save_character_then_fail(
+        repository_self,
+        character,
+        *,
+        conn=None,
+    ):
+        original_save_character(
+            repository_self,
+            character,
+            conn=conn,
+        )
+
+        raise RuntimeError(
+            "forced failure after database write"
+        )
+
+    monkeypatch.setattr(
+        CharacterRepository,
+        "save_character",
+        save_character_then_fail,
+    )
+
+    # --------------------------------------------------------
+    # WorldService utiliza el CharacterApplier real,
+    # CharacterService real y CharacterRepository real.
+    # --------------------------------------------------------
+
+    service = WorldService()
+
+    operation = ChangeCharacterHpOperation(
+        entity_id=character_id,
+        amount=-5,
+    )
+
+    # --------------------------------------------------------
+    # La operación debe terminar como failure.
+    # CharacterService convierte el error de persistencia
+    # en CharacterServiceError y CharacterApplier lo convierte
+    # en OperationResult fallido.
+    # --------------------------------------------------------
+
+    results = service.apply_turn_operations(
+        world_operations=[],
+        character_operations=[
+            operation,
+        ],
+    )
+
+    assert len(results) == 1
+    assert results[0].success is False
+
+    # --------------------------------------------------------
+    # PRUEBA REAL DEL BUG:
+    #
+    # Antes:
+    #
+    #   20 -> 15
+    #   failure
+    #   owned connection hace COMMIT
+    #   => 15 ❌
+    #
+    # Después del fix:
+    #
+    #   20 -> 15
+    #   failure
+    #   rollback
+    #   => 20 ✅
+    # --------------------------------------------------------
+
+    restored_character = (
+        character_repository.get_character(
+            character_id
+        )
+    )
+
+    assert restored_character is not None
+    assert restored_character.current_hp == 20

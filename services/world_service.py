@@ -280,7 +280,7 @@ class WorldService:
         operaciones posteriores.
 
         Si una operación falla, se restaura el WorldState original y
-        la transacción de SQLite se revierte mediante el context manager.
+        la transacción de SQLite se revierte explícitamente.
         """
 
         if world_operations is None:
@@ -373,7 +373,7 @@ class WorldService:
                 raise _WorldTurnOperationFailure(
                     results
                 )
-            
+
             self._register_operation_reference(
                 ref,
                 result,
@@ -427,7 +427,9 @@ class WorldService:
                         operation,
                         ReferencedOperation,
                     ):
-                        operation_to_apply = operation.operation
+                        operation_to_apply = (
+                            operation.operation
+                        )
 
                     if isinstance(
                         operation_to_apply,
@@ -473,31 +475,41 @@ class WorldService:
                     conn=connection,
                 )
 
+        # Esta es la conexión que realmente está utilizando
+        # la operación. Puede ser la proporcionada por el caller
+        # o una creada internamente por este método.
+        connection = conn
+
         try:
 
             if conn is None:
 
                 with get_conn() as owned_conn:
 
+                    connection = owned_conn
+
                     apply_with_connection(
-                        owned_conn
+                        connection
                     )
 
             else:
 
                 apply_with_connection(
-                    conn
+                    connection
                 )
 
         except _WorldTurnOperationFailure as exc:
             self.world = original_world
 
-            # Character operations can already have modified SQLite
-            # through the caller-owned connection. Since the operation
-            # failure is converted into a normal result instead of being
-            # propagated, the transaction must be rolled back explicitly.
-            if conn is not None:
-                conn.rollback()
+            # Una operación puede haber modificado SQLite antes
+            # de devolver un OperationResult fallido.
+            #
+            # Esto es especialmente importante cuando conn=None:
+            # la conexión pertenece a este método y, si no hacemos
+            # rollback explícitamente, el context manager podría
+            # hacer commit al salir normalmente.
+            if connection is not None:
+                connection.rollback()
 
             return tuple(
                 exc.results
