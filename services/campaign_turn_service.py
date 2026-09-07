@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import threading
 
 from database import get_conn
 from models.campaign_state import CampaignState
@@ -14,6 +13,7 @@ from services.campaign_state_service import (
     CampaignStateService,
     CampaignStateServiceError,
 )
+from services.turn_execution_lock import TurnExecutionLock
 from services.turn_resolution_service import (
     TurnResolutionService,
     TurnResolutionServiceError,
@@ -63,6 +63,7 @@ class CampaignTurnService:
         world_service: WorldService,
         campaign_state_service: CampaignStateService | None = None,
         turn_repository: TurnRepository | None = None,
+        turn_execution_lock: TurnExecutionLock,
     ) -> None:
 
         if not isinstance(
@@ -111,7 +112,15 @@ class CampaignTurnService:
 
         self.turn_repository = turn_repository
 
-        self._turn_lock = threading.RLock()
+        if not isinstance(
+            turn_execution_lock,
+            TurnExecutionLock,
+        ):
+            raise TypeError(
+                "turn_execution_lock must be a TurnExecutionLock"
+            )
+
+        self.turn_execution_lock = turn_execution_lock
 
     @staticmethod
     def _restore_world_state(
@@ -146,7 +155,7 @@ class CampaignTurnService:
         self,
         player_input: str,
     ) -> TurnResolutionResult:
-        with self._turn_lock:
+        with self.turn_execution_lock.acquire():
             return self._play_turn_locked(
                 player_input
             )

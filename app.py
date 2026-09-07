@@ -33,6 +33,7 @@ from services.silly_tavern_integration_service import (
     SillyTavernIntegrationServiceConflictError,
     SillyTavernIntegrationServiceError,
 )
+from services.turn_execution_lock import TurnExecutionLock
 from services.turn_resolution_service import (
     TurnResolutionService,
 )
@@ -226,11 +227,16 @@ context_builder = create_context_builder(
     memory_search_service=memory_search_service,
 )
 
+turn_execution_lock = TurnExecutionLock()
+
+world_service = create_world_service()
+
 campaign_turn_service = create_campaign_turn_service(
     world_service=world_service,
     context_builder=context_builder,
     campaign_state_service=campaign_state_service,
     turn_repository=turn_repository,
+    turn_execution_lock=turn_execution_lock,
 )
 
 silly_tavern_integration_service = (
@@ -244,6 +250,7 @@ silly_tavern_integration_service = (
         ),
         world_service=world_service,
         turn_repository=turn_repository,
+        turn_execution_lock=turn_execution_lock,
     )
 )
 

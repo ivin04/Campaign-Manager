@@ -17,6 +17,7 @@ from services.llm_world_extractor import (
     LLMExtractionError,
     LLMWorldExtractor,
 )
+from services.turn_execution_lock import TurnExecutionLock
 from services.world_service import WorldService
 
 
@@ -90,6 +91,7 @@ class SillyTavernIntegrationService:
         extractor: LLMWorldExtractor,
         world_service: WorldService,
         turn_repository: TurnRepository,
+        turn_execution_lock: TurnExecutionLock,
     ) -> None:
 
         if not isinstance(
@@ -132,6 +134,16 @@ class SillyTavernIntegrationService:
             raise TypeError(
                 "turn_repository must be a TurnRepository"
             )
+
+        if not isinstance(
+            turn_execution_lock,
+            TurnExecutionLock,
+        ):
+            raise TypeError(
+                "turn_execution_lock must be a TurnExecutionLock"
+            )
+
+        self.turn_execution_lock = turn_execution_lock
 
         self.campaign_state_service = (
             campaign_state_service
@@ -252,6 +264,22 @@ class SillyTavernIntegrationService:
     # ============================================================
 
     def process_turn(
+        self,
+        player_input: str,
+        narrative: str,
+        external_turn_id: str | None = None,
+        turn_version: int = 1,
+    ) -> TurnResolutionResult:
+        with self.turn_execution_lock.acquire():
+            return self._process_turn_locked(
+                player_input=player_input,
+                narrative=narrative,
+                external_turn_id=external_turn_id,
+                turn_version=turn_version,
+            )
+
+
+    def _process_turn_locked(
         self,
         player_input: str,
         narrative: str,
