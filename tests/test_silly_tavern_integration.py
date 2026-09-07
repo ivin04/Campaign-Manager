@@ -4,12 +4,15 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from models.character_state import CharacterState
+from models.entity import Entity
 from models.schemas import (
     SillyTavernContextIn,
     SillyTavernTurnIn,
 )
 from repositories.campaign_repository import CampaignRepository
 from repositories.character_repository import CharacterRepository
+from repositories.entity_repository import EntityRepository
 from services.turn_execution_lock import TurnExecutionLock
 
 # ============================================================
@@ -2987,66 +2990,138 @@ def test_silly_tavern_context_turn_context_e2e(
 def test_integration_turn_rolls_back_character_mutation_when_later_operation_fails(
     client,
 ):
+    from operations.character_operations import (
+        ChangeCharacterHpOperation,
+    )
+
     campaign_repository = CampaignRepository()
     character_repository = CharacterRepository()
-    # Arrange
-    campaign = campaign_repository.get_campaign()
+    entity_repository = EntityRepository()
 
-    active_character_id = campaign_repository.get_active_character_id(
-        campaign["id"]
+    # ========================================================
+    # Arrange
+    # ========================================================
+
+    campaign = campaign_repository.get_campaign()
+    assert campaign is not None
+
+    entity = entity_repository.save_entity(
+        Entity(
+            name="Test Character",
+            entity_type="character",
+            description=(
+                "Character used for integration rollback testing."
+            ),
+        )
     )
-    assert active_character_id is not None
+
+    character = character_repository.save_character(
+        CharacterState(
+            entity_id=entity.id,
+            level=1,
+            class_name="Fighter",
+            current_hp=20,
+            max_hp=20,
+            armor_class=16,
+        )
+    )
+
+    campaign_repository.update_active_character(
+        campaign["id"],
+        character.entity_id,
+    )
+
+    active_character_id = (
+        campaign_repository.get_active_character_id(
+            campaign["id"]
+        )
+    )
+
+    assert active_character_id == character.entity_id
 
     character = character_repository.get_character(
         active_character_id
     )
+
     assert character is not None
 
-    original_hp = character["hp"]
+    original_hp = character.current_hp
 
     payload = {
-        "external_turn_id": "rollback-character-integration-001",
-        "version": 1,
-        "player_message": "I attack the goblin.",
+        "external_turn_id": (
+            "rollback-character-integration-001"
+        ),
+        "turn_version": 1,
+        "player_input": "I attack the goblin.",
+        "narrative": (
+            "The attack goes terribly wrong."
+        ),
     }
 
-    # La extracción devuelve primero una mutación válida del personaje
-    # y después una operación que debe fallar.
+    # ========================================================
+    # Sustituir SOLO la extracción LLM
+    # ========================================================
+
     def fake_extract(*args, **kwargs):
-        return {
-            "operations": [
-                {
-                    "type": "change_hp",
-                    "character_id": character.id,
-                    "amount": -5,
-                },
-                {
-                    "type": "change_hp",
-                    "character_id": 999999,
-                    "amount": -10,
-                },
-            ],
-            "narrative": "The attack goes terribly wrong.",
-        }
+        return [
+            ChangeCharacterHpOperation(
+                entity_id=character.entity_id,
+                amount=-5,
+            ),
+            ChangeCharacterHpOperation(
+                entity_id=999999,
+                amount=-10,
+            ),
+        ]
 
-    integration_service = client.app.state.integration_service
-    integration_service.extractor.extract = fake_extract
+    from app import silly_tavern_integration_service
 
-    # Act
-    response = client.post(
-        "/integration/turn",
-        json=payload,
+    original_extract = (
+        silly_tavern_integration_service.extractor.extract
     )
 
+    silly_tavern_integration_service.extractor.extract = (
+        fake_extract
+    )
+
+    try:
+        # ====================================================
+        # Act
+        # ====================================================
+
+        response = client.post(
+            "/integration/turn",
+            json=payload,
+        )
+
+    finally:
+        # Restaurar el extractor para no contaminar otros tests.
+        silly_tavern_integration_service.extractor.extract = (
+            original_extract
+        )
+
+    # ========================================================
     # Assert
-    assert response.status_code == 200
+    # ========================================================
+
+    assert response.status_code == 200, (
+        f"Integration turn devolvió "
+        f"{response.status_code}: "
+        f"{response.text}"
+    )
 
     body = response.json()
 
     assert body["all_operations_succeeded"] is False
 
-    # Lo importante: la operación válida anterior NO debe quedar
-    # persistida aunque se haya ejecutado antes de la operación fallida.
-    character_after = character_repository.get_by_id(character.id)
+    # La primera operación (-5 HP) se ejecutó antes de
+    # encontrar el error de la segunda operación.
+    #
+    # Al fallar el turno completo, NINGUNA de las mutaciones
+    # debe quedar persistida en SQLite.
+    character_after = character_repository.get_character(
+        character.entity_id
+    )
 
-    assert character_after.hp == original_hp
+    assert character_after is not None
+    assert character_after.current_hp == original_hp
