@@ -426,3 +426,20 @@ def test_application_services_share_same_turn_execution_lock():
         silly_tavern_integration_service.turn_execution_lock
         is turn_execution_lock
     )
+
+def test_application_services_share_same_turn_execution_lock():
+    from app import (
+        campaign_turn_service,
+        silly_tavern_integration_service,
+        turn_execution_lock,
+    )
+
+    assert (
+        campaign_turn_service.turn_execution_lock
+        is turn_execution_lock
+    )
+
+    assert (
+        silly_tavern_integration_service.turn_execution_lock
+        is turn_execution_lock
+    )

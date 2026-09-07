@@ -199,6 +199,7 @@ def create_campaign_turn_service(
         world_service=world_service,
         campaign_state_service=campaign_state_service,
         turn_repository=turn_repository,
+        turn_execution_lock=turn_execution_lock,
     )
 
 

@@ -1055,6 +1055,7 @@ def test_play_turn_passes_same_connection_to_turn_repository():
         ),
         world_service=RecordingWorldService(),
         turn_repository=repository,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     service.play_turn(
@@ -1086,6 +1087,7 @@ def test_play_turn_persists_turn_record_when_turn_repository_is_configured():
         turn_resolution_service=turn_resolution_service,
         world_service=world_service,
         turn_repository=turn_repository,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     returned = service.play_turn(
@@ -1152,6 +1154,7 @@ def test_play_turn_persists_turn_with_same_session_id():
         world_service=world_service,
         campaign_state_service=campaign_state_service,
         turn_repository=turn_repository,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     returned = service.play_turn(
@@ -1193,6 +1196,7 @@ def test_play_turn_loads_recent_turns_before_resolution():
         turn_resolution_service=turn_resolution_service,
         world_service=world_service,
         turn_repository=repository,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     service.play_turn(
@@ -1247,6 +1251,7 @@ def test_play_turn_persists_current_turn_after_loading_recent_history():
         turn_resolution_service=resolver,
         world_service=world_service,
         turn_repository=repository,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     service.play_turn(
@@ -1287,6 +1292,7 @@ def test_play_turn_serializes_concurrent_turns():
     service = CampaignTurnService(
         turn_resolution_service=resolution_service,
         world_service=world_service,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     first_entered = threading.Event()
@@ -1403,6 +1409,7 @@ def test_play_turn_serializes_concurrent_turns_and_persists_in_order():
     service = CampaignTurnService(
         turn_resolution_service=resolution_service,
         world_service=world_service,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     first_started = threading.Event()
@@ -1554,6 +1561,7 @@ def test_play_turn_restores_world_when_turn_persistence_fails(
         turn_resolution_service=resolution_service,
         world_service=world_service,
         turn_repository=repository,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     try:
@@ -1613,6 +1621,7 @@ def test_invalid_resolution_result_restores_world():
     service = CampaignTurnService(
         turn_resolution_service=resolver,
         world_service=world_service,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     with pytest.raises(
@@ -1696,6 +1705,7 @@ def test_failed_turn_rolls_back_database_changes_before_saving_turn(
         turn_resolution_service=resolver,
         world_service=world_service,
         turn_repository=turn_repository,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     returned = service.play_turn(
@@ -1795,6 +1805,7 @@ def test_turn_save_failure_rolls_back_resolution_database_changes(
         turn_resolution_service=resolver,
         world_service=world_service,
         turn_repository=TurnRepository(),
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     with pytest.raises(
@@ -1878,6 +1889,7 @@ def test_play_turn_serializes_concurrent_calls():
     service = CampaignTurnService(
         turn_resolution_service=resolution_service,
         world_service=world_service,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     errors = []
@@ -1967,6 +1979,7 @@ def test_play_turn_releases_lock_after_resolution_failure():
     service = CampaignTurnService(
         turn_resolution_service=resolution_service,
         world_service=world_service,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     with pytest.raises(
