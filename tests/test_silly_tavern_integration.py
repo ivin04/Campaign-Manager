@@ -2848,3 +2848,124 @@ def test_turn_persists_after_world_service_restart(
 
     assert dict(entity_after) == dict(entity_before)
     assert dict(turn_after) == dict(turn_before)
+
+def test_silly_tavern_context_turn_context_e2e(
+    client,
+    monkeypatch,
+):
+    import app
+    from operations.world_operations import (
+        CreateEntityOperation,
+    )
+
+    service = app.silly_tavern_integration_service
+
+    created_entity_operation = CreateEntityOperation(
+        name="NPC del contexto",
+        entity_type="npc",
+        description="NPC creado durante el turno.",
+    )
+
+    monkeypatch.setattr(
+        service.extractor,
+        "extract",
+        lambda narrative, context: (
+            [created_entity_operation]
+            if narrative == "Narrativa que crea un NPC."
+            else []
+        ),
+    )
+
+    # ========================================================
+    # 1. CONTEXTO INICIAL
+    # ========================================================
+
+    response_before = client.post(
+        "/integration/context",
+        json={
+            "query": "¿Qué hay a mi alrededor?",
+        },
+    )
+
+    assert response_before.status_code == 200, (
+        f"Contexto inicial devolvió "
+        f"{response_before.status_code}: "
+        f"{response_before.text}"
+    )
+
+    context_before = response_before.json()
+
+    assert context_before["query"] == (
+        "¿Qué hay a mi alrededor?"
+    )
+
+    assert "campaign" in context_before
+    assert "session" in context_before
+    assert "active_character" in context_before
+    assert "context" in context_before
+
+    # El NPC todavía no existe.
+    assert "NPC del contexto" not in str(
+        context_before["context"]
+    )
+
+    # ========================================================
+    # 2. PROCESAR TURNO REAL
+    # ========================================================
+
+    response_turn = client.post(
+        "/integration/turn",
+        json={
+            "player_input": "Busco a alguien en la taberna.",
+            "narrative": "Narrativa que crea un NPC.",
+            "external_turn_id": "context-turn-context-e2e",
+            "turn_version": 1,
+        },
+    )
+
+    assert response_turn.status_code == 200, (
+        f"Turno devolvió "
+        f"{response_turn.status_code}: "
+        f"{response_turn.text}"
+    )
+
+    turn_data = response_turn.json()
+
+    assert turn_data["turn_version"] == 1
+    assert turn_data["operation_count"] == 1
+    assert turn_data["successful_operation_count"] == 1
+    assert turn_data["failed_operation_count"] == 0
+    assert turn_data["all_operations_succeeded"] is True
+    assert turn_data["world_changed"] is True
+
+    assert (
+        "CreateEntityOperation"
+        in turn_data["operations"]
+    )
+
+    # ========================================================
+    # 3. CONTEXTO DESPUÉS DEL TURNO
+    # ========================================================
+
+    response_after = client.post(
+        "/integration/context",
+        json={
+            "query": "¿Qué NPC hay en la taberna?",
+        },
+    )
+
+    assert response_after.status_code == 200, (
+        f"Contexto posterior devolvió "
+        f"{response_after.status_code}: "
+        f"{response_after.text}"
+    )
+
+    context_after = response_after.json()
+
+    assert context_after["query"] == (
+        "¿Qué NPC hay en la taberna?"
+    )
+
+    assert "NPC del contexto" in str(
+        context_after["context"]
+    )
