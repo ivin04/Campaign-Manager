@@ -478,48 +478,37 @@ class WorldService:
         # Esta es la conexión que realmente está utilizando
         # la operación. Puede ser la proporcionada por el caller
         # o una creada internamente por este método.
-        connection = conn
-
-        try:
-
-            if conn is None:
-
+        if conn is None:
+            try:
                 with get_conn() as owned_conn:
+                    try:
+                        apply_with_connection(
+                            owned_conn
+                        )
+                    except _WorldTurnOperationFailure as exc:
+                        self.world = original_world
+                        owned_conn.rollback()
+                        return tuple(exc.results)
 
-                    connection = owned_conn
+            except Exception:
+                self.world = original_world
+                raise
 
-                    apply_with_connection(
-                        connection
-                    )
+        else:
+            try:
+                apply_with_connection(conn)
 
-            else:
+            except _WorldTurnOperationFailure as exc:
+                self.world = original_world
 
-                apply_with_connection(
-                    connection
-                )
+                # NO rollback.
+                # La transacción pertenece al caller.
 
-        except _WorldTurnOperationFailure as exc:
-            self.world = original_world
+                return tuple(exc.results)
 
-            # Una operación puede haber modificado SQLite antes
-            # de devolver un OperationResult fallido.
-            #
-            # Esto es especialmente importante cuando conn=None:
-            # la conexión pertenece a este método y, si no hacemos
-            # rollback explícitamente, el context manager podría
-            # hacer commit al salir normalmente.
-            if connection is not None:
-                connection.rollback()
-
-            return tuple(
-                exc.results
-            )
-
-        except Exception:
-
-            self.world = original_world
-
-            raise
+            except Exception:
+                self.world = original_world
+                raise
 
         # El TurnContext puede estar utilizando exactamente la misma
         # instancia de WorldState que tenía WorldService antes de
