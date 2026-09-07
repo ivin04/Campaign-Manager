@@ -381,6 +381,12 @@ The backend itself uses:
 * SQLite
 * Pydantic
 
+Development and testing tools include:
+
+* pytest
+* Ruff
+* httpx
+
 ---
 
 ## Installation
@@ -404,10 +410,16 @@ Activate it on Windows:
 .venv\Scripts\activate
 ```
 
-Install the Python dependencies:
+Install the runtime dependencies:
 
 ```bash
 pip install -r requirements.txt
+```
+
+Install the development/test tools:
+
+```bash
+pip install pytest httpx ruff
 ```
 
 The database will be initialized automatically when the application starts.
@@ -504,10 +516,30 @@ This separation allows the narrative layer and the world-state layer to evolve i
 
 The project uses `pytest`.
 
-Run the complete test suite with:
+### Standard test suite
+
+The default CI test command excludes tests that require a running local LLM:
 
 ```bash
-pytest
+python -m pytest -m "not real_llm"
+```
+
+This is the deterministic suite used for continuous integration.
+
+### Real LLM tests
+
+Tests marked `real_llm` require Ollama to be running with a compatible model:
+
+```bash
+python -m pytest -m real_llm
+```
+
+### Full local suite
+
+When Ollama is configured and available, the complete suite can be run with:
+
+```bash
+python -m pytest
 ```
 
 The test suite covers the main application layers, including:
@@ -519,11 +551,30 @@ The test suite covers the main application layers, including:
 * persistence;
 * turn processing;
 * SillyTavern integration;
+* restart/persistence behaviour;
 * turn versioning;
 * regeneration / snapshot reconciliation;
-* idempotency and conflict handling.
+* failed regeneration rollback;
+* idempotency and conflict handling;
+* context before and after a persisted turn.
 
-The goal is not only to test individual functions, but also to verify that persistent campaign state remains consistent across different turn versions.
+The goal is not only to test individual functions, but also to verify that persistent campaign state remains consistent across different turn versions and application restarts.
+
+---
+
+## Continuous Integration
+
+GitHub Actions runs the automated checks on pushes and pull requests targeting `main`.
+
+The CI pipeline currently performs:
+
+```text
+pytest (excluding real_llm tests)
+        +
+Ruff linting
+```
+
+The real LLM tests are intentionally excluded from CI because they require a locally running Ollama service and model.
 
 ---
 
@@ -621,13 +672,10 @@ Campaign-Manager/
 │
 ├── models/
 │   └── Domain and API models
-│
 ├── operations/
 │   └── Structured world operations
-│
 ├── repositories/
 │   └── SQLite persistence layer
-│
 ├── services/
 │   ├── Campaign services
 │   ├── Context and memory services
@@ -635,25 +683,23 @@ Campaign-Manager/
 │   ├── Turn resolution
 │   ├── SillyTavern integration
 │   └── World management
-│
 ├── integrations/
 │   └── External integration code
-│
 ├── migrations/
 │   └── Database evolution
-│
 ├── tests/
 │   └── Automated test suite
-│
 └── data/
     └── campaign.db
 ```
 
 ---
 
-## Current Status
+## Current Status — Checkpoint
 
-The current version provides the core backend required for a persistent local campaign manager:
+The current checkpoint has the core state-management and integration flow covered by automated tests.
+
+Validated areas include:
 
 * persistent campaign state;
 * structured world operations;
@@ -663,10 +709,16 @@ The current version provides the core backend required for a persistent local ca
 * REST API;
 * SillyTavern integration;
 * turn versioning;
+* idempotency and conflict detection;
 * snapshot-based regeneration reconciliation;
-* automated testing.
+* rollback after failed regeneration;
+* persistence across a simulated application restart;
+* end-to-end `context → turn → context` behaviour;
+* automated CI testing and Ruff linting.
 
 The project is currently focused on **reliable state management and integration correctness** rather than building a complete virtual tabletop or combat engine.
+
+This checkpoint is intended as a stable baseline for the next development pass. If subsequent changes introduce regressions, the state-management, persistence and integration layers can be re-audited from this baseline.
 
 ---
 
