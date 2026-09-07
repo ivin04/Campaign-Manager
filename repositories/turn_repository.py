@@ -530,6 +530,104 @@ class TurnRepository:
             for row in reversed(result)
         ]
 
+    def list_recent_active_turns(
+        self,
+        *,
+        session_id: int | None = None,
+        limit: int = 10,
+    ) -> list[TurnRecord]:
+        """
+        Devuelve únicamente los turnos activos más recientes.
+
+        Los turnos superseded se excluyen porque representan
+        versiones anteriores de una regeneración y no deben
+        formar parte del contexto narrativo actual.
+        """
+
+        self._validate_optional_positive_int(
+            session_id,
+            "session_id",
+        )
+
+        if not isinstance(
+            limit,
+            int,
+        ):
+            raise TypeError(
+                "limit must be an integer"
+            )
+
+        if limit < 1:
+            raise ValueError(
+                "limit must be greater than zero"
+            )
+
+        if limit > 100:
+            raise ValueError(
+                "limit must not be greater than 100"
+            )
+
+        if session_id is None:
+            result = rows(
+                """
+                SELECT
+                    id,
+                    session_id,
+                    player_input,
+                    narrative,
+                    operation_count,
+                    successful_operation_count,
+                    failed_operation_count,
+                    all_operations_succeeded,
+                    world_changed,
+                    created_at,
+                    external_turn_id,
+                    version,
+                    status,
+                    snapshot
+                FROM turns
+                WHERE status = 'active'
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+
+        else:
+            result = rows(
+                """
+                SELECT
+                    id,
+                    session_id,
+                    player_input,
+                    narrative,
+                    operation_count,
+                    successful_operation_count,
+                    failed_operation_count,
+                    all_operations_succeeded,
+                    world_changed,
+                    created_at,
+                    external_turn_id,
+                    version,
+                    status,
+                    snapshot
+                FROM turns
+                WHERE session_id = ?
+                AND status = 'active'
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (
+                    session_id,
+                    limit,
+                ),
+            )
+
+        return [
+            self._row_to_model(row)
+            for row in reversed(result)
+        ]
+
     @staticmethod
     def _row_to_model(row: dict) -> TurnRecord:
         return TurnRecord(

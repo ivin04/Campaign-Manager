@@ -204,7 +204,7 @@ class SillyTavernIntegrationService:
 
         try:
             recent_turns = (
-                self.turn_repository.list_recent_turns(
+                self.turn_repository.list_recent_active_turns(
                     session_id=session_id,
                     limit=10,
                 )
@@ -212,7 +212,7 @@ class SillyTavernIntegrationService:
 
         except Exception as exc:
             raise SillyTavernIntegrationServiceError(
-                "failed to load recent turn history"
+                "failed to load recent active turn history"
             ) from exc
 
         try:

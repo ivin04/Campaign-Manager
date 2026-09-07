@@ -1001,3 +1001,104 @@ def test_list_turns_preserves_version_status_and_snapshot(
     assert turns[0].version == 2
     assert turns[0].status == "superseded"
     assert turns[0].snapshot == '{"state": "old"}'
+
+def test_list_recent_active_turns_excludes_superseded_turns(
+    isolated_database,
+):
+    repository = TurnRepository()
+
+    active_turn = repository.save_turn(
+        TurnRecord(
+            player_input="Acción activa",
+            narrative="Narrativa activa",
+            version=2,
+            status="active",
+        )
+    )
+
+    superseded_turn = repository.save_turn(
+        TurnRecord(
+            player_input="Acción antigua",
+            narrative="Narrativa antigua",
+            version=1,
+            status="superseded",
+        )
+    )
+
+    turns = repository.list_recent_active_turns(
+        limit=10,
+    )
+
+    assert len(turns) == 1
+
+    assert turns[0].id == active_turn.id
+    assert turns[0].player_input == "Acción activa"
+    assert turns[0].status == "active"
+
+    assert all(
+        turn.id != superseded_turn.id
+        for turn in turns
+    )
+
+def test_list_recent_active_turns_filters_by_session(
+    isolated_database,
+):
+    repository = TurnRepository()
+    campaign_repository = CampaignRepository()
+
+    session_one = campaign_repository.create_session(
+        number=1,
+        title="Session One",
+        summary="",
+        start_location="",
+        end_location="",
+        notes="",
+    )
+
+    session_two = campaign_repository.create_session(
+        number=2,
+        title="Session Two",
+        summary="",
+        start_location="",
+        end_location="",
+        notes="",
+    )
+
+    repository.save_turn(
+        TurnRecord(
+            session_id=session_one["id"],
+            player_input="Activo uno",
+            narrative="Narrativa uno",
+            status="active",
+        )
+    )
+
+    repository.save_turn(
+        TurnRecord(
+            session_id=session_one["id"],
+            player_input="Superado uno",
+            narrative="Narrativa superada",
+            status="superseded",
+        )
+    )
+
+    repository.save_turn(
+        TurnRecord(
+            session_id=session_two["id"],
+            player_input="Activo dos",
+            narrative="Narrativa dos",
+            status="active",
+        )
+    )
+
+    turns = repository.list_recent_active_turns(
+        session_id=session_one["id"],
+        limit=10,
+    )
+
+    assert [
+        turn.player_input
+        for turn in turns
+    ] == [
+        "Activo uno",
+    ]

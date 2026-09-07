@@ -2,6 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+VALID_STATUSES = frozenset(
+    {
+        "active",
+        "superseded",
+    }
+)
+
 
 @dataclass(frozen=True)
 class TurnRecord:
@@ -46,6 +53,33 @@ class TurnRecord:
             self.session_id,
             "session_id",
         )
+
+        if (
+            not isinstance(self.version, int)
+            or isinstance(self.version, bool)
+        ):
+            raise TypeError(
+                "version must be an integer"
+            )
+
+        if not isinstance(
+            self.status,
+            str,
+        ):
+            raise TypeError(
+                "status must be a string"
+            )
+
+        if self.status not in VALID_STATUSES:
+            raise ValueError(
+                "status must be one of: "
+                "active, superseded"
+            )
+
+        if self.version < 1:
+            raise ValueError(
+                "version must be greater than zero"
+            )
 
         if not isinstance(
             self.player_input,

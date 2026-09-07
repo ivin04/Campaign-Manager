@@ -102,3 +102,75 @@ def test_turn_record_rejects_invalid_created_at_type():
         TurnRecord(
             created_at=123,
         )
+
+def test_turn_record_accepts_valid_version():
+    record = TurnRecord(
+        version=2,
+    )
+
+    assert record.version == 2
+
+
+def test_turn_record_rejects_invalid_version_type():
+    with pytest.raises(TypeError):
+        TurnRecord(
+            version="1",
+        )
+
+
+def test_turn_record_rejects_boolean_version():
+    with pytest.raises(TypeError):
+        TurnRecord(
+            version=True,
+        )
+
+
+def test_turn_record_rejects_zero_version():
+    with pytest.raises(ValueError):
+        TurnRecord(
+            version=0,
+        )
+
+
+def test_turn_record_rejects_negative_version():
+    with pytest.raises(ValueError):
+        TurnRecord(
+            version=-1,
+        )
+
+
+def test_turn_record_accepts_active_status():
+    record = TurnRecord(
+        status="active",
+    )
+
+    assert record.status == "active"
+
+
+def test_turn_record_accepts_superseded_status():
+    record = TurnRecord(
+        status="superseded",
+    )
+
+    assert record.status == "superseded"
+
+
+def test_turn_record_rejects_invalid_status_type():
+    with pytest.raises(TypeError):
+        TurnRecord(
+            status=1,
+        )
+
+
+def test_turn_record_rejects_unknown_status():
+    with pytest.raises(ValueError):
+        TurnRecord(
+            status="invalid",
+        )
+
+
+def test_turn_record_rejects_empty_status():
+    with pytest.raises(ValueError):
+        TurnRecord(
+            status="",
+        )
