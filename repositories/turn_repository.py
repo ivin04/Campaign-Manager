@@ -167,7 +167,10 @@ class TurnRepository:
                     all_operations_succeeded,
                     world_changed,
                     created_at,
-                    external_turn_id
+                    external_turn_id,
+                    version,
+                    status,
+                    snapshot
                 FROM turns
                 WHERE id=?
                 """,
@@ -195,7 +198,10 @@ class TurnRepository:
                     all_operations_succeeded,
                     world_changed,
                     created_at,
-                    external_turn_id
+                    external_turn_id,
+                    version,
+                    status,
+                    snapshot
                 FROM turns
                 WHERE id=?
                 """,
@@ -232,7 +238,10 @@ class TurnRepository:
                 all_operations_succeeded,
                 world_changed,
                 created_at,
-                external_turn_id
+                external_turn_id,
+                version,
+                status,
+                snapshot
             FROM turns
             WHERE id=?
             """,
@@ -269,7 +278,10 @@ class TurnRepository:
                 all_operations_succeeded,
                 world_changed,
                 created_at,
-                external_turn_id
+                external_turn_id,
+                version,
+                status,
+                snapshot
             FROM turns
             WHERE external_turn_id=?
         """
@@ -337,7 +349,10 @@ class TurnRepository:
                         all_operations_succeeded,
                         world_changed,
                         created_at,
-                        external_turn_id
+                        external_turn_id,
+                        version,
+                        status,
+                        snapshot
                     FROM turns
                     ORDER BY id ASC
                     """
@@ -356,7 +371,10 @@ class TurnRepository:
                         all_operations_succeeded,
                         world_changed,
                         created_at,
-                        external_turn_id
+                        external_turn_id,
+                        version,
+                        status,
+                        snapshot
                     FROM turns
                     ORDER BY id ASC
                     LIMIT ?
@@ -379,7 +397,10 @@ class TurnRepository:
                         all_operations_succeeded,
                         world_changed,
                         created_at,
-                        external_turn_id
+                        external_turn_id,
+                        version,
+                        status,
+                        snapshot
                     FROM turns
                     WHERE session_id=?
                     ORDER BY id ASC
@@ -400,7 +421,10 @@ class TurnRepository:
                         all_operations_succeeded,
                         world_changed,
                         created_at,
-                        external_turn_id
+                        external_turn_id,
+                        version,
+                        status,
+                        snapshot
                     FROM turns
                     WHERE session_id=?
                     ORDER BY id ASC
@@ -461,7 +485,10 @@ class TurnRepository:
                     all_operations_succeeded,
                     world_changed,
                     created_at,
-                    external_turn_id
+                    external_turn_id,
+                    version,
+                    status,
+                    snapshot
                 FROM turns
                 ORDER BY id DESC
                 LIMIT ?
@@ -483,7 +510,10 @@ class TurnRepository:
                     all_operations_succeeded,
                     world_changed,
                     created_at,
-                    external_turn_id
+                    external_turn_id,
+                    version,
+                    status,
+                    snapshot
                 FROM turns
                 WHERE session_id = ?
                 ORDER BY id DESC
@@ -501,49 +531,15 @@ class TurnRepository:
         ]
 
     @staticmethod
-    def _row_to_model(
-        row: dict,
-    ) -> TurnRecord:
-
+    def _row_to_model(row: dict) -> TurnRecord:
         return TurnRecord(
             id=row["id"],
             session_id=row["session_id"],
             player_input=row["player_input"],
             narrative=row["narrative"],
             operation_count=row["operation_count"],
-            successful_operation_count=(
-                row["successful_operation_count"]
-            ),
-            failed_operation_count=(
-                row["failed_operation_count"]
-            ),
-            all_operations_succeeded=bool(
-                row["all_operations_succeeded"]
-            ),
-            world_changed=bool(
-                row["world_changed"]
-            ),
-            created_at=row["created_at"],
-            external_turn_id=row["external_turn_id"],
-        )
-
-    @staticmethod
-    def _row_to_turn_record(
-        row: dict,
-    ) -> TurnRecord:
-
-        return TurnRecord(
-            id=row["id"],
-            session_id=row["session_id"],
-            player_input=row["player_input"],
-            narrative=row["narrative"],
-            operation_count=row["operation_count"],
-            successful_operation_count=(
-                row["successful_operation_count"]
-            ),
-            failed_operation_count=(
-                row["failed_operation_count"]
-            ),
+            successful_operation_count=row["successful_operation_count"],
+            failed_operation_count=row["failed_operation_count"],
             all_operations_succeeded=bool(
                 row["all_operations_succeeded"]
             ),
@@ -600,7 +596,7 @@ class TurnRepository:
         if row is None:
             return None
 
-        return self._row_to_turn_record(row)
+        return self._row_to_model(row)
 
     def get_versions_by_external_turn_id(
         self,
@@ -641,7 +637,7 @@ class TurnRepository:
         ).fetchall()
 
         return [
-            self._row_to_turn_record(row)
+            self._row_to_model(row)
             for row in rows
         ]
 

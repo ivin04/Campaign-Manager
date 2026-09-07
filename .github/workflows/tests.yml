@@ -30,7 +30,7 @@ jobs:
 
       - name: Run tests
         run: |
-          python -m pytest
+          python -m pytest "not real_llm"
           
   lint:
     runs-on: ubuntu-latest

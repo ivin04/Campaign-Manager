@@ -940,3 +940,64 @@ def test_get_versions_by_external_turn_id_preserves_snapshot(
 
     assert versions[0].snapshot == snapshot_v1
     assert versions[1].snapshot == snapshot_v2
+
+def test_turn_repository_preserves_version_status_and_snapshot(
+    isolated_database,
+):
+    repository = TurnRepository()
+
+    original = TurnRecord(
+        session_id=None,
+        player_input="Regenero el turno.",
+        narrative="Una nueva escena.",
+        operation_count=1,
+        successful_operation_count=1,
+        failed_operation_count=0,
+        all_operations_succeeded=True,
+        world_changed=True,
+        external_turn_id="turn-123",
+        version=2,
+        status="active",
+        snapshot='{"npc": "Aldric"}',
+    )
+
+    saved = repository.save_turn(original)
+
+    assert saved.version == 2
+    assert saved.status == "active"
+    assert saved.snapshot == '{"npc": "Aldric"}'
+
+    loaded = repository.get_turn(saved.id)
+
+    assert loaded is not None
+    assert loaded.version == 2
+    assert loaded.status == "active"
+    assert loaded.snapshot == '{"npc": "Aldric"}'
+
+def test_list_turns_preserves_version_status_and_snapshot(
+    isolated_database,
+):
+    repository = TurnRepository()
+
+    repository.save_turn(
+        TurnRecord(
+            player_input="Turno v2",
+            narrative="Narrativa v2",
+            operation_count=1,
+            successful_operation_count=1,
+            failed_operation_count=0,
+            all_operations_succeeded=True,
+            world_changed=True,
+            external_turn_id="turn-456",
+            version=2,
+            status="superseded",
+            snapshot='{"state": "old"}',
+        )
+    )
+
+    turns = repository.list_turns()
+
+    assert len(turns) == 1
+    assert turns[0].version == 2
+    assert turns[0].status == "superseded"
+    assert turns[0].snapshot == '{"state": "old"}'
