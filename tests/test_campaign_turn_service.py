@@ -23,6 +23,7 @@ from services.campaign_turn_service import (
 )
 from services.dm_service import DMService
 from services.llm_world_extractor import LLMWorldExtractor
+from services.turn_execution_lock import TurnExecutionLock
 from services.turn_resolution_service import (
     TurnResolutionService,
     TurnResolutionServiceError,
@@ -233,12 +234,16 @@ def make_service(
     result=None,
     world_service=None,
     campaign_state_service=None,
+    turn_execution_lock=None,
 ):
     if result is None:
         result = make_result()
 
     if world_service is None:
         world_service = RecordingWorldService()
+
+    if turn_execution_lock is None:
+        turn_execution_lock = TurnExecutionLock()
 
     turn_resolution_service = (
         RecordingTurnResolutionService(
@@ -254,6 +259,7 @@ def make_service(
         campaign_state_service=(
             campaign_state_service
         ),
+        turn_execution_lock=turn_execution_lock,
     )
 
     return (
@@ -980,6 +986,7 @@ def test_play_turn_loads_recent_turns_before_resolving():
         turn_resolution_service=resolver,
         world_service=world_service,
         turn_repository=turn_repository,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     result = service.play_turn(
@@ -2103,3 +2110,18 @@ def test_mixed_turn_operations_are_atomic_when_character_operation_fails(
     )
 
     assert temporal is None
+
+def test_play_turn_uses_provided_turn_execution_lock():
+    result = make_result()
+
+    turn_execution_lock = TurnExecutionLock()
+
+    service, _, _, _ = make_service(
+        result=result,
+        turn_execution_lock=turn_execution_lock,
+    )
+
+    assert (
+        service.turn_execution_lock
+        is turn_execution_lock
+    )

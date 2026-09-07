@@ -402,6 +402,9 @@ def _build_service():
     from services.silly_tavern_integration_service import (
         SillyTavernIntegrationService,
     )
+    from services.turn_execution_lock import (
+        TurnExecutionLock,
+    )
     from services.world_service import (
         WorldService,
     )
@@ -434,6 +437,8 @@ def _build_service():
 
     _turn_repository = TurnRepository()
 
+    turn_execution_lock = TurnExecutionLock()
+
     service = (
         SillyTavernIntegrationService(
             campaign_state_service=(
@@ -443,6 +448,7 @@ def _build_service():
             extractor=extractor,
             world_service=world_service,
             turn_repository=_turn_repository,
+            turn_execution_lock=turn_execution_lock,
         )
     )
 

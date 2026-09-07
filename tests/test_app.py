@@ -7,6 +7,7 @@ from repositories.entity_repository import EntityRepository
 from services.campaign_state_service import CampaignStateService
 from services.context_builder import ContextBuilder
 from services.memory_search_service import MemorySearchService
+from services.turn_execution_lock import TurnExecutionLock
 from services.world_service import WorldService
 
 
@@ -30,10 +31,13 @@ def test_create_campaign_turn_service_uses_provided_context_builder():
         entity_repository=EntityRepository(),
     )
 
+    turn_execution_lock = TurnExecutionLock()
+
     service = create_campaign_turn_service(
         world_service=world_service,
         context_builder=context_builder,
         campaign_state_service=campaign_state_service,
+        turn_execution_lock=turn_execution_lock,
     )
 
     assert service.turn_resolution_service is not None
@@ -66,6 +70,7 @@ def test_create_campaign_turn_service_rejects_invalid_context_builder():
             world_service=world_service,
             context_builder="invalid",
             campaign_state_service=campaign_state_service,
+            turn_execution_lock=TurnExecutionLock(),
         )
 
 def test_get_turns_accepts_limit(client):
@@ -404,3 +409,20 @@ def test_play_turn_accepts_player_input_at_maximum_length(
 
     assert response.status_code == 200
     assert calls == ["A" * 10000]
+
+def test_application_services_share_same_turn_execution_lock():
+    from app import (
+        campaign_turn_service,
+        silly_tavern_integration_service,
+        turn_execution_lock,
+    )
+
+    assert (
+        campaign_turn_service.turn_execution_lock
+        is turn_execution_lock
+    )
+
+    assert (
+        silly_tavern_integration_service.turn_execution_lock
+        is turn_execution_lock
+    )

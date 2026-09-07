@@ -6,6 +6,9 @@ from models.world_state import WorldState
 from services.llm_world_extractor import LLMWorldExtractor
 from services.ollama_provider import OllamaProvider
 from services.operation_parser import OperationParser
+from services.turn_execution_lock import (
+    TurnExecutionLock,
+)
 
 pytestmark = pytest.mark.real_llm
 
@@ -101,6 +104,7 @@ def test_real_ollama_full_turn_persists_world_change():
         extractor=extractor,
         world_service=world_service,
         turn_repository=turn_repository,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     narrative = (
@@ -196,6 +200,7 @@ def test_real_ollama_regeneration_restores_previous_snapshot():
         extractor=extractor,
         world_service=world_service,
         turn_repository=turn_repository,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     # --------------------------------------------------------

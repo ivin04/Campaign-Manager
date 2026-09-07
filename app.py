@@ -103,6 +103,8 @@ def create_campaign_turn_service(
     context_builder: ContextBuilder,
     campaign_state_service: CampaignStateService,
     turn_repository: TurnRepository | None = None,
+    *,
+    turn_execution_lock: TurnExecutionLock,
 ) -> CampaignTurnService:
     """
     Construye el pipeline completo de resolución de turnos.
@@ -228,8 +230,6 @@ context_builder = create_context_builder(
 )
 
 turn_execution_lock = TurnExecutionLock()
-
-world_service = create_world_service()
 
 campaign_turn_service = create_campaign_turn_service(
     world_service=world_service,
