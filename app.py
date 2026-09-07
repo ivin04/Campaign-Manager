@@ -284,35 +284,37 @@ def health():
 @app.patch("/campaign")
 def update_campaign(data: CampaignUpdate):
 
-    current = campaign_repository.get_campaign()
+    with turn_execution_lock.acquire():
 
-    values = {
-        "name": (
-            data.name
-            if data.name is not None
-            else current["name"]
-        ),
-        "system": (
-            data.system
-            if data.system is not None
-            else current["system"]
-        ),
-        "tone": (
-            data.tone
-            if data.tone is not None
-            else current["tone"]
-        ),
-        "summary": (
-            data.summary
-            if data.summary is not None
-            else current["summary"]
-        ),
-    }
+        current = campaign_repository.get_campaign()
 
-    return campaign_repository.update_campaign(
-        campaign_id=1,
-        **values,
-    )
+        values = {
+            "name": (
+                data.name
+                if data.name is not None
+                else current["name"]
+            ),
+            "system": (
+                data.system
+                if data.system is not None
+                else current["system"]
+            ),
+            "tone": (
+                data.tone
+                if data.tone is not None
+                else current["tone"]
+            ),
+            "summary": (
+                data.summary
+                if data.summary is not None
+                else current["summary"]
+            ),
+        }
+
+        return campaign_repository.update_campaign(
+            campaign_id=1,
+            **values,
+        )
 
 
 @app.patch("/campaign/session")
@@ -320,18 +322,35 @@ def update_campaign_session(
     data: CampaignSessionUpdate,
 ):
 
-    return campaign_repository.update_current_session(
-        campaign_id=1,
-        session_id=data.session_id,
-    )
+    try:
+        with turn_execution_lock.acquire():
+            state = (
+                campaign_state_service.set_current_session(
+                    data.session_id
+                )
+            )
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    return {
+        "campaign_id": state.campaign_id,
+        "current_session_id": (
+            state.current_session_id
+        ),
+    }
 
 
 @app.post("/sessions")
 def create_session(data: SessionIn):
 
-    return campaign_repository.create_session(
-        **data.model_dump()
-    )
+    with turn_execution_lock.acquire():
+        return campaign_repository.create_session(
+            **data.model_dump()
+        )
 
 @app.get("/campaign/state")
 def get_campaign_state():
@@ -362,11 +381,12 @@ def update_active_character(
 ):
 
     try:
-        state = (
-            campaign_state_service.set_active_character(
-                data.character_id
+        with turn_execution_lock.acquire():
+            state = (
+                campaign_state_service.set_active_character(
+                    data.character_id
+                )
             )
-        )
 
     except Exception as exc:
         raise HTTPException(
@@ -484,17 +504,15 @@ def search_memory(
         max_length=1000,
     ),
 ):
-    """
-    Busca información relevante dentro del
-    WorldState actual.
-    """
 
-    world = world_service.get_world()
+    with turn_execution_lock.acquire():
 
-    return memory_search_service.search(
-        world,
-        q.strip(),
-    )
+        world = world_service.get_world()
+
+        return memory_search_service.search(
+            world,
+            q.strip(),
+        )
 
 
 @app.get("/memory/context")
@@ -505,12 +523,15 @@ def memory_context(
         max_length=1000,
     ),
 ):
-    world = world_service.get_world()
 
-    return context_builder.build(
-        world,
-        q.strip(),
-    )
+    with turn_execution_lock.acquire():
+
+        world = world_service.get_world()
+
+        return context_builder.build(
+            world,
+            q.strip(),
+        )
 
 
 # ============================================================
@@ -528,12 +549,13 @@ def get_silly_tavern_context(
     """
 
     try:
-        result = (
-            silly_tavern_integration_service
-            .get_context(
-                data.query
+        with turn_execution_lock.acquire():
+            result = (
+                silly_tavern_integration_service
+                .get_context(
+                    data.query
+                )
             )
-        )
 
     except SillyTavernIntegrationServiceError as exc:
         raise HTTPException(
@@ -641,39 +663,36 @@ def process_silly_tavern_turn(
 # WORLD
 # ============================================================
 
-
 @app.get("/world")
 def get_world():
-    """
-    Devuelve el estado actual del mundo.
-    """
 
-    world = world_service.get_world()
+    with turn_execution_lock.acquire():
 
-    return {
-        "entities": list(
-            world.entities.values()
-        ),
-        "items": list(
-            world.items.values()
-        ),
-        "item_instances": list(
-            world.item_instances.values()
-        ),
-        "resources": list(
-            world.resources.values()
-        ),
-        "resource_balances": list(
-            world.resource_balances.values()
-        ),
-        "relations": list(
-            world.relations.values()
-        ),
-        "events": list(
-            world.events.values()
-        ),
-    }
+        world = world_service.get_world()
 
+        return {
+            "entities": list(
+                world.entities.values()
+            ),
+            "items": list(
+                world.items.values()
+            ),
+            "item_instances": list(
+                world.item_instances.values()
+            ),
+            "resources": list(
+                world.resources.values()
+            ),
+            "resource_balances": list(
+                world.resource_balances.values()
+            ),
+            "relations": list(
+                world.relations.values()
+            ),
+            "events": list(
+                world.events.values()
+            ),
+        }
 # ============================================================
 # EXPORT
 # ============================================================
@@ -689,9 +708,11 @@ def export_memory():
     construir la representación estructurada exportable.
     """
 
-    world = world_service.get_world()
+    with turn_execution_lock.acquire():
 
-    return memory_search_service.export(world)
+        world = world_service.get_world()
+
+        return memory_search_service.export(world)
 
 
 # ============================================================

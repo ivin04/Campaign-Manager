@@ -490,8 +490,14 @@ class WorldService:
                 )
 
         except _WorldTurnOperationFailure as exc:
-
             self.world = original_world
+
+            # Character operations can already have modified SQLite
+            # through the caller-owned connection. Since the operation
+            # failure is converted into a normal result instead of being
+            # propagated, the transaction must be rolled back explicitly.
+            if conn is not None:
+                conn.rollback()
 
             return tuple(
                 exc.results

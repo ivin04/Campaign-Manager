@@ -2981,3 +2981,65 @@ def test_silly_tavern_context_turn_context_e2e(
     assert "NPC del contexto" in str(
         context_after["context"]
     )
+
+def test_integration_turn_rolls_back_character_mutation_when_later_operation_fails(
+    client,
+    campaign_repository,
+    character_repository,
+):
+    # Arrange
+    campaign = campaign_repository.get_campaign()
+    session = campaign_repository.get_current_session()
+
+    character = character_repository.get_active_character(
+        campaign.id,
+        session.id,
+    )
+    original_hp = character.hp
+
+    payload = {
+        "external_turn_id": "rollback-character-integration-001",
+        "version": 1,
+        "player_message": "I attack the goblin.",
+    }
+
+    # La extracción devuelve primero una mutación válida del personaje
+    # y después una operación que debe fallar.
+    def fake_extract(*args, **kwargs):
+        return {
+            "operations": [
+                {
+                    "type": "change_hp",
+                    "character_id": character.id,
+                    "amount": -5,
+                },
+                {
+                    "type": "change_hp",
+                    "character_id": 999999,
+                    "amount": -10,
+                },
+            ],
+            "narrative": "The attack goes terribly wrong.",
+        }
+
+    integration_service = client.app.state.integration_service
+    integration_service.extractor.extract = fake_extract
+
+    # Act
+    response = client.post(
+        "/integration/turn",
+        json=payload,
+    )
+
+    # Assert
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["all_operations_succeeded"] is False
+
+    # Lo importante: la operación válida anterior NO debe quedar
+    # persistida aunque se haya ejecutado antes de la operación fallida.
+    character_after = character_repository.get_by_id(character.id)
+
+    assert character_after.hp == original_hp

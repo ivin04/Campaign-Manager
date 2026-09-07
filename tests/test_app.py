@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 
 from app import create_campaign_turn_service
@@ -426,3 +428,51 @@ def test_application_services_share_same_turn_execution_lock():
         silly_tavern_integration_service.turn_execution_lock
         is turn_execution_lock
     )
+
+def test_update_campaign_session_rejects_nonexistent_session(
+    client,
+    campaign_repository,
+):
+    campaign_before = campaign_repository.get_campaign()
+    current_session_before = campaign_before.current_session_id
+
+    response = client.patch(
+        "/campaign/session",
+        json={
+            "session_id": 999999,
+        },
+    )
+
+    assert response.status_code == 400
+
+    campaign_after = campaign_repository.get_campaign()
+
+    assert campaign_after.current_session_id == current_session_before
+
+def test_world_endpoint_waits_for_turn_execution_lock(client):
+    turn_execution_lock = client.app.state.turn_execution_lock
+
+    turn_execution_lock._lock.acquire()
+
+    try:
+        result = {}
+
+        def make_request():
+            result["response"] = client.get("/world")
+
+        thread = threading.Thread(target=make_request)
+        thread.start()
+
+        # La petición debe quedar bloqueada mientras nosotros
+        # mantenemos el lock.
+        thread.join(timeout=0.2)
+
+        assert thread.is_alive()
+
+    finally:
+        turn_execution_lock._lock.release()
+
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    assert result["response"].status_code == 200
