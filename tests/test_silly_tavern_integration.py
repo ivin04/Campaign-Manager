@@ -8,6 +8,7 @@ from models.schemas import (
     SillyTavernContextIn,
     SillyTavernTurnIn,
 )
+from services.turn_execution_lock import TurnExecutionLock
 
 # ============================================================
 # SCHEMAS
@@ -1578,7 +1579,6 @@ def test_concurrent_exact_retries_persist_only_one_turn(
 
     external_turn_id = "concurrent-turn-001"
 
-    barrier = threading.Barrier(2)
     extractor_calls = 0
     extractor_lock = threading.Lock()
 
@@ -1587,8 +1587,6 @@ def test_concurrent_exact_retries_persist_only_one_turn(
 
         with extractor_lock:
             extractor_calls += 1
-
-        barrier.wait(timeout=5)
 
         return []
 
@@ -1610,11 +1608,13 @@ def test_concurrent_exact_retries_persist_only_one_turn(
     }
 
     def send_request():
-        return app.silly_tavern_integration_service.process_turn(
-            player_input=payload["player_input"],
-            narrative=payload["narrative"],
-            external_turn_id=payload["external_turn_id"],
-            turn_version=payload["turn_version"],
+        return (
+            app.silly_tavern_integration_service.process_turn(
+                player_input=payload["player_input"],
+                narrative=payload["narrative"],
+                external_turn_id=payload["external_turn_id"],
+                turn_version=payload["turn_version"],
+            )
         )
 
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -1630,7 +1630,10 @@ def test_concurrent_exact_retries_persist_only_one_turn(
 
     assert len(results) == 2
 
-    assert extractor_calls == 2
+    # Solo una petición debe llegar al extractor.
+    # La segunda es un retry idempotente y recupera
+    # el TurnRecord ya persistido.
+    assert extractor_calls == 1
 
     assert results[0].player_input == payload["player_input"]
     assert results[1].player_input == payload["player_input"]
@@ -1743,6 +1746,7 @@ def test_e2e_silly_tavern_turn_persists_world_change(
         extractor=extractor,
         world_service=world_service,
         turn_repository=turn_repository,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     # --------------------------------------------------------
@@ -2051,6 +2055,7 @@ def test_e2e_silly_tavern_turn_persists_character_hp_change(
         extractor=extractor,
         world_service=world_service,
         turn_repository=TurnRepository(),
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     def fake_extract(narrative, context):
@@ -2288,6 +2293,7 @@ def test_e2e_turn_rolls_back_world_and_turn_when_operation_fails(
         extractor=extractor,
         world_service=world_service,
         turn_repository=turn_repository,
+        turn_execution_lock=TurnExecutionLock(),
     )
 
     # --------------------------------------------------------
