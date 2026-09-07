@@ -475,35 +475,31 @@ class WorldService:
                     conn=connection,
                 )
 
-        # Esta es la conexión que realmente está utilizando
-        # la operación. Puede ser la proporcionada por el caller
-        # o una creada internamente por este método.
+                # Si no recibimos conexión, esta función es propietaria
+        # de la transacción. Dejamos que get_conn() gestione el
+        # rollback mediante la excepción.
         if conn is None:
             try:
                 with get_conn() as owned_conn:
-                    try:
-                        apply_with_connection(
-                            owned_conn
-                        )
-                    except _WorldTurnOperationFailure as exc:
-                        self.world = original_world
-                        owned_conn.rollback()
-                        return tuple(exc.results)
+                    apply_with_connection(owned_conn)
+
+            except _WorldTurnOperationFailure as exc:
+                self.world = original_world
+                return tuple(exc.results)
 
             except Exception:
                 self.world = original_world
                 raise
 
         else:
+            # Si el caller proporciona la conexión, también posee
+            # la transacción. WorldService no debe hacer rollback:
+            # el caller decidirá si confirma o revierte.
             try:
                 apply_with_connection(conn)
 
             except _WorldTurnOperationFailure as exc:
                 self.world = original_world
-
-                # NO rollback.
-                # La transacción pertenece al caller.
-
                 return tuple(exc.results)
 
             except Exception:
