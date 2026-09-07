@@ -175,30 +175,43 @@ class CampaignRepository:
 
     def update_active_character(
         self,
-        campaign_id: str,
-        character_id: str | None,
+        campaign_id: int,
+        character_id: int | None,
+        *,
         conn=None,
     ):
-        connection = conn or self.db.get_conn()
-
-        execute(
-            """
+        query = """
             UPDATE campaign
             SET
                 active_character_id=?,
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=?
-            """,
-            (
-                character_id,
-                campaign_id,
-            ),
+        """
+
+        params = (
+            character_id,
+            campaign_id,
         )
 
         if conn is None:
-            connection.commit()
+            execute(
+                query,
+                params,
+            )
 
-        return self.get_campaign(campaign_id)
+        else:
+            from database import execute_in_conn
+
+            execute_in_conn(
+                conn,
+                query,
+                params,
+            )
+
+        return self.get_campaign(
+            campaign_id,
+            conn=conn,
+        )
 
     def get_active_character_id(
         self,

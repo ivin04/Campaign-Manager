@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from multiprocessing import connection
-
 from database import (
     execute,
+    execute_in_conn,
     one,
     one_in_conn,
     rows,
@@ -53,12 +52,13 @@ class EntityRepository:
     def save_entity(
         self,
         entity: Entity,
+        *,
         conn=None,
     ) -> Entity:
 
         if entity.id is None:
-            entity_id = execute(
-                """
+
+            query = """
                 INSERT INTO entities (
                     name,
                     entity_type,
@@ -67,19 +67,31 @@ class EntityRepository:
                     active
                 )
                 VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    entity.name,
-                    entity.entity_type,
-                    entity.description,
-                    entity.notes,
-                    int(entity.active),
-                ),
+            """
+
+            params = (
+                entity.name,
+                entity.entity_type,
+                entity.description,
+                entity.notes,
+                int(entity.active),
             )
 
+            if conn is None:
+                entity_id = execute(
+                    query,
+                    params,
+                )
+            else:
+                entity_id = execute_in_conn(
+                    conn,
+                    query,
+                    params,
+                )
+
         else:
-            execute(
-                """
+
+            query = """
                 INSERT INTO entities (
                     id,
                     name,
@@ -97,23 +109,35 @@ class EntityRepository:
                     notes=excluded.notes,
                     active=excluded.active,
                     updated_at=CURRENT_TIMESTAMP
-                """,
-                (
-                    entity.id,
-                    entity.name,
-                    entity.entity_type,
-                    entity.description,
-                    entity.notes,
-                    int(entity.active),
-                ),
+            """
+
+            params = (
+                entity.id,
+                entity.name,
+                entity.entity_type,
+                entity.description,
+                entity.notes,
+                int(entity.active),
             )
+
+            if conn is None:
+                execute(
+                    query,
+                    params,
+                )
+            else:
+                execute_in_conn(
+                    conn,
+                    query,
+                    params,
+                )
 
             entity_id = entity.id
 
-        if conn is None:
-            connection.commit()
-
-        loaded = self.get_entity(entity_id)
+        loaded = self.get_entity(
+            entity_id,
+            conn=conn,
+        )
 
         if loaded is None:
             raise RuntimeError(
