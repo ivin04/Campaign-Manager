@@ -12,6 +12,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest",
+    "httpx2>=2.5",
 ]
 
 [tool.pytest.ini_options]
