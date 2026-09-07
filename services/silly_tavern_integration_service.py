@@ -753,6 +753,58 @@ class SillyTavernIntegrationService:
                 )
 
                 # ------------------------------------------------
+                # ROLLBACK SI ALGUNA OPERACIÓN FALLA
+                # ------------------------------------------------
+                #
+                # WorldService no hace rollback cuando recibe una
+                # conexión proporcionada por el caller.
+                #
+                # En este flujo, SillyTavernIntegrationService es
+                # el propietario de la transacción, por lo que debe
+                # revertir las mutaciones antes de persistir el
+                # TurnRecord del turno fallido.
+                #
+                # El TurnRecord se guarda después del rollback para
+                # conservar el historial del intento sin conservar
+                # ninguna mutación del mundo.
+                # ------------------------------------------------
+
+                result = TurnResolutionResult(
+                    player_input=normalized_input,
+                    narrative=normalized_narrative,
+                    operations=tuple(
+                        world_operations
+                    ),
+                    character_operations=tuple(
+                        character_operations
+                    ),
+                    operation_results=tuple(
+                        operation_results
+                    ),
+                )
+
+                if not result.all_operations_succeeded:
+                    conn.rollback()
+
+                # ------------------------------------------------
+                # CREAR RESULTADO
+                # ------------------------------------------------
+
+                result = TurnResolutionResult(
+                    player_input=normalized_input,
+                    narrative=normalized_narrative,
+                    operations=tuple(
+                        world_operations
+                    ),
+                    character_operations=tuple(
+                        character_operations
+                    ),
+                    operation_results=tuple(
+                        operation_results
+                    ),
+                )
+
+                # ------------------------------------------------
                 # CREAR RESULTADO
                 # ------------------------------------------------
 
