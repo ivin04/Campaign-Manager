@@ -8,6 +8,8 @@ from models.schemas import (
     SillyTavernContextIn,
     SillyTavernTurnIn,
 )
+from repositories.campaign_repository import CampaignRepository
+from repositories.character_repository import CharacterRepository
 from services.turn_execution_lock import TurnExecutionLock
 
 # ============================================================
@@ -2984,18 +2986,23 @@ def test_silly_tavern_context_turn_context_e2e(
 
 def test_integration_turn_rolls_back_character_mutation_when_later_operation_fails(
     client,
-    campaign_repository,
-    character_repository,
 ):
+    campaign_repository = CampaignRepository()
+    character_repository = CharacterRepository()
     # Arrange
     campaign = campaign_repository.get_campaign()
-    session = campaign_repository.get_current_session()
 
-    character = character_repository.get_active_character(
-        campaign.id,
-        session.id,
+    active_character_id = campaign_repository.get_active_character_id(
+        campaign["id"]
     )
-    original_hp = character.hp
+    assert active_character_id is not None
+
+    character = character_repository.get_character(
+        active_character_id
+    )
+    assert character is not None
+
+    original_hp = character["hp"]
 
     payload = {
         "external_turn_id": "rollback-character-integration-001",

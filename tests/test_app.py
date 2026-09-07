@@ -429,12 +429,11 @@ def test_application_services_share_same_turn_execution_lock():
         is turn_execution_lock
     )
 
-def test_update_campaign_session_rejects_nonexistent_session(
-    client,
-    campaign_repository,
-):
+def test_update_campaign_session_rejects_nonexistent_session(client):
+    campaign_repository = CampaignRepository()
     campaign_before = campaign_repository.get_campaign()
-    current_session_before = campaign_before.current_session_id
+    assert campaign_before["current_session_id"] is None
+    current_session_before = campaign_before["current_session_id"]
 
     response = client.patch(
         "/campaign/session",
@@ -447,10 +446,10 @@ def test_update_campaign_session_rejects_nonexistent_session(
 
     campaign_after = campaign_repository.get_campaign()
 
-    assert campaign_after.current_session_id == current_session_before
+    assert campaign_after["current_session_id"] == current_session_before
 
 def test_world_endpoint_waits_for_turn_execution_lock(client):
-    turn_execution_lock = client.app.state.turn_execution_lock
+    from app import turn_execution_lock
 
     turn_execution_lock._lock.acquire()
 
