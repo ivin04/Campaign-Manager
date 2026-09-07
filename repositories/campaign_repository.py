@@ -175,9 +175,12 @@ class CampaignRepository:
 
     def update_active_character(
         self,
-        campaign_id: int,
-        character_id: int | None,
+        campaign_id: str,
+        character_id: str | None,
+        conn=None,
     ):
+        connection = conn or self.db.get_conn()
+
         execute(
             """
             UPDATE campaign
@@ -191,6 +194,9 @@ class CampaignRepository:
                 campaign_id,
             ),
         )
+
+        if conn is None:
+            connection.commit()
 
         return self.get_campaign(campaign_id)
 

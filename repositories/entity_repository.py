@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from multiprocessing import connection
+
 from database import (
     execute,
     one,
@@ -51,6 +53,7 @@ class EntityRepository:
     def save_entity(
         self,
         entity: Entity,
+        conn=None,
     ) -> Entity:
 
         if entity.id is None:
@@ -106,6 +109,9 @@ class EntityRepository:
             )
 
             entity_id = entity.id
+
+        if conn is None:
+            connection.commit()
 
         loaded = self.get_entity(entity_id)
 

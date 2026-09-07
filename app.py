@@ -6,6 +6,7 @@ from models.schemas import (
     ActiveCharacterUpdate,
     CampaignSessionUpdate,
     CampaignUpdate,
+    CharacterCreate,
     SessionIn,
     SillyTavernContextIn,
     SillyTavernTurnIn,
@@ -20,6 +21,7 @@ from services.campaign_turn_service import (
     CampaignTurnService,
     CampaignTurnServiceError,
 )
+from services.character_creation_service import CharacterCreationService
 from services.context_builder import ContextBuilder
 from services.dm_service import DMService
 from services.llm_world_extractor import LLMWorldExtractor
@@ -231,6 +233,12 @@ context_builder = create_context_builder(
 )
 
 turn_execution_lock = TurnExecutionLock()
+
+character_creation_service = CharacterCreationService(
+    campaign_repository=campaign_repository,
+    entity_repository=entity_repository,
+    character_repository=character_repository,
+)
 
 campaign_turn_service = create_campaign_turn_service(
     world_service=world_service,
@@ -732,3 +740,50 @@ def _serialize_operation_result(
             else None
         ),
     }
+
+@app.post("/characters")
+def create_character(
+    campaign_id: str,
+    data: CharacterCreate,
+    activate: bool = True,
+):
+    try:
+        character = character_creation_service.create_character(
+            campaign_id=campaign_id,
+            data=data,
+            activate=activate,
+        )
+
+        return {
+            "character": character,
+        }
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        )
+
+@app.post("/campaign/bootstrap")
+def bootstrap_campaign(
+    campaign_id: str,
+    data: CharacterCreate,
+):
+    try:
+        character = character_creation_service.create_character(
+            campaign_id=campaign_id,
+            data=data,
+            activate=True,
+        )
+
+        return {
+            "campaign_id": campaign_id,
+            "character": character,
+            "active_character_id": character.entity_id,
+        }
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        )
