@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from database import get_conn
 from models.turn_context import TurnContext
 from models.turn_record import TurnRecord
@@ -427,6 +429,8 @@ class SillyTavernIntegrationService:
                     "external_turn_id must not be longer than 500 characters"
                 )
 
+        existing_turn = None
+
         # --------------------------------------------------------
         # FAST IDEMPOTENCY CHECK
         # --------------------------------------------------------
@@ -525,6 +529,83 @@ class SillyTavernIntegrationService:
             raise SillyTavernIntegrationServiceError(
                 "CampaignStateService returned an invalid "
                 "TurnContext"
+            )
+
+        previous_world = self.world_service.get_world()
+
+        # --------------------------------------------------------
+        # CONTEXTO DE REGENERACIÓN
+        # --------------------------------------------------------
+        #
+        # En una regeneración, el extractor debe trabajar contra
+        # el estado existente ANTES de la versión que se está
+        # regenerando.
+        #
+        # No restauramos SQLite aquí porque el extractor puede
+        # tardar y no queremos mantener BEGIN IMMEDIATE abierto
+        # durante el procesamiento LLM.
+        # --------------------------------------------------------
+
+        is_regeneration = (
+            existing_turn is not None
+            and turn_version == existing_turn.version + 1
+        )
+
+        if is_regeneration:
+            if existing_turn.snapshot is None:
+                raise SillyTavernIntegrationServiceError(
+                    "cannot reconcile turn because the active "
+                    "turn has no snapshot"
+                )
+
+            try:
+                (
+                    snapshot_world,
+                    snapshot_characters,
+                ) = (
+                    self.world_snapshot_repository
+                    .load_snapshot_state(
+                        existing_turn.snapshot
+                    )
+                )
+
+            except Exception as exc:
+                raise SillyTavernIntegrationServiceError(
+                    "failed to load previous turn snapshot "
+                    "for regeneration context"
+                ) from exc
+
+            active_character = (
+                turn_context.active_character
+            )
+
+            if active_character is not None:
+                active_character = (
+                    snapshot_characters.get(
+                        active_character.entity_id,
+                        active_character,
+                    )
+                )
+
+            active_character_entity = (
+                turn_context.active_character_entity
+            )
+
+            if active_character is not None:
+                active_character_entity = (
+                    snapshot_world.entities.get(
+                        active_character.entity_id,
+                        active_character_entity,
+                    )
+                )
+
+            turn_context = replace(
+                turn_context,
+                world=snapshot_world,
+                active_character=active_character,
+                active_character_entity=(
+                    active_character_entity
+                ),
             )
 
         session_id = None
@@ -866,6 +947,10 @@ class SillyTavernIntegrationService:
                 if not result.all_operations_succeeded:
                     conn.rollback()
 
+                    self.world_service.world = (
+                        previous_world
+                    )
+
                 # ------------------------------------------------
                 # PERSISTIR TURNO
                 # ------------------------------------------------
@@ -900,6 +985,8 @@ class SillyTavernIntegrationService:
             raise
 
         except Exception as exc:
+            self.world_service.world = previous_world
+
             raise SillyTavernIntegrationServiceError(
                 "failed to process and persist SillyTavern turn"
             ) from exc
