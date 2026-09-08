@@ -31,7 +31,9 @@ const turnNarratives = new Map();
 // CAMPAIGN MANAGER CONTEXT FOR GENERATION
 // ============================================================
 
-async function getCampaignManagerGenerationContext(query) {
+async function getCampaignManagerGenerationContext(
+    playerInput,
+) {
     const currentSettings = getSettings();
 
     if (!currentSettings.enabled) {
@@ -43,31 +45,72 @@ async function getCampaignManagerGenerationContext(query) {
         .replace(/\/+$/, "");
 
     if (!backendUrl) {
-        warn("Backend URL is empty. Context was not requested.");
+        warn(
+            "Backend URL is empty. Context was not requested.",
+        );
+
         return "";
     }
 
-    const normalizedQuery =
-        typeof query === "string"
-            ? query.trim()
+    const normalizedPlayerInput =
+        typeof playerInput === "string"
+            ? playerInput.trim()
             : "";
 
-    if (!normalizedQuery) {
-        warn("Generation context query is empty.");
+    if (!normalizedPlayerInput) {
+        warn(
+            "Player input is empty. Generation context was not requested.",
+        );
+
         return "";
     }
+
+    const configuredQuery =
+        typeof currentSettings.contextQuery === "string"
+            ? currentSettings.contextQuery.trim()
+            : "";
+
+    if (!configuredQuery) {
+        warn(
+            "Context query is empty. Generation context was not requested.",
+        );
+
+        return "";
+    }
+
+    /*
+     * The configured context query defines WHAT kind of
+     * campaign information should be retrieved.
+     *
+     * The current player input defines WHICH part of that
+     * information is relevant to the current generation.
+     *
+     * Keeping both makes the setting useful without losing
+     * turn-specific retrieval.
+     */
+    const retrievalQuery = [
+        configuredQuery,
+        "",
+        "Acción actual del jugador:",
+        normalizedPlayerInput,
+    ].join("\n");
 
     try {
         const response = await fetch(
             `${backendUrl}/integration/context`,
             {
                 method: "POST",
+
                 headers: {
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
+                    "Content-Type":
+                        "application/json",
+
+                    "Accept":
+                        "application/json",
                 },
+
                 body: JSON.stringify({
-                    query: normalizedQuery,
+                    query: retrievalQuery,
                 }),
             },
         );
@@ -75,22 +118,28 @@ async function getCampaignManagerGenerationContext(query) {
         let responseBody = null;
 
         try {
-            responseBody = await response.json();
+            responseBody =
+                await response.json();
         } catch {
             responseBody = null;
         }
 
         if (!response.ok) {
-            const detail = responseBody?.detail;
+            const detail =
+                responseBody?.detail;
 
             let errorMessage;
 
             if (typeof detail === "string") {
                 errorMessage = detail;
-            } else if (detail !== undefined) {
-                errorMessage = JSON.stringify(detail);
+            } else if (
+                detail !== undefined
+            ) {
+                errorMessage =
+                    JSON.stringify(detail);
             } else {
-                errorMessage = "Unknown backend error";
+                errorMessage =
+                    "Unknown backend error";
             }
 
             throw new Error(
@@ -98,31 +147,14 @@ async function getCampaignManagerGenerationContext(query) {
             );
         }
 
-        if (!responseBody || typeof responseBody !== "object") {
+        if (
+            !responseBody ||
+            typeof responseBody !== "object"
+        ) {
             throw new Error(
                 "Campaign Manager returned an invalid context response",
             );
         }
-
-        /*
-         * /integration/context returns:
-         *
-         * {
-         *     campaign: {...},
-         *     session: ...,
-         *     active_character: ...,
-         *     query: "...",
-         *     context: {
-         *         entities: [...],
-         *         items: [...],
-         *         ...
-         *         context: "..."
-         *     }
-         * }
-         *
-         * The actual text that must be injected into
-         * SillyTavern is responseBody.context.context.
-         */
 
         if (
             !responseBody.context ||
@@ -133,13 +165,17 @@ async function getCampaignManagerGenerationContext(query) {
             );
         }
 
-        if (typeof responseBody.context.context !== "string") {
+        if (
+            typeof responseBody.context.context !==
+            "string"
+        ) {
             throw new Error(
                 "Campaign Manager context object does not contain a context string",
             );
         }
 
         return responseBody.context.context.trim();
+
     } catch (error) {
         console.warn(
             "[Campaign Manager] Failed to obtain generation context:",

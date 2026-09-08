@@ -315,9 +315,9 @@ class MemorySearchService:
             if self._matches(
                 query,
                 getattr(balance, "resource_id", None),
-                getattr(balance, "entity_id", None),
+                getattr(balance, "owner_id", None),
                 getattr(balance, "amount", None),
-                getattr(balance, "metadata", None),
+                getattr(balance, "notes", None),
             ):
                 results.append(
                     self._serialize(
@@ -376,7 +376,7 @@ class MemorySearchService:
 
             if self._matches(
                 query,
-                getattr(event, "name", None),
+                getattr(event, "title", None),
                 getattr(event, "event_type", None),
                 getattr(event, "description", None),
                 getattr(event, "location", None),

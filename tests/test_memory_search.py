@@ -227,3 +227,59 @@ def test_memory_context_uses_world_state(clean_world):
 
     assert "context" in result
     assert "Fungoso" in result["context"]
+
+def test_memory_search_finds_public_event_by_title(clean_world):
+    """
+    Los eventos deben poder recuperarse mediante su título.
+    """
+
+    event = Event(
+        id="event-title-001",
+        event_type="discovery",
+        title="El templo de la luna",
+        description="Los aventureros encuentran un antiguo templo.",
+        consequences="Se descubre una entrada secreta.",
+        session_id=3,
+        secret=False,
+    )
+
+    clean_world.events[event.id] = event
+
+    result = app.search_memory("templo de la luna")
+
+    assert len(result["events"]) == 1
+    assert result["events"][0]["id"] == "event-title-001"
+    assert result["events"][0]["title"] == "El templo de la luna"
+
+
+def test_memory_search_finds_resource_balance_by_owner_and_notes(
+    clean_world,
+):
+    """
+    ResourceBalance debe buscar utilizando sus campos reales:
+    owner_id y notes.
+    """
+
+    from models.resource import ResourceBalance
+
+    balance = ResourceBalance(
+        id=100,
+        resource_id=20,
+        owner_id=42,
+        amount=150,
+        notes="Reserva de oro del gremio",
+    )
+
+    clean_world.resource_balances[balance.id] = balance
+
+    result = app.search_memory("gremio")
+
+    assert len(result["resource_balances"]) == 1
+
+    saved_balance = result["resource_balances"][0]
+
+    assert saved_balance["id"] == 100
+    assert saved_balance["resource_id"] == 20
+    assert saved_balance["owner_id"] == 42
+    assert saved_balance["amount"] == 150
+    assert saved_balance["notes"] == "Reserva de oro del gremio"
