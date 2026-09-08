@@ -1,6 +1,6 @@
 import sqlite3
 
-CURRENT_VERSION = 9
+CURRENT_VERSION = 10
 
 def migration_001(conn: sqlite3.Connection) -> None:
     conn.executescript(
@@ -402,6 +402,27 @@ def migration_009(conn: sqlite3.Connection) -> None:
         """
     )
 
+def migration_010(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        -- ============================================================
+        -- ALLOW RETRIES OF FAILED TURN VERSIONS
+        -- ============================================================
+
+        DROP INDEX IF EXISTS idx_turns_external_turn_version;
+
+        CREATE INDEX IF NOT EXISTS
+            idx_turns_external_turn_version
+            ON turns(external_turn_id, version);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            idx_turns_active_external_turn
+            ON turns(external_turn_id)
+            WHERE external_turn_id IS NOT NULL
+              AND status = 'active';
+        """
+    )
+
 def run_migrations(conn: sqlite3.Connection) -> None:
     version = conn.execute(
         "PRAGMA user_version"
@@ -451,6 +472,11 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         migration_009(conn)
         conn.execute("PRAGMA user_version = 9")
         version = 9
+
+    if version < 10:
+        migration_010(conn)
+        conn.execute("PRAGMA user_version = 10")
+        version = 10
 
     if version != CURRENT_VERSION:
         raise RuntimeError(
