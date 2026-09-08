@@ -1102,3 +1102,37 @@ def test_list_recent_active_turns_filters_by_session(
     ] == [
         "Activo uno",
     ]
+
+def test_list_recent_turns_uses_supplied_connection(
+    isolated_database,
+):
+    from database import get_conn
+
+    repository = TurnRepository()
+
+    turn = TurnRecord(
+        session_id=None,
+        player_input="transactional recent turn",
+        narrative="Narrativa.",
+        operation_count=0,
+        successful_operation_count=0,
+        failed_operation_count=0,
+        all_operations_succeeded=True,
+        world_changed=False,
+    )
+
+    with get_conn() as conn:
+        repository.save_turn(
+            turn,
+            conn=conn,
+        )
+
+        recent_turns = repository.list_recent_turns(
+            limit=10,
+            conn=conn,
+        )
+
+        assert any(
+            item.player_input == "transactional recent turn"
+            for item in recent_turns
+        )

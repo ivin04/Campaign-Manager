@@ -7,6 +7,7 @@ from database import (
     one,
     one_in_conn,
     rows,
+    rows_in_conn,
 )
 from models.turn_record import TurnRecord
 
@@ -473,8 +474,7 @@ class TurnRepository:
             )
 
         if session_id is None:
-            result = rows(
-                """
+            query = """
                 SELECT
                     id,
                     session_id,
@@ -493,13 +493,12 @@ class TurnRepository:
                 FROM turns
                 ORDER BY id DESC
                 LIMIT ?
-                """,
-                (limit,),
-            )
+            """
+
+            params = (limit,)
 
         else:
-            result = rows(
-                """
+            query = """
                 SELECT
                     id,
                     session_id,
@@ -519,11 +518,23 @@ class TurnRepository:
                 WHERE session_id = ?
                 ORDER BY id DESC
                 LIMIT ?
-                """,
-                (
-                    session_id,
-                    limit,
-                ),
+            """
+
+            params = (
+                session_id,
+                limit,
+            )
+
+        if conn is None:
+            result = rows(
+                query,
+                params,
+            )
+        else:
+            result = rows_in_conn(
+                conn,
+                query,
+                params,
             )
 
         return [
