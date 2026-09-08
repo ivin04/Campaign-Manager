@@ -6,6 +6,7 @@ VALID_STATUSES = frozenset(
     {
         "active",
         "superseded",
+        "failed",
     }
 )
 
@@ -73,7 +74,7 @@ class TurnRecord:
         if self.status not in VALID_STATUSES:
             raise ValueError(
                 "status must be one of: "
-                "active, superseded"
+                "active, superseded, failed"
             )
 
         if self.version < 1:

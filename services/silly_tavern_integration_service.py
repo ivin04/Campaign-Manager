@@ -724,15 +724,25 @@ class SillyTavernIntegrationService:
         # APLICAR + PERSISTIR ATÓMICAMENTE
         # --------------------------------------------------------
         #
-        # IMPORTANTE:
+        # La extracción LLM ya ha terminado.
         #
-        # El BEGIN IMMEDIATE ocurre DESPUÉS de la extracción
-        # LLM para no mantener bloqueada la base de datos mientras
-        # esperamos al modelo.
+        # A partir de aquí toda la reconciliación de SQLite ocurre
+        # dentro de UNA única transacción:
         #
-        # La comprobación del external_turn_id se hace dentro
-        # de esta transacción y por tanto es la comprobación
-        # autoritativa.
+        #     BEGIN IMMEDIATE
+        #          ↓
+        #     restore snapshot (regeneración)
+        #          ↓
+        #     supersede turno anterior (regeneración)
+        #          ↓
+        #     aplicar operaciones
+        #          ↓
+        #     persistir turno
+        #          ↓
+        #     COMMIT
+        #
+        # Si cualquier paso lanza una excepción, get_conn() hace
+        # rollback de TODA la transacción.
         # --------------------------------------------------------
 
         try:
@@ -747,12 +757,12 @@ class SillyTavernIntegrationService:
                 )
 
                 # ------------------------------------------------
-                # IDEMPOTENCIA
+                # COMPROBACIÓN AUTORITATIVA DE IDEMPOTENCIA
                 # ------------------------------------------------
 
                 if normalized_external_turn_id is not None:
 
-                    existing_turn = (
+                    current_turn = (
                         self.turn_repository
                         .get_active_by_external_turn_id(
                             normalized_external_turn_id,
@@ -760,21 +770,21 @@ class SillyTavernIntegrationService:
                         )
                     )
 
-                    if existing_turn is not None:
+                    if current_turn is not None:
 
-                        # ------------------------------------------------------------
-                        # EXACT RETRY OF CURRENT VERSION
-                        # ------------------------------------------------------------
+                        # ----------------------------------------
+                        # RETRY EXACTO
+                        # ----------------------------------------
 
-                        if turn_version == existing_turn.version:
+                        if turn_version == current_turn.version:
 
                             same_input = (
-                                existing_turn.player_input
+                                current_turn.player_input
                                 == normalized_input
                             )
 
                             same_narrative = (
-                                existing_turn.narrative
+                                current_turn.narrative
                                 == normalized_narrative
                             )
 
@@ -784,8 +794,9 @@ class SillyTavernIntegrationService:
                             ):
                                 raise (
                                     SillyTavernIntegrationServiceConflictError(
-                                        "external_turn_id and version already "
-                                        "exist with different turn content: "
+                                        "external_turn_id and version "
+                                        "already exist with different "
+                                        "turn content: "
                                         f"{normalized_external_turn_id}/"
                                         f"{turn_version}"
                                     )
@@ -794,48 +805,51 @@ class SillyTavernIntegrationService:
                             return (
                                 TurnResolutionResult
                                 .from_persisted_turn(
-                                    existing_turn
+                                    current_turn
                                 )
                             )
 
-                        # ------------------------------------------------------------
-                        # NEW VERSION
-                        # ------------------------------------------------------------
+                        # ----------------------------------------
+                        # VERSION ANTERIOR
+                        # ----------------------------------------
 
-                        if turn_version < existing_turn.version:
+                        if turn_version < current_turn.version:
                             raise (
                                 SillyTavernIntegrationServiceConflictError(
-                                    "turn version is older than the active version: "
+                                    "turn version is older than the "
+                                    "active version: "
                                     f"{turn_version} < "
-                                    f"{existing_turn.version}"
+                                    f"{current_turn.version}"
                                 )
                             )
 
-                        if turn_version > existing_turn.version + 1:
+                        # ----------------------------------------
+                        # VERSION NO SECUENCIAL
+                        # ----------------------------------------
+
+                        if turn_version > current_turn.version + 1:
                             raise (
                                 SillyTavernIntegrationServiceConflictError(
-                                    "turn version must be the next sequential "
-                                    "version: "
+                                    "turn version must be the next "
+                                    "sequential version: "
                                     f"{turn_version} != "
-                                    f"{existing_turn.version + 1}"
+                                    f"{current_turn.version + 1}"
                                 )
                             )
 
-                        # ------------------------------------------------------------
-                        # turn_version == active version + 1
-                        #
-                        # This is the SWIPE / REGENERATE case.
-                        # ------------------------------------------------------------
+                        # ----------------------------------------
+                        # REGENERACIÓN
+                        # ----------------------------------------
 
-                        if existing_turn.snapshot is None:
+                        if current_turn.snapshot is None:
                             raise SillyTavernIntegrationServiceError(
-                                "cannot reconcile turn because the active "
-                                "turn has no snapshot"
+                                "cannot reconcile turn because the "
+                                "active turn has no snapshot"
                             )
 
                         self.world_snapshot_repository.restore_snapshot(
                             conn,
-                            existing_turn.snapshot,
+                            current_turn.snapshot,
                         )
 
                         self.world_service.load(
@@ -843,59 +857,13 @@ class SillyTavernIntegrationService:
                         )
 
                         self.turn_repository.supersede_turn(
-                            existing_turn.id,
+                            current_turn.id,
                             conn=conn,
                         )
 
-                        existing_turn = None
-
-                    if existing_turn is not None:
-
-                        same_input = (
-                            existing_turn.player_input
-                            == normalized_input
-                        )
-
-                        same_narrative = (
-                            existing_turn.narrative
-                            == normalized_narrative
-                        )
-
-                        if not (
-                            same_input
-                            and same_narrative
-                        ):
-                            raise (
-                                SillyTavernIntegrationServiceConflictError(
-                                    "external_turn_id already exists "
-                                    "with different turn content: "
-                                    f"{normalized_external_turn_id}"
-                                )
-                            )
-
-                        # ------------------------------------------------
-                        # REPETICIÓN EXACTA
-                        # ------------------------------------------------
-                        #
-                        # El turno ya fue procesado correctamente.
-                        #
-                        # NO volvemos a aplicar operaciones.
-                        # NO modificamos WorldState.
-                        # NO insertamos otro TurnRecord.
-                        #
-                        # El contexto manager hará COMMIT, pero no
-                        # existe ninguna modificación relevante.
-                        # ------------------------------------------------
-
-                        return (
-                            TurnResolutionResult
-                            .from_persisted_turn(
-                                existing_turn
-                            )
-                        )
-
                 # ------------------------------------------------
-                # APLICAR OPERACIONES
+                # SNAPSHOT DEL ESTADO SOBRE EL QUE SE APLICARÁ
+                # LA NUEVA VERSIÓN
                 # ------------------------------------------------
 
                 snapshot = (
@@ -903,6 +871,10 @@ class SillyTavernIntegrationService:
                         conn
                     )
                 )
+
+                # ------------------------------------------------
+                # APLICAR OPERACIONES
+                # ------------------------------------------------
 
                 operation_results = (
                     self.world_service.apply_turn_operations(
@@ -912,23 +884,6 @@ class SillyTavernIntegrationService:
                         ordered_operations=normalized_operations,
                     )
                 )
-
-                # ------------------------------------------------
-                # ROLLBACK SI ALGUNA OPERACIÓN FALLA
-                # ------------------------------------------------
-                #
-                # WorldService no hace rollback cuando recibe una
-                # conexión proporcionada por el caller.
-                #
-                # En este flujo, SillyTavernIntegrationService es
-                # el propietario de la transacción, por lo que debe
-                # revertir las mutaciones antes de persistir el
-                # TurnRecord del turno fallido.
-                #
-                # El TurnRecord se guarda después del rollback para
-                # conservar el historial del intento sin conservar
-                # ninguna mutación del mundo.
-                # ------------------------------------------------
 
                 result = TurnResolutionResult(
                     player_input=normalized_input,
@@ -944,15 +899,62 @@ class SillyTavernIntegrationService:
                     ),
                 )
 
+                # ------------------------------------------------
+                # FALLO DE OPERACIÓN
+                # ------------------------------------------------
+                #
+                # IMPORTANTE:
+                #
+                # apply_turn_operations() devuelve resultados
+                # inválidos sin lanzar excepción.
+                #
+                # En ese caso necesitamos deshacer las mutaciones
+                # del mundo, PERO conservar el intento fallido.
+                #
+                # Para una regeneración, restore_snapshot() y
+                # supersede_turn() también deben revertirse para
+                # conservar el turno anterior como active.
+                #
+                # Por eso hacemos rollback explícito y después
+                # iniciamos una NUEVA transacción únicamente para
+                # guardar el TurnRecord failed.
+                # ------------------------------------------------
+
                 if not result.all_operations_succeeded:
+
                     conn.rollback()
 
-                    self.world_service.world = (
-                        previous_world
+                    self.world_service.world = previous_world
+
+                    failed_turn = TurnRecord(
+                        session_id=session_id,
+                        player_input=result.player_input,
+                        narrative=result.narrative,
+                        operation_count=result.operation_count,
+                        successful_operation_count=(
+                            result.successful_operation_count
+                        ),
+                        failed_operation_count=(
+                            result.failed_operation_count
+                        ),
+                        all_operations_succeeded=False,
+                        world_changed=False,
+                        external_turn_id=(
+                            normalized_external_turn_id
+                        ),
+                        version=turn_version,
+                        status="failed",
+                        snapshot=snapshot,
                     )
 
+                    self.turn_repository.save_turn(
+                        failed_turn,
+                    )
+
+                    return result
+
                 # ------------------------------------------------
-                # PERSISTIR TURNO
+                # PERSISTIR TURNO EXITOSO
                 # ------------------------------------------------
 
                 self.turn_repository.save_turn(
@@ -967,9 +969,7 @@ class SillyTavernIntegrationService:
                         failed_operation_count=(
                             result.failed_operation_count
                         ),
-                        all_operations_succeeded=(
-                            result.all_operations_succeeded
-                        ),
+                        all_operations_succeeded=True,
                         world_changed=result.world_changed,
                         external_turn_id=(
                             normalized_external_turn_id
@@ -981,10 +981,15 @@ class SillyTavernIntegrationService:
                     conn=conn,
                 )
 
+                return result
+
         except SillyTavernIntegrationServiceConflictError:
             raise
 
         except Exception as exc:
+            # Si hemos llegado aquí desde dentro de get_conn(),
+            # la excepción provoca automáticamente rollback de
+            # toda la transacción.
             self.world_service.world = previous_world
 
             raise SillyTavernIntegrationServiceError(

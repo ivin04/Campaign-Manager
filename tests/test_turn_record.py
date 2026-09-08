@@ -174,3 +174,14 @@ def test_turn_record_rejects_empty_status():
         TurnRecord(
             status="",
         )
+
+def test_turn_record_accepts_failed_status():
+    record = TurnRecord(
+        status="failed",
+        operation_count=1,
+        successful_operation_count=0,
+        failed_operation_count=1,
+        all_operations_succeeded=False,
+    )
+
+    assert record.status == "failed"
