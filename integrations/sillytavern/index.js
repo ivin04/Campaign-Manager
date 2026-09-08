@@ -874,34 +874,210 @@ async function createStableTurnId(
     return hashHex;
 }
 
-function getTurnVersion(
+async function getPersistedTurnState(
+    externalTurnId,
+) {
+    const currentSettings =
+        getSettings();
+
+    const backendUrl =
+        currentSettings.backendUrl
+            .trim()
+            .replace(/\/+$/, '');
+
+    if (!backendUrl) {
+        throw new Error(
+            'Backend URL is empty.',
+        );
+    }
+
+    if (
+        typeof externalTurnId !== 'string' ||
+        !externalTurnId.trim()
+    ) {
+        throw new Error(
+            'externalTurnId is required.',
+        );
+    }
+
+    const encodedTurnId =
+        encodeURIComponent(
+            externalTurnId,
+        );
+
+    const response =
+        await fetch(
+            `${backendUrl}/integration/turn/${encodedTurnId}`,
+            {
+                method: 'GET',
+
+                headers: {
+                    'Accept':
+                        'application/json',
+                },
+            },
+        );
+
+    let responseBody = null;
+
+    try {
+        responseBody =
+            await response.json();
+    } catch {
+        responseBody = null;
+    }
+
+    if (!response.ok) {
+        const detail =
+            responseBody?.detail;
+
+        let errorMessage;
+
+        if (typeof detail === 'string') {
+            errorMessage = detail;
+        } else if (
+            detail !== undefined
+        ) {
+            errorMessage =
+                JSON.stringify(detail);
+        } else {
+            errorMessage =
+                'Unknown backend error';
+        }
+
+        throw new Error(
+            `HTTP ${response.status}: ${errorMessage}`,
+        );
+    }
+
+    if (
+        !responseBody ||
+        typeof responseBody !== 'object'
+    ) {
+        throw new Error(
+            'Campaign Manager returned an invalid turn state.',
+        );
+    }
+
+    if (
+        typeof responseBody.exists !==
+        'boolean'
+    ) {
+        throw new Error(
+            'Campaign Manager turn state does not contain a valid exists flag.',
+        );
+    }
+
+    if (
+        !Number.isInteger(
+            responseBody.active_version,
+        ) ||
+        responseBody.active_version < 0
+    ) {
+        throw new Error(
+            'Campaign Manager turn state does not contain a valid active version.',
+        );
+    }
+
+    if (
+        responseBody.exists &&
+        typeof responseBody.narrative !==
+            'string'
+    ) {
+        throw new Error(
+            'Campaign Manager active turn does not contain a narrative.',
+        );
+    }
+
+    return responseBody;
+}
+
+
+async function getTurnVersion(
     externalTurnId,
     narrativeText,
 ) {
     const normalizedNarrative =
         narrativeText.trim();
 
+    /*
+     * turnVersions and turnNarratives are only a local cache.
+     *
+     * If the cache does not know this turn, restore its current
+     * authoritative state from Campaign Manager before deciding
+     * whether the narrative is an existing version or a new swipe.
+     */
+    if (
+        !turnVersions.has(
+            externalTurnId,
+        )
+    ) {
+        const persistedState =
+            await getPersistedTurnState(
+                externalTurnId,
+            );
+
+        turnVersions.set(
+            externalTurnId,
+            persistedState.active_version,
+        );
+
+        if (
+            persistedState.exists &&
+            typeof persistedState.narrative ===
+                'string'
+        ) {
+            turnNarratives.set(
+                externalTurnId,
+                persistedState.narrative.trim(),
+            );
+        } else {
+            turnNarratives.delete(
+                externalTurnId,
+            );
+        }
+
+        log(
+            'Turn version cache synchronized with Campaign Manager.',
+            {
+                external_turn_id:
+                    externalTurnId,
+
+                active_version:
+                    persistedState.active_version,
+
+                exists:
+                    persistedState.exists,
+            },
+        );
+    }
+
     const previousNarrative =
         turnNarratives.get(
             externalTurnId,
         );
-
-    if (
-        previousNarrative ===
-        normalizedNarrative
-    ) {
-        return (
-            turnVersions.get(
-                externalTurnId,
-            ) ?? 1
-        );
-    }
 
     const previousVersion =
         turnVersions.get(
             externalTurnId,
         ) ?? 0;
 
+    /*
+     * Same narrative means that SillyTavern is observing or
+     * retrying the already-known version. Do not create another
+     * version merely because the local extension was reloaded.
+     */
+    if (
+        previousNarrative ===
+        normalizedNarrative
+    ) {
+        return previousVersion;
+    }
+
+    /*
+     * Different narrative for the same stable external turn id
+     * is a new swipe/regeneration.
+     */
     const nextVersion =
         previousVersion + 1;
 
@@ -1157,11 +1333,22 @@ async function onMessageReceived() {
      * Different AI swipes therefore intentionally
      * share the same external_turn_id.
      */
-    const turnVersion =
-        getTurnVersion(
-            externalTurnId,
-            narrativeText,
+    let turnVersion;
+
+    try {
+        turnVersion =
+            await getTurnVersion(
+                externalTurnId,
+                narrativeText,
+            );
+    } catch (error) {
+        console.error(
+            '[Campaign Manager] Failed to determine turn version:',
+            error,
         );
+
+        return;
+    }
 
     const turnVersionKey =
         `${externalTurnId}:${turnVersion}`;

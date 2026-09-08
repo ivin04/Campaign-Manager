@@ -3125,3 +3125,159 @@ def test_integration_turn_rolls_back_character_mutation_when_later_operation_fai
 
     assert character_after is not None
     assert character_after.current_hp == original_hp
+
+def test_integration_turn_state_endpoint_returns_missing_turn(
+    client,
+    monkeypatch,
+):
+    def fake_get_external_turn_state(
+        external_turn_id,
+    ):
+        assert external_turn_id == (
+            "external-turn-123"
+        )
+
+        return {
+            "external_turn_id":
+                external_turn_id,
+            "exists": False,
+            "active_version": 0,
+            "narrative": None,
+        }
+
+    monkeypatch.setattr(
+        (
+            "app.silly_tavern_integration_service."
+            "get_external_turn_state"
+        ),
+        fake_get_external_turn_state,
+    )
+
+    response = client.get(
+        "/integration/turn/external-turn-123"
+    )
+
+    assert response.status_code == 200
+
+    assert response.json() == {
+        "external_turn_id":
+            "external-turn-123",
+        "exists": False,
+        "active_version": 0,
+        "narrative": None,
+    }
+
+def test_integration_turn_state_endpoint_returns_active_version(
+    client,
+    monkeypatch,
+):
+    def fake_get_external_turn_state(
+        external_turn_id,
+    ):
+        assert external_turn_id == (
+            "external-turn-123"
+        )
+
+        return {
+            "external_turn_id":
+                external_turn_id,
+            "exists": True,
+            "active_version": 3,
+            "narrative":
+                "La puerta se abre.",
+        }
+
+    monkeypatch.setattr(
+        (
+            "app.silly_tavern_integration_service."
+            "get_external_turn_state"
+        ),
+        fake_get_external_turn_state,
+    )
+
+    response = client.get(
+        "/integration/turn/external-turn-123"
+    )
+
+    assert response.status_code == 200
+
+    assert response.json() == {
+        "external_turn_id":
+            "external-turn-123",
+        "exists": True,
+        "active_version": 3,
+        "narrative":
+            "La puerta se abre.",
+    }
+
+def test_integration_service_returns_missing_external_turn_state(
+    isolated_database,
+):
+    (
+        service,
+        _context_builder,
+        _extractor,
+        _world_service,
+        _turn_repository,
+    ) = _build_service()
+
+    result = (
+        service.get_external_turn_state(
+            "missing-turn"
+        )
+    )
+
+    assert result == {
+        "external_turn_id":
+            "missing-turn",
+        "exists": False,
+        "active_version": 0,
+        "narrative": None,
+    }
+
+def test_integration_service_returns_active_external_turn_state(
+    isolated_database,
+):
+    from models.turn_record import (
+        TurnRecord,
+    )
+
+    (
+        service,
+        _context_builder,
+        _extractor,
+        _world_service,
+        turn_repository,
+    ) = _build_service()
+
+    turn_repository.save_turn(
+        TurnRecord(
+            session_id=None,
+            player_input="Abro la puerta.",
+            narrative="La puerta se abre.",
+            operation_count=0,
+            successful_operation_count=0,
+            failed_operation_count=0,
+            all_operations_succeeded=True,
+            world_changed=False,
+            external_turn_id="external-turn-123",
+            version=4,
+            status="active",
+            snapshot=None,
+        )
+    )
+
+    result = (
+        service.get_external_turn_state(
+            "external-turn-123"
+        )
+    )
+
+    assert result == {
+        "external_turn_id":
+            "external-turn-123",
+        "exists": True,
+        "active_version": 4,
+        "narrative":
+            "La puerta se abre.",
+    }

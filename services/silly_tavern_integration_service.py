@@ -259,6 +259,76 @@ class SillyTavernIntegrationService:
             "context": context,
         }
 
+    def get_external_turn_state(
+        self,
+        external_turn_id: str,
+    ) -> dict:
+        """
+        Devuelve el estado persistido de un turno externo.
+
+        Este método permite que clientes como la extensión de
+        SillyTavern reconstruyan su caché local de versionado
+        después de una recarga o cambio de chat.
+
+        El backend sigue siendo la fuente de verdad.
+        """
+
+        if not isinstance(
+            external_turn_id,
+            str,
+        ):
+            raise TypeError(
+                "external_turn_id must be a string"
+            )
+
+        normalized_external_turn_id = (
+            external_turn_id.strip()
+        )
+
+        if not normalized_external_turn_id:
+            raise ValueError(
+                "external_turn_id must not be empty"
+            )
+
+        if len(normalized_external_turn_id) > 500:
+            raise ValueError(
+                "external_turn_id must not be longer than 500 characters"
+            )
+
+        try:
+            with get_conn() as conn:
+                active_turn = (
+                    self.turn_repository
+                    .get_active_by_external_turn_id(
+                        normalized_external_turn_id,
+                        conn=conn,
+                    )
+                )
+
+        except Exception as exc:
+            raise SillyTavernIntegrationServiceError(
+                "failed to obtain external turn state"
+            ) from exc
+
+        if active_turn is None:
+            return {
+                "external_turn_id":
+                    normalized_external_turn_id,
+                "exists": False,
+                "active_version": 0,
+                "narrative": None,
+            }
+
+        return {
+            "external_turn_id":
+                normalized_external_turn_id,
+            "exists": True,
+            "active_version":
+                active_turn.version,
+            "narrative":
+                active_turn.narrative,
+        }
+
     # ============================================================
     # EXTERNAL TURN
     # ============================================================

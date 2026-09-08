@@ -580,6 +580,56 @@ def get_silly_tavern_context(
     return result
 
 
+@app.get(
+    "/integration/turn/{external_turn_id}"
+)
+def get_silly_tavern_turn_state(
+    external_turn_id: str,
+):
+    """
+    Devuelve la versión activa persistida de un turno externo.
+
+    La extensión de SillyTavern utiliza este endpoint para
+    reconstruir su caché local después de una recarga o cambio
+    de chat.
+    """
+
+    try:
+        with turn_execution_lock.acquire():
+            result = (
+                silly_tavern_integration_service
+                .get_external_turn_state(
+                    external_turn_id
+                )
+            )
+
+    except (
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except SillyTavernIntegrationServiceError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "failed to obtain "
+                "SillyTavern turn state"
+            ),
+        ) from exc
+
+    return result
+
+
 @app.post("/integration/turn")
 def process_silly_tavern_turn(
     data: SillyTavernTurnIn,
