@@ -13,6 +13,10 @@ from models.schemas import (
 from repositories.campaign_repository import CampaignRepository
 from repositories.character_repository import CharacterRepository
 from repositories.entity_repository import EntityRepository
+from services.silly_tavern_integration_service import (
+    SillyTavernIntegrationService,
+    SillyTavernIntegrationServiceConflictError,
+)
 from services.turn_execution_lock import TurnExecutionLock
 
 # ============================================================
@@ -404,9 +408,6 @@ def _build_service():
     )
     from services.operation_parser import (
         OperationParser,
-    )
-    from services.silly_tavern_integration_service import (
-        SillyTavernIntegrationService,
     )
     from services.turn_execution_lock import (
         TurnExecutionLock,
@@ -1716,9 +1717,6 @@ def test_e2e_silly_tavern_turn_persists_world_change(
     from services.operation_parser import (
         OperationParser,
     )
-    from services.silly_tavern_integration_service import (
-        SillyTavernIntegrationService,
-    )
     from services.world_service import (
         WorldService,
     )
@@ -1995,9 +1993,6 @@ def test_e2e_silly_tavern_turn_persists_character_hp_change(
     from services.operation_parser import (
         OperationParser,
     )
-    from services.silly_tavern_integration_service import (
-        SillyTavernIntegrationService,
-    )
     from services.world_service import (
         WorldService,
     )
@@ -2263,7 +2258,6 @@ def test_e2e_turn_rolls_back_world_and_turn_when_operation_fails(
         OperationParser,
     )
     from services.silly_tavern_integration_service import (
-        SillyTavernIntegrationService,
         SillyTavernIntegrationServiceError,
     )
     from services.world_service import (
@@ -3281,3 +3275,110 @@ def test_integration_service_returns_active_external_turn_state(
         "narrative":
             "La puerta se abre.",
     }
+
+def test_integration_service_rejects_non_sequential_turn_version(
+    monkeypatch,
+):
+    (
+        service,
+        _context_builder,
+        extractor,
+        _world_service,
+        turn_repository,
+    ) = _build_service()
+
+    monkeypatch.setattr(
+        extractor,
+        "extract",
+        lambda narrative, context: [],
+    )
+
+    first_result = service.process_turn(
+        player_input="Abro la puerta.",
+        narrative="La puerta se abre.",
+        external_turn_id="sequential-version-test",
+        turn_version=1,
+    )
+
+    assert first_result.narrative == (
+        "La puerta se abre."
+    )
+
+    with pytest.raises(
+        SillyTavernIntegrationServiceConflictError,
+        match="must be the next sequential version",
+    ):
+        service.process_turn(
+            player_input="Abro la puerta de nuevo.",
+            narrative="La puerta se abre otra vez.",
+            external_turn_id="sequential-version-test",
+            turn_version=3,
+        )
+
+    active_turn = (
+        turn_repository.get_active_by_external_turn_id(
+            "sequential-version-test"
+        )
+    )
+
+    assert active_turn is not None
+    assert active_turn.version == 1
+
+def test_integration_service_allows_next_sequential_version(
+    monkeypatch,
+):
+    (
+        service,
+        _context_builder,
+        extractor,
+        _world_service,
+        turn_repository,
+    ) = _build_service()
+
+    monkeypatch.setattr(
+        extractor,
+        "extract",
+        lambda narrative, context: [],
+    )
+
+    v1 = service.process_turn(
+        player_input="Abro la puerta.",
+        narrative="La puerta se abre.",
+        external_turn_id="sequential-version-test-2",
+        turn_version=1,
+    )
+
+    assert v1.narrative == (
+        "La puerta se abre."
+    )
+
+    v2 = service.process_turn(
+        player_input="Miro dentro.",
+        narrative="Dentro hay una habitación oscura.",
+        external_turn_id="sequential-version-test-2",
+        turn_version=2,
+    )
+
+    assert v2.narrative == (
+        "Dentro hay una habitación oscura."
+    )
+
+    with pytest.raises(
+        SillyTavernIntegrationServiceConflictError,
+        match="must be the next sequential version",
+    ):
+        service.process_turn(
+            player_input="Entro directamente.",
+            narrative="Entras directamente.",
+            external_turn_id="sequential-version-test-2",
+            turn_version=4,
+        )
+
+    active_turn = (
+        turn_repository.get_active_by_external_turn_id(
+            "sequential-version-test-2"
+        )
+    )
+
+    assert active_turn is not None
+    assert active_turn.version == 2

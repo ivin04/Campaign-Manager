@@ -730,8 +730,18 @@ class SillyTavernIntegrationService:
                                 )
                             )
 
+                        if turn_version > existing_turn.version + 1:
+                            raise (
+                                SillyTavernIntegrationServiceConflictError(
+                                    "turn version must be the next sequential "
+                                    "version: "
+                                    f"{turn_version} != "
+                                    f"{existing_turn.version + 1}"
+                                )
+                            )
+
                         # ------------------------------------------------------------
-                        # turn_version > active version
+                        # turn_version == active version + 1
                         #
                         # This is the SWIPE / REGENERATE case.
                         # ------------------------------------------------------------
