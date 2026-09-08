@@ -1826,6 +1826,101 @@ def test_turn_save_failure_rolls_back_resolution_database_changes(
 
     assert campaign["summary"] == ""
 
+def test_turn_save_failure_restores_in_memory_world(
+    isolated_database,
+    monkeypatch,
+):
+    operation = CreateEntityOperation(
+        name="Temporal",
+        entity_type="npc",
+        description="Temporal.",
+        notes="",
+        active=True,
+    )
+
+    result = TurnResolutionResult(
+        player_input="Creo a Temporal.",
+        narrative="Temporal aparece.",
+        operations=(operation,),
+        operation_results=(
+            OperationResult(
+                status=OperationStatus.SUCCESS,
+                operation=operation,
+            ),
+        ),
+    )
+
+    class MutatingResolutionService(
+        RecordingTurnResolutionService
+    ):
+        def resolve_turn(
+            self,
+            turn_context,
+            player_input,
+            *,
+            recent_turns=None,
+            conn=None,
+        ):
+            turn_context.world.entities[1] = "temporary"
+
+            return super().resolve_turn(
+                turn_context,
+                player_input,
+                recent_turns=recent_turns,
+                conn=conn,
+            )
+
+    def failing_save_turn(
+        self,
+        turn,
+        *,
+        conn=None,
+    ):
+        raise RuntimeError(
+            "forced turn persistence failure"
+        )
+
+    monkeypatch.setattr(
+        TurnRepository,
+        "save_turn",
+        failing_save_turn,
+    )
+
+    world_service = RecordingWorldService()
+
+    world_service.world.entities[1] = "original"
+
+    original_world = world_service.world
+
+    resolver = MutatingResolutionService(
+        result
+    )
+
+    service = CampaignTurnService(
+        turn_resolution_service=resolver,
+        world_service=world_service,
+        turn_repository=TurnRepository(),
+        turn_execution_lock=TurnExecutionLock(),
+    )
+
+    with pytest.raises(
+        CampaignTurnServiceError,
+        match="unexpected error while resolving turn",
+    ):
+        service.play_turn(
+            "Creo a Temporal."
+        )
+
+    assert (
+        world_service.world
+        is original_world
+    )
+
+    assert (
+        world_service.world.entities[1]
+        == "original"
+    )
+
 def test_play_turn_serializes_concurrent_calls():
     import threading
     import time

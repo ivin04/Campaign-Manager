@@ -194,6 +194,8 @@ class CampaignTurnService:
                 "player_input must not be empty"
             )
 
+        world_snapshot = None
+
         try:
 
             with get_conn() as conn:
@@ -452,9 +454,21 @@ class CampaignTurnService:
                 return result
 
         except CampaignTurnServiceError:
+            if world_snapshot is not None:
+                self._restore_world_state(
+                    world,
+                    world_snapshot,
+                )
+
             raise
 
         except Exception as exc:
+
+            if world_snapshot is not None:
+                self._restore_world_state(
+                    world,
+                    world_snapshot,
+                )
 
             raise CampaignTurnServiceError(
                 "unexpected error while resolving turn"
