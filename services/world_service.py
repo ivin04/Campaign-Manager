@@ -377,7 +377,8 @@ class WorldService:
                     results
                 )
 
-            world_operation_applied = True
+            if result.changed:
+                world_operation_applied = True
 
             self._register_operation_reference(
                 ref,
