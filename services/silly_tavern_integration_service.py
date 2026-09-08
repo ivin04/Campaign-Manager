@@ -857,42 +857,6 @@ class SillyTavernIntegrationService:
                     conn.rollback()
 
                 # ------------------------------------------------
-                # CREAR RESULTADO
-                # ------------------------------------------------
-
-                result = TurnResolutionResult(
-                    player_input=normalized_input,
-                    narrative=normalized_narrative,
-                    operations=tuple(
-                        world_operations
-                    ),
-                    character_operations=tuple(
-                        character_operations
-                    ),
-                    operation_results=tuple(
-                        operation_results
-                    ),
-                )
-
-                # ------------------------------------------------
-                # CREAR RESULTADO
-                # ------------------------------------------------
-
-                result = TurnResolutionResult(
-                    player_input=normalized_input,
-                    narrative=normalized_narrative,
-                    operations=tuple(
-                        world_operations
-                    ),
-                    character_operations=tuple(
-                        character_operations
-                    ),
-                    operation_results=tuple(
-                        operation_results
-                    ),
-                )
-
-                # ------------------------------------------------
                 # PERSISTIR TURNO
                 # ------------------------------------------------
 
