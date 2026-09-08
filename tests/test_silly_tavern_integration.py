@@ -3517,3 +3517,31 @@ def test_regeneration_extracts_against_state_before_previous_version(
 
     # V2 se regenera desde el snapshot anterior a V1.
     assert "Entidad V1" not in seen_entities[1]
+
+def test_first_external_turn_must_use_version_one(
+    monkeypatch,
+):
+    (
+        service,
+        _context_builder,
+        _extractor,
+        _world_service,
+        turn_repository,
+    ) = _build_service()
+
+    monkeypatch.setattr(
+        turn_repository,
+        "get_active_by_external_turn_id",
+        lambda external_turn_id, *, conn=None: None,
+    )
+
+    with pytest.raises(
+        SillyTavernIntegrationServiceConflictError,
+        match="first turn version must be 1",
+    ):
+        service.process_turn(
+            player_input="Entro en la taberna.",
+            narrative="La taberna está en silencio.",
+            external_turn_id="first-turn-v2",
+            turn_version=2,
+        )

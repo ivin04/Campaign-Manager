@@ -459,6 +459,12 @@ class SillyTavernIntegrationService:
                     "failed to check external turn idempotency"
                 ) from exc
 
+            if existing_turn is None and turn_version != 1:
+                raise SillyTavernIntegrationServiceConflictError(
+                    "first turn version must be 1: "
+                    f"{turn_version}"
+                )
+
             if existing_turn is not None:
 
                 if turn_version == existing_turn.version:

@@ -58,6 +58,18 @@ def isolated_database(tmp_path, monkeypatch):
         test_world_service,
     )
 
+    monkeypatch.setattr(
+        app.campaign_turn_service,
+        "world_service",
+        test_world_service,
+    )
+
+    monkeypatch.setattr(
+        app.campaign_turn_service.turn_resolution_service,
+        "world_service",
+        test_world_service,
+    )
+
     yield
 
 @pytest.fixture
