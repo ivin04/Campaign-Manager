@@ -8,6 +8,7 @@ data/*.db
 data/*.backup
 *.json
 !integrations/sillytavern/manifest.json
+!package.json
 *.lnk
 *.db-shm
 *.db-wal

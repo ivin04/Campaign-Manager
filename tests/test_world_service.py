@@ -1590,3 +1590,55 @@ def test_apply_turn_operations_rolls_back_character_database_changes_on_failure(
 
     assert restored_character is not None
     assert restored_character.current_hp == 20
+
+def test_apply_turn_operations_does_not_save_world_for_no_change(
+    monkeypatch,
+):
+    service = WorldService()
+
+    existing_entity = Entity(
+        id=1,
+        name="Aldric",
+        entity_type="character",
+    )
+
+    service.world.entities[1] = existing_entity
+
+    operation = UpdateEntityOperation(
+        entity_id=1,
+        name="Aldric",
+    )
+
+    save_calls = []
+
+    def spy_save_world(
+        world,
+        *,
+        conn=None,
+    ):
+        save_calls.append(
+            (
+                world,
+                conn,
+            )
+        )
+
+    monkeypatch.setattr(
+        service.repository,
+        "save_world",
+        spy_save_world,
+    )
+
+    result = service.apply_turn_operations(
+        world_operations=(
+            operation,
+        ),
+        character_operations=(),
+    )
+
+    assert len(result) == 1
+    assert result[0].success is True
+    assert result[0].changed is False
+    assert result[0].status == OperationStatus.NO_CHANGE
+
+    assert save_calls == []
