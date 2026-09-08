@@ -577,6 +577,59 @@ def test_apply_operations_and_save_marks_world_as_changed(
 
     assert len(save_calls) == 1
 
+def test_apply_turn_operations_saves_world_operation_from_ordered_operations(
+    monkeypatch,
+):
+    service = WorldService()
+
+    operation = CreateEntityOperation(
+        name="OrderedEntity",
+        entity_type="character",
+    )
+
+    save_calls = []
+
+    def spy_save_world(
+        world,
+        *,
+        conn=None,
+    ):
+        save_calls.append(
+            (
+                world,
+                conn,
+            )
+        )
+
+    monkeypatch.setattr(
+        service.repository,
+        "save_world",
+        spy_save_world,
+    )
+
+    result = service.apply_turn_operations(
+        world_operations=(),
+        character_operations=(),
+        ordered_operations=(
+            operation,
+        ),
+    )
+
+    assert len(result) == 1
+    assert result[0].success is True
+
+    assert len(save_calls) == 1
+    assert save_calls[0][0] == service.world
+
+    assert len(service.world.entities) == 1
+
+    entity = next(
+        iter(service.world.entities.values())
+    )
+
+    assert entity.name == "OrderedEntity"
+    assert entity.entity_type == "character"
+
 def test_apply_turn_operations_rolls_back_when_character_operation_fails(
     monkeypatch,
 ):

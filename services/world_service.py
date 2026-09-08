@@ -331,6 +331,7 @@ class WorldService:
 
         results = []
         references = {}
+        world_operation_applied = False
 
         def unwrap_operation(raw_operation):
             if isinstance(
@@ -351,6 +352,8 @@ class WorldService:
             raw_operation,
             connection,
         ):
+            nonlocal world_operation_applied
+
             operation, ref = unwrap_operation(
                 raw_operation
             )
@@ -373,6 +376,8 @@ class WorldService:
                 raise _WorldTurnOperationFailure(
                     results
                 )
+
+            world_operation_applied = True
 
             self._register_operation_reference(
                 ref,
@@ -469,7 +474,7 @@ class WorldService:
                         connection,
                     )
 
-            if world_operations:
+            if world_operation_applied:
                 self.repository.save_world(
                     self.world,
                     conn=connection,
