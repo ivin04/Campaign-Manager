@@ -658,6 +658,33 @@ provides the necessary information to distinguish:
 
 ---
 
+## Runtime model
+
+Campaign Manager currently assumes a single Python process.
+
+The application keeps a shared `WorldState` in memory and uses a
+process-local `TurnExecutionLock` to serialize turn execution.
+
+For this reason, the application must currently be run with a single
+Uvicorn worker.
+
+Do not start the application with multiple workers, for example:
+
+    uvicorn app:app --workers 4
+
+Multiple Python processes would have independent in-memory world states
+and independent execution locks. SQLite would still serialize database
+writes, but it would not synchronize those in-memory states.
+
+The supported runtime is therefore:
+
+    uvicorn app:app --host 127.0.0.1 --port 8765
+
+or the provided `start.bat`.
+
+A future multi-process deployment would require an explicit shared-state
+or distributed-locking strategy.
+
 ## Project Structure
 
 ```text
