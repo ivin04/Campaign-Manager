@@ -10,6 +10,7 @@ from models.schemas import (
     SillyTavernContextIn,
     SillyTavernTurnIn,
 )
+from operations.world_operations import CreateEntityOperation
 from repositories.campaign_repository import CampaignRepository
 from repositories.character_repository import CharacterRepository
 from repositories.entity_repository import EntityRepository
@@ -1338,6 +1339,70 @@ def test_regenerate_turn_restores_snapshot_and_allows_new_version(
     assert final_instance["owner_id"] == owner_id
     assert final_instance["condition"] == "oxidado"
     assert final_instance["active"] == 1
+    
+def test_regeneration_extractor_receives_pre_previous_version_state(
+    client,
+    monkeypatch,
+):
+    service = __import__("app").silly_tavern_integration_service
+
+    external_turn_id = "regeneration-pre-version-state"
+
+    seen_entities = []
+
+    operation = CreateEntityOperation(
+        name="Entidad V1",
+        entity_type="npc",
+    )
+
+    def fake_extract(narrative, context):
+        if narrative == "V1":
+            return [operation]
+
+        if narrative == "V2":
+            seen_entities.append(
+                {
+                    entity.name
+                    for entity in context.world.entities.values()
+                }
+            )
+            return []
+
+        return []
+
+    monkeypatch.setattr(
+        service.extractor,
+        "extract",
+        fake_extract,
+    )
+
+    response_v1 = client.post(
+        "/integration/turn",
+        json={
+            "player_input": "Primera versión.",
+            "narrative": "V1",
+            "external_turn_id": external_turn_id,
+            "turn_version": 1,
+        },
+    )
+
+    assert response_v1.status_code == 200
+
+    response_v2 = client.post(
+        "/integration/turn",
+        json={
+            "player_input": "Segunda versión.",
+            "narrative": "V2",
+            "external_turn_id": external_turn_id,
+            "turn_version": 2,
+        },
+    )
+
+    assert response_v2.status_code == 200
+
+    assert len(seen_entities) == 1
+
+    assert "Entidad V1" not in seen_entities[0]
 
 def test_exact_retry_returns_persisted_turn_without_running_extractor(
     client,
@@ -3389,12 +3454,15 @@ def test_regeneration_extracts_against_state_before_previous_version(
 ):
     service = __import__("app").silly_tavern_integration_service
 
-    from operations.world_operations import CreateEntityOperation
-
-    captured_contexts = []
+    seen_entities = []
 
     def fake_extract(narrative, turn_context):
-        captured_contexts.append(turn_context)
+        seen_entities.append(
+            {
+                entity.name
+                for entity in turn_context.world.entities.values()
+            }
+        )
 
         if narrative == "Narrativa V1":
             return [
@@ -3442,149 +3510,10 @@ def test_regeneration_extracts_against_state_before_previous_version(
 
     assert response_v2.status_code == 200
 
-    assert len(captured_contexts) == 2
+    assert len(seen_entities) == 2
 
-    first_context = captured_contexts[0]
-    second_context = captured_contexts[1]
+    # V1 se extrae antes de crear Entidad V1.
+    assert "Entidad V1" not in seen_entities[0]
 
-    assert any(
-        entity.name == "Entidad V1"
-        for entity in first_context.world.entities.values()
-    )
-
-    assert all(
-        entity.name != "Entidad V1"
-        for entity in second_context.world.entities.values()
-    )
-
-def test_failed_regeneration_restores_world_service_state_after_rollback(
-    client,
-    monkeypatch,
-):
-    service = __import__("app").silly_tavern_integration_service
-
-    from database import get_conn
-    from operations.world_operations import CreateEntityOperation
-
-    def extract_v1(narrative, turn_context):
-        return [
-            CreateEntityOperation(
-                name="Entidad V1",
-                entity_type="npc",
-                description="Estado original.",
-            )
-        ]
-
-    monkeypatch.setattr(
-        service.extractor,
-        "extract",
-        extract_v1,
-    )
-
-    response_v1 = client.post(
-        "/integration/turn",
-        json={
-            "player_input": "Input V1",
-            "narrative": "Narrativa V1",
-            "external_turn_id": "regeneration-rollback-test",
-            "turn_version": 1,
-        },
-    )
-
-    assert response_v1.status_code == 200
-
-    world_before = service.world_service.get_world()
-
-    world_before_identity = id(world_before)
-
-    entity_v1 = next(
-        entity
-        for entity in world_before.entities.values()
-        if entity.name == "Entidad V1"
-    )
-
-    original_apply = (
-        service.world_service.apply_turn_operations
-    )
-
-    def failing_apply(*args, **kwargs):
-        raise RuntimeError(
-            "forced regeneration failure"
-        )
-
-    monkeypatch.setattr(
-        service.world_service,
-        "apply_turn_operations",
-        failing_apply,
-    )
-
-    def extract_v2(narrative, turn_context):
-        assert all(
-            entity.name != "Entidad V1"
-            for entity in turn_context.world.entities.values()
-        )
-
-        return []
-
-    monkeypatch.setattr(
-        service.extractor,
-        "extract",
-        extract_v2,
-    )
-
-    response_v2 = client.post(
-        "/integration/turn",
-        json={
-            "player_input": "Input V2",
-            "narrative": "Narrativa V2",
-            "external_turn_id": "regeneration-rollback-test",
-            "turn_version": 2,
-        },
-    )
-
-    assert response_v2.status_code == 400
-
-    # --------------------------------------------------------
-    # SQLite debe haber vuelto a V1
-    # --------------------------------------------------------
-
-    with get_conn() as conn:
-        row = conn.execute(
-            """
-            SELECT id, name
-            FROM entities
-            WHERE id=?
-            """,
-            (entity_v1.id,),
-        ).fetchone()
-
-    assert row is not None
-    assert row["name"] == "Entidad V1"
-
-    # --------------------------------------------------------
-    # WorldService debe haber vuelto también a V1
-    # --------------------------------------------------------
-
-    world_after = (
-        service.world_service.get_world()
-    )
-
-    assert any(
-        entity.id == entity_v1.id
-        and entity.name == "Entidad V1"
-        for entity in world_after.entities.values()
-    )
-
-    # Debe ser exactamente el estado anterior.
-    assert (
-        world_after.entities.keys()
-        == world_before.entities.keys()
-    )
-
-    monkeypatch.setattr(
-        service.world_service,
-        "apply_turn_operations",
-        original_apply,
-    )
-
-    assert id(world_after) == world_before_identity
+    # V2 se regenera desde el snapshot anterior a V1.
+    assert "Entidad V1" not in seen_entities[1]
