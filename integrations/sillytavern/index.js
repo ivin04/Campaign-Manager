@@ -10,6 +10,10 @@ import {
     getCurrentChatId,
 } from '../../../script.js';
 
+import {
+    buildRetrievalQuery,
+} from "./core.js";
+
 
 const extensionName = 'campaign-manager';
 
@@ -88,12 +92,10 @@ async function getCampaignManagerGenerationContext(
      * Keeping both makes the setting useful without losing
      * turn-specific retrieval.
      */
-    const retrievalQuery = [
+    const retrievalQuery = buildRetrievalQuery(
         configuredQuery,
-        "",
-        "Acción actual del jugador:",
         normalizedPlayerInput,
-    ].join("\n");
+    );
 
     try {
         const response = await fetch(
