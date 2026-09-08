@@ -12,6 +12,8 @@ import {
 
 import {
     buildRetrievalQuery,
+    buildStableTurnIdentityInput,
+    TurnState,
 } from "./core.js";
 
 
@@ -25,11 +27,8 @@ const defaultSettings = {
 
 let settings = null;
 
-let lastProcessedTurnKey = null;
-let lastProcessedTurnVersionKey = null;
-
-const turnVersions = new Map();
-const turnNarratives = new Map();
+const turnState =
+    new TurnState();
 
 // ============================================================
 // CAMPAIGN MANAGER CONTEXT FOR GENERATION
@@ -827,14 +826,7 @@ function registerChatLifecycleDetection() {
     eventSource.on(
         chatChangedEvent,
         () => {
-            lastProcessedTurnKey =
-                null;
-
-            lastProcessedTurnVersionKey =
-                null;
-         
-            turnVersions.clear();
-            turnNarratives.clear();
+            turnState.reset();
 
             void clearCampaignManagerContext();
 
@@ -873,14 +865,11 @@ async function createStableTurnId(
         );
     }
 
-    const identityPart =
-        String(playerMessageIndex);
-
-    const input = [
-        'campaign-manager-turn-v2',
-        chatId,
-        identityPart,
-    ].join('|');
+    const input =
+        buildStableTurnIdentityInput(
+            chatId,
+            playerMessageIndex,
+        );
 
     const encoder =
         new TextEncoder();
@@ -1035,101 +1024,25 @@ async function getTurnVersion(
     externalTurnId,
     narrativeText,
 ) {
-    const normalizedNarrative =
-        narrativeText.trim();
-
-    /*
-     * turnVersions and turnNarratives are only a local cache.
-     *
-     * If the cache does not know this turn, restore its current
-     * authoritative state from Campaign Manager before deciding
-     * whether the narrative is an existing version or a new swipe.
-     */
-    if (
-        !turnVersions.has(
+    const turnVersion =
+        await turnState.getVersion(
             externalTurnId,
-        )
-    ) {
-        const persistedState =
-            await getPersistedTurnState(
-                externalTurnId,
-            );
-
-        turnVersions.set(
-            externalTurnId,
-            persistedState.active_version,
+            narrativeText,
+            getPersistedTurnState,
         );
 
-        if (
-            persistedState.exists &&
-            typeof persistedState.narrative ===
-                'string'
-        ) {
-            turnNarratives.set(
+    log(
+        'Turn version resolved.',
+        {
+            external_turn_id:
                 externalTurnId,
-                persistedState.narrative.trim(),
-            );
-        } else {
-            turnNarratives.delete(
-                externalTurnId,
-            );
-        }
 
-        log(
-            'Turn version cache synchronized with Campaign Manager.',
-            {
-                external_turn_id:
-                    externalTurnId,
-
-                active_version:
-                    persistedState.active_version,
-
-                exists:
-                    persistedState.exists,
-            },
-        );
-    }
-
-    const previousNarrative =
-        turnNarratives.get(
-            externalTurnId,
-        );
-
-    const previousVersion =
-        turnVersions.get(
-            externalTurnId,
-        ) ?? 0;
-
-    /*
-     * Same narrative means that SillyTavern is observing or
-     * retrying the already-known version. Do not create another
-     * version merely because the local extension was reloaded.
-     */
-    if (
-        previousNarrative ===
-        normalizedNarrative
-    ) {
-        return previousVersion;
-    }
-
-    /*
-     * Different narrative for the same stable external turn id
-     * is a new swipe/regeneration.
-     */
-    const nextVersion =
-        previousVersion + 1;
-
-    turnVersions.set(
-        externalTurnId,
-        nextVersion,
+            turn_version:
+                turnVersion,
+        },
     );
 
-    turnNarratives.set(
-        externalTurnId,
-        normalizedNarrative,
-    );
-
-    return nextVersion;
+    return turnVersion;
 }
 
 async function sendTurnToBackend(
@@ -1388,13 +1301,13 @@ async function onMessageReceived() {
         return;
     }
 
-    const turnVersionKey =
-        `${externalTurnId}:${turnVersion}`;
+    const shouldProcess =
+        turnState.tryMarkProcessing(
+            externalTurnId,
+            turnVersion,
+        );
 
-    if (
-        lastProcessedTurnVersionKey ===
-        turnVersionKey
-    ) {
+    if (!shouldProcess) {
         log(
             'Turn version already processed locally. Skipping duplicate.',
             {
@@ -1408,12 +1321,6 @@ async function onMessageReceived() {
 
         return;
     }
-
-    lastProcessedTurnKey =
-        externalTurnId;
-
-    lastProcessedTurnVersionKey =
-        turnVersionKey;
 
     log(
         'Turn detected:',
@@ -1443,15 +1350,12 @@ async function onMessageReceived() {
         turnVersion,
     ).catch((error) => {
         /*
-         * Allow retry if the backend failed.
-         */
-        if (
-            lastProcessedTurnVersionKey ===
-            turnVersionKey
-        ) {
-            lastProcessedTurnVersionKey =
-                null;
-        }
+        * Allow retry if the backend failed.
+        */
+        turnState.markFailed(
+            externalTurnId,
+            turnVersion,
+        );
 
         console.error(
             '[Campaign Manager] Failed to process turn:',
