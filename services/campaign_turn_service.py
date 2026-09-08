@@ -205,27 +205,13 @@ class CampaignTurnService:
                 # ------------------------------------------------
 
                 if self.campaign_state_service is not None:
-
                     try:
-                        try:
-                            turn_context = (
-                                self.campaign_state_service
-                                .get_turn_context(
-                                    conn=conn,
-                                )
+                        turn_context = (
+                            self.campaign_state_service
+                            .get_turn_context(
+                                conn=conn,
                             )
-
-                        except TypeError as exc:
-                            if (
-                                "unexpected keyword argument 'conn'"
-                                not in str(exc)
-                            ):
-                                raise
-
-                            turn_context = (
-                                self.campaign_state_service
-                                .get_turn_context()
-                            )
+                        )
 
                     except CampaignStateServiceError as exc:
                         raise CampaignTurnServiceError(

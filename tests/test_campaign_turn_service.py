@@ -84,6 +84,8 @@ class RecordingCampaignStateService(
         self.load_world_calls = 0
         self.save_world_calls = 0
 
+        self.last_conn = None
+
         self.state_error = None
         self.world_error = None
         self.load_error = None
@@ -102,8 +104,14 @@ class RecordingCampaignStateService(
             world=self.world_service.world,
         )
 
-    def get_turn_context(self):
+    def get_turn_context(
+        self,
+        *,
+        conn=None,
+    ):
+
         self.get_turn_context_calls += 1
+        self.last_conn = conn
 
         if self.state_error is not None:
             raise self.state_error
@@ -2356,3 +2364,28 @@ def test_failed_turn_rolls_back_created_entity_but_persists_turn(
     assert turns[0].all_operations_succeeded is False
 
     assert turns[0].world_changed is False
+
+def test_play_turn_passes_transaction_connection_to_campaign_state_service():
+    result = make_result()
+
+    world_service = RecordingWorldService()
+
+    campaign_state_service = (
+        RecordingCampaignStateService(
+            world_service
+        )
+    )
+
+    service, _, _, state_service = make_service(
+        result=result,
+        world_service=world_service,
+        campaign_state_service=(
+            campaign_state_service
+        ),
+    )
+
+    service.play_turn(
+        "Exploro."
+    )
+
+    assert state_service.last_conn is not None
