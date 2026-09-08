@@ -308,6 +308,7 @@ class CampaignTurnService:
                             self.turn_repository.list_recent_turns(
                                 session_id=session_id,
                                 limit=10,
+                                conn=conn,
                             )
                         )
 

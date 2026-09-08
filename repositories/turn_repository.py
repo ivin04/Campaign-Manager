@@ -446,6 +446,7 @@ class TurnRepository:
         *,
         session_id: int | None = None,
         limit: int = 10,
+        conn=None,
     ) -> list[TurnRecord]:
 
         self._validate_optional_positive_int(
