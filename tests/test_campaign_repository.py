@@ -60,3 +60,51 @@ def test_fresh_database_creates_default_campaign():
     assert campaign is not None
     assert campaign["id"] == 1
     assert campaign["system"] == "D&D 5e 2014"
+
+def test_mutating_methods_use_supplied_connection(
+    isolated_database,
+):
+    from database import get_conn
+
+    repository = CampaignRepository()
+
+    campaign = repository.get_campaign()
+    assert campaign is not None
+
+    with get_conn() as conn:
+        session = repository.create_session(
+            number=1000,
+            title="Transactional Session",
+            summary="Resumen.",
+            start_location="Vorder's Hold",
+            end_location="La mina",
+            notes="Notas.",
+            conn=conn,
+        )
+
+        assert session is not None
+
+        updated_campaign = repository.update_campaign(
+            campaign["id"],
+            name=campaign["name"],
+            system=campaign["system"],
+            tone=campaign["tone"],
+            summary="Resumen actualizado.",
+            conn=conn,
+        )
+
+        assert updated_campaign is not None
+        assert updated_campaign["summary"] == (
+            "Resumen actualizado."
+        )
+
+        updated_campaign = repository.update_current_session(
+            campaign["id"],
+            session["id"],
+            conn=conn,
+        )
+
+        assert updated_campaign is not None
+        assert updated_campaign["current_session_id"] == (
+            session["id"]
+        )

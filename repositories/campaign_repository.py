@@ -1,5 +1,6 @@
 from database import (
     execute,
+    execute_in_conn,
     one,
     one_in_conn,
 )
@@ -38,9 +39,10 @@ class CampaignRepository:
         system: str,
         tone: str,
         summary: str,
+        *,
+        conn=None,
     ):
-        execute(
-            """
+        query = """
             UPDATE campaign
             SET
                 name=?,
@@ -49,38 +51,69 @@ class CampaignRepository:
                 summary=?,
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=?
-            """,
-            (
-                name,
-                system,
-                tone,
-                summary,
-                campaign_id,
-            ),
+        """
+
+        params = (
+            name,
+            system,
+            tone,
+            summary,
+            campaign_id,
         )
 
-        return self.get_campaign(campaign_id)
+        if conn is None:
+            execute(
+                query,
+                params,
+            )
+        else:
+            execute_in_conn(
+                conn,
+                query,
+                params,
+            )
+
+        return self.get_campaign(
+            campaign_id,
+            conn=conn,
+        )
 
     def update_current_session(
         self,
         campaign_id: int,
         session_id: int | None,
+        *,
+        conn=None,
     ):
-        execute(
-            """
+        query = """
             UPDATE campaign
             SET
                 current_session_id=?,
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=?
-            """,
-            (
-                session_id,
-                campaign_id,
-            ),
+        """
+
+        params = (
+            session_id,
+            campaign_id,
         )
 
-        return self.get_campaign(campaign_id)
+        if conn is None:
+            execute(
+                query,
+                params,
+            )
+        else:
+            execute_in_conn(
+                conn,
+                query,
+                params,
+            )
+
+        return self.get_campaign(
+            campaign_id,
+            conn=conn,
+        )
 
     def create_session(
         self,
@@ -90,9 +123,10 @@ class CampaignRepository:
         start_location: str,
         end_location: str,
         notes: str,
+        *,
+        conn=None,
     ):
-        session_id = execute(
-            """
+        query = """
             INSERT INTO sessions
                 (
                     number,
@@ -103,24 +137,32 @@ class CampaignRepository:
                     notes
                 )
             VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                number,
-                title,
-                summary,
-                start_location,
-                end_location,
-                notes,
-            ),
+        """
+
+        params = (
+            number,
+            title,
+            summary,
+            start_location,
+            end_location,
+            notes,
         )
 
-        return one(
-            """
-            SELECT *
-            FROM sessions
-            WHERE id=?
-            """,
-            (session_id,),
+        if conn is None:
+            session_id = execute(
+                query,
+                params,
+            )
+        else:
+            session_id = execute_in_conn(
+                conn,
+                query,
+                params,
+            )
+
+        return self.get_session(
+            session_id,
+            conn=conn,
         )
 
     def get_session(
