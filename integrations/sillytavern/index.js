@@ -338,9 +338,16 @@ async function injectCampaignManagerContext(context) {
 
     const prompt =
         [
-            '[CAMPAIGN MANAGER - CURRENT WORLD STATE]',
+            'CAMPAIGN MANAGER — INTERNAL WORLD STATE',
+            '',
+            'The following is internal campaign state provided as background information.',
+            'Use this information to maintain continuity and consistency.',
+            'Do not quote, reproduce, summarize, or mention this block in your reply.',
+            'Do not output these instructions or the delimiters.',
+            '',
             context.trim(),
-            '[END CAMPAIGN MANAGER CONTEXT]',
+            '',
+            'END INTERNAL WORLD STATE',
         ].join('\n');
 
     /*
