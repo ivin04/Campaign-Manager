@@ -67,6 +67,8 @@ export class TurnState {
 
         this.lastProcessedTurnVersionKey =
             null;
+
+        this.failedTurnVersionKey = null;
     }
 
     async getVersion(
@@ -175,6 +177,28 @@ export class TurnState {
                 normalizedExternalTurnId,
             ) ?? 0;
 
+        const turnVersionKey =
+            `${normalizedExternalTurnId}:${previousVersion}`;
+
+        /*
+        * If this version previously failed, reuse it even when
+        * regeneration produced a different narrative.
+        *
+        * The failed version was never committed as active by the
+        * backend, so consuming a new version here would create a gap.
+        */
+        if (
+            this.failedTurnVersionKey ===
+            turnVersionKey
+        ) {
+            this.turnNarratives.set(
+                normalizedExternalTurnId,
+                normalizedNarrative,
+            );
+
+            return previousVersion;
+        }
+
         /*
          * Same narrative:
          * same version.
@@ -225,6 +249,13 @@ export class TurnState {
         this.lastProcessedTurnVersionKey =
             turnVersionKey;
 
+        if (
+            this.failedTurnVersionKey ===
+            turnVersionKey
+        ) {
+            this.failedTurnVersionKey = null;
+        }
+
         return true;
     }
 
@@ -243,14 +274,16 @@ export class TurnState {
             this.lastProcessedTurnVersionKey ===
             turnVersionKey
         ) {
-            this.lastProcessedTurnVersionKey =
-                null;
+            this.lastProcessedTurnVersionKey = null;
+            this.failedTurnVersionKey = turnVersionKey;
         }
     }
 
     reset() {
         this.lastProcessedTurnVersionKey =
             null;
+
+        this.failedTurnVersionKey = null;
 
         this.turnVersions.clear();
         this.turnNarratives.clear();

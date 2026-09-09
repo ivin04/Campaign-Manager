@@ -370,3 +370,77 @@ test(
         );
     },
 );
+
+test(
+    'failed version is reused when regeneration produces a new narrative',
+    async () => {
+        const state =
+            new TurnState();
+
+        const firstVersion =
+            await state.getVersion(
+                'turn-1',
+                'Primera respuesta.',
+                async () => missingTurn(),
+            );
+
+        assert.equal(
+            firstVersion,
+            1,
+        );
+
+        assert.equal(
+            state.tryMarkProcessing(
+                'turn-1',
+                firstVersion,
+            ),
+            true,
+        );
+
+        state.markFailed(
+            'turn-1',
+            firstVersion,
+        );
+
+        const retryVersion =
+            await state.getVersion(
+                'turn-1',
+                'Nueva respuesta regenerada.',
+                async () => {
+                    throw new Error(
+                        'backend should not be queried again',
+                    );
+                },
+            );
+
+        assert.equal(
+            retryVersion,
+            1,
+        );
+
+        assert.equal(
+            state.tryMarkProcessing(
+                'turn-1',
+                retryVersion,
+            ),
+            true,
+        );
+
+        const nextVersion =
+            await state.getVersion(
+                'turn-1',
+                'Tercera respuesta.',
+                async () => {
+                    throw new Error(
+                        'backend should not be queried again',
+                    );
+                },
+            );
+
+        assert.equal(
+            nextVersion,
+            2,
+        );
+    },
+
+);
