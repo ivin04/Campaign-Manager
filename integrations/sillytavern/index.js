@@ -361,7 +361,7 @@ async function injectCampaignManagerContext(context) {
         campaignManagerPromptId,
         prompt,
         0,
-        0,
+        1,
         false,
         0,
     );
